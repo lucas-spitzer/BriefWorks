@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 from app.dependencies.auth import require_approved_user
@@ -11,6 +12,33 @@ from app.routers import artifacts, assessments, production_runs, skills, sources
 settings = get_settings()
 
 app = FastAPI(title="BriefWorks API")
+
+def frontend_url(path: str) -> str:
+    base = settings.frontend_origins[0].rstrip("/")
+    return f"{base}{path}"
+
+
+@app.get("/", include_in_schema=False)
+def redirect_root() -> RedirectResponse:
+    return RedirectResponse(url=frontend_url("/app"))
+
+
+@app.get("/app", include_in_schema=False)
+@app.get("/app/{rest:path}", include_in_schema=False)
+def redirect_app(rest: str = "") -> RedirectResponse:
+    path = f"/app/{rest}" if rest else "/app"
+    return RedirectResponse(url=frontend_url(path))
+
+
+@app.get("/login", include_in_schema=False)
+def redirect_login() -> RedirectResponse:
+    return RedirectResponse(url=frontend_url("/login"))
+
+
+@app.get("/auth/callback", include_in_schema=False)
+def redirect_auth_callback() -> RedirectResponse:
+    return RedirectResponse(url=frontend_url("/auth/callback"))
+
 
 app.add_middleware(
     CORSMiddleware,

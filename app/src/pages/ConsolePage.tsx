@@ -1,10 +1,13 @@
-import '../designs/designs.css'
-import { ConsoleVariant } from '../designs/variants/ConsoleVariant'
+import { ConsoleShell } from '../components/console/ConsoleShell'
+import { WorkspaceGate } from '../components/WorkspaceGate'
+import '../console.css'
 
 export function ConsolePage() {
   return (
     <div className="bw-gallery bw-gallery--full">
-      <ConsoleVariant />
+      <WorkspaceGate>
+        <ConsoleShell />
+      </WorkspaceGate>
     </div>
   )
 }

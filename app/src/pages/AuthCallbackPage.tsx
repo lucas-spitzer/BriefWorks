@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
+import '../gate.css'
 
 export function AuthCallbackPage() {
   const navigate = useNavigate()
@@ -29,11 +30,12 @@ export function AuthCallbackPage() {
   }, [navigate])
 
   return (
-    <main className="status-page" aria-live="polite">
-      <section className="status-card">
-        <p className="eyebrow">BriefWorks</p>
-        <h1>Secure Login</h1>
-        <p>{message}</p>
+    <main className="bw-gate" aria-live="polite">
+      <section className="bw-gate__status">
+        <div className="bw-gate__mark">BW</div>
+        <p className="bw-gate__eyebrow">Secure Login</p>
+        <p className="bw-gate__status-msg">{message}</p>
+        <div className="bw-gate__scanner" aria-hidden="true" />
       </section>
     </main>
   )

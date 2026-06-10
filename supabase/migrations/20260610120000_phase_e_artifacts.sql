@@ -22,7 +22,7 @@ create index artifacts_source_id_idx on public.artifacts (source_id);
 create index artifacts_production_run_id_idx on public.artifacts (production_run_id);
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('workspace-artifacts', 'workspace-artifacts', false, null, null)
+values ('artifacts', 'artifacts', false, null, null)
 on conflict (id) do nothing;
 
 alter table public.artifacts enable row level security;

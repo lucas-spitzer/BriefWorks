@@ -27,7 +27,7 @@ supabase/migrations/20260611120000_phase_f_assessments.sql
 - `sources`
 - `production_runs`
 - `skill_runs`
-- private Storage bucket `workspace-sources`
+- private Storage bucket `sources`
 
 ## What Phase B adds
 
@@ -47,7 +47,7 @@ supabase/migrations/20260611120000_phase_f_assessments.sql
 ## What Phase E adds
 
 - `artifacts` — generated EPUB and future Mathesys outputs
-- private Storage bucket `workspace-artifacts`
+- private Storage bucket `artifacts`
 - `eleven-reader-script` skill (Mathesys)
 
 ## What Phase F adds

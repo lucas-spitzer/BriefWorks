@@ -1,6 +1,6 @@
-// Shared mock data for the BriefWorks design exploration gallery.
-// Mirrors the real domain model: production (pipeline) runs contain skill runs,
-// skill runs produce artifacts + extracted concepts, and sources feed the pipeline.
+// Placeholder mock data for the console UI until live API wiring lands.
+// Mirrors the domain model: pipeline runs contain skill runs, skill runs produce
+// artifacts and extracted concepts, and sources feed the pipeline.
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type Module = 'intellex' | 'mathesys' | 'qngen'
@@ -458,6 +458,26 @@ export const pipelineRuns: PipelineRun[] = [
     ],
   },
 ]
+
+export interface SkillRunWithContext extends SkillRun {
+  runId: string
+  runLabel: string
+  sourceTitles: string[]
+}
+
+// Flatten every skill run out of the pipeline runs so the Skills page can list
+// them as standalone items, newest started first, while retaining a reference
+// back to the production run that spawned them.
+export const skillRunsWithContext: SkillRunWithContext[] = pipelineRuns
+  .flatMap((run) =>
+    run.skillRuns.map((skill) => ({
+      ...skill,
+      runId: run.id,
+      runLabel: run.label,
+      sourceTitles: run.sourceTitles,
+    })),
+  )
+  .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
 
 export const sources: Source[] = [
   {

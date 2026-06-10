@@ -17,8 +17,8 @@ class WorkerStorage:
             "apikey": service_role_key,
             "Authorization": f"Bearer {service_role_key}",
         }
-        self.sources_bucket = os.getenv("SOURCES_BUCKET", "workspace-sources")
-        self.artifacts_bucket = os.getenv("ARTIFACTS_BUCKET", "workspace-artifacts")
+        self.sources_bucket = os.getenv("SOURCES_BUCKET", "sources")
+        self.artifacts_bucket = os.getenv("ARTIFACTS_BUCKET", "artifacts")
 
     def download(self, path: str, *, bucket: str | None = None) -> bytes:
         bucket_name = bucket or self.sources_bucket

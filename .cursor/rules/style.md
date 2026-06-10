@@ -203,6 +203,17 @@ Button rules:
 - Strong heading.
 - Optional scarlet top rule for important cards.
 
+#### Registry card footers (workspace, source, skill, artifact)
+
+Console registry cards pin a metadata footer (`.bw-console__artifact-foot`) to the card bottom with a top border divider. Spacing above that divider must stay consistent—this has been a recurring layout issue.
+
+Rules:
+
+- The **last body block** before the footer (description, tags/chips, or stats row) gets `margin-bottom: var(--space-3)` (12px). Do not rely on the footer’s `padding-top` alone; the border sits at the top edge of the footer.
+- In equal-height grid cards (`display: flex; flex-direction: column; height: 100%`), insert `.bw-console__card-fill` between the last body block and the footer so `margin-top: auto` on the footer pins it to the bottom **without** opening a large gap above the divider.
+- Do not stack `margin-bottom` on the description **and** `margin-top` on the next row (e.g. stats)—use one intentional gap (typically `margin-top: var(--space-3)` on the secondary row only).
+- Match source cards as the reference: description → metadata/tags → **12px** → divider → footer segments.
+
 ### Lesson Artifacts
 
 Generated lesson artifacts should use:
@@ -304,6 +315,7 @@ Before merging UI work, verify:
 - Body text uses Arial/Helvetica fallback stack.
 - Primary actions are scarlet and visually dominant.
 - Layout is clean, left-aligned, and structured.
+- Registry cards keep `var(--space-3)` between the last body block and the footer divider; grid cards use `.bw-console__card-fill` so the footer stays bottom-aligned without extra vertical gap.
 - Icons are functional and consistent.
 - UI does not imply official Marine Corps endorsement.
 - Accessibility contrast and keyboard navigation are acceptable.

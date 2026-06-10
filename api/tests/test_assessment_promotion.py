@@ -1,0 +1,87 @@
+from app.qngen.assessment_promotion import (
+    build_citations,
+    promote_flashcards,
+    promote_quizzes,
+    promote_scenarios,
+)
+
+
+def test_build_citations() -> None:
+    citations = build_citations(
+        wiki_ids=["wiki-1"],
+        segment_ids=["seg-1"],
+        source_id="src-1",
+    )
+
+    assert citations == [
+        {"uri": "wiki://wiki-1", "type": "wiki"},
+        {"uri": "seg://src-1/seg-1", "type": "segment"},
+    ]
+
+
+def test_promote_flashcards_maps_rows() -> None:
+    rows = promote_flashcards(
+        workspace_id="ws-1",
+        source_id="src-1",
+        production_run_id="run-1",
+        skill_run_id="skill-1",
+        skill_id="flashcard-gen",
+        skill_version="1.0.0",
+        flashcards=[
+            {
+                "front": "What is METT-T?",
+                "back": "Mission, Enemy, Terrain, Troops, Time.",
+                "difficulty": "medium",
+                "tags": ["doctrine"],
+                "wiki_ids_cited": ["wiki-1"],
+                "segment_ids_used": ["seg-1"],
+            },
+        ],
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["front"] == "What is METT-T?"
+    assert rows[0]["origin"]["skill_id"] == "flashcard-gen"
+
+
+def test_promote_quizzes_maps_rows() -> None:
+    rows = promote_quizzes(
+        workspace_id="ws-1",
+        source_id="src-1",
+        production_run_id="run-1",
+        skill_run_id="skill-1",
+        skill_id="quiz-gen",
+        skill_version="1.0.0",
+        questions=[
+            {
+                "question": "Which factor is part of METT-T?",
+                "question_type": "multiple_choice",
+                "options": ["Enemy", "Budget", "Payroll", "Marketing"],
+                "correct_answer": "Enemy",
+                "difficulty": "easy",
+            },
+        ],
+    )
+
+    assert rows[0]["question_type"] == "multiple_choice"
+
+
+def test_promote_scenarios_maps_rows() -> None:
+    rows = promote_scenarios(
+        workspace_id="ws-1",
+        source_id="src-1",
+        production_run_id="run-1",
+        skill_run_id="skill-1",
+        skill_id="scenario-gen",
+        skill_version="1.0.0",
+        scenarios=[
+            {
+                "title": "Urban patrol decision",
+                "prompt": "Choose your course of action.",
+                "evaluation_criteria": ["Uses METT-T"],
+                "difficulty": "hard",
+            },
+        ],
+    )
+
+    assert rows[0]["title"] == "Urban patrol decision"

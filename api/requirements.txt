@@ -1,0 +1,11 @@
+fastapi
+httpx
+openai
+ebooklib
+pymupdf
+python-dotenv
+python-multipart
+redis
+rq
+uvicorn[standard]
+pytest

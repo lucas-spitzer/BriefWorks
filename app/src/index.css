@@ -1,0 +1,100 @@
+:root {
+  --color-black: #000000;
+  --color-scarlet: #940000;
+  --color-dark-scarlet: #660000;
+  --color-gold: #84754e;
+  --color-navy: #001e2e;
+  --color-gray: #818283;
+  --color-light-gray: #a7a7a7;
+  --color-white: #ffffff;
+
+  --bg-app: #ffffff;
+  --bg-shell: #001e2e;
+  --bg-panel: #f7f7f5;
+  --text-primary: #000000;
+  --text-secondary: #4f5051;
+  --text-inverse: #ffffff;
+  --border-subtle: #d8d8d6;
+  --accent-primary: #940000;
+  --accent-primary-hover: #660000;
+  --accent-secondary: #84754e;
+
+  --font-display: 'Arial Narrow', 'Oswald', Arial, sans-serif;
+  --font-body: Arial, Helvetica, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.08);
+
+  color: var(--text-primary);
+  background: var(--bg-app);
+  font: 16px/1.5 var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--bg-app);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+a {
+  color: inherit;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-gold);
+  outline-offset: 3px;
+}

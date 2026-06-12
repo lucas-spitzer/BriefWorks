@@ -52,6 +52,7 @@ class Settings:
     source_research_max_chars: int
     artifacts_bucket: str
     signed_url_expires_seconds: int
+    max_source_upload_bytes: int
 
 
 @lru_cache
@@ -70,4 +71,7 @@ def get_settings() -> Settings:
         source_research_max_chars=int(os.getenv("SOURCE_RESEARCH_MAX_CHARS", "12000")),
         artifacts_bucket=os.getenv("ARTIFACTS_BUCKET", "artifacts"),
         signed_url_expires_seconds=int(os.getenv("SIGNED_URL_EXPIRES_SECONDS", "3600")),
+        max_source_upload_bytes=int(
+            os.getenv("MAX_SOURCE_UPLOAD_BYTES", str(100 * 1024 * 1024)),
+        ),
     )

@@ -1,12 +1,15 @@
 import { ConsoleShell } from '../components/console/ConsoleShell'
 import { WorkspaceGate } from '../components/WorkspaceGate'
+import { WorkspaceDataProvider } from '../features/workspace/WorkspaceDataProvider'
 import '../console.css'
 
 export function ConsolePage() {
   return (
     <div className="bw-gallery bw-gallery--full">
       <WorkspaceGate>
-        <ConsoleShell />
+        <WorkspaceDataProvider>
+          <ConsoleShell />
+        </WorkspaceDataProvider>
       </WorkspaceGate>
     </div>
   )

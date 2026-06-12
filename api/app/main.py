@@ -6,12 +6,16 @@ from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 from app.dependencies.auth import require_approved_user
+from app.errors import register_exception_handlers
+from app.logging_config import configure_logging
 from app.models.auth import CurrentUser, CurrentUserResponse
 from app.routers import artifacts, assessments, production_runs, skills, sources, wiki, workspaces
 
+configure_logging()
 settings = get_settings()
 
 app = FastAPI(title="BriefWorks API")
+register_exception_handlers(app)
 
 def frontend_url(path: str) -> str:
     base = settings.frontend_origins[0].rstrip("/")

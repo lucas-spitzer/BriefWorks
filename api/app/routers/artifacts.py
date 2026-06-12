@@ -8,9 +8,9 @@ from app.dependencies.services import get_artifact_repository, get_supabase_stor
 from app.dependencies.workspace import require_workspace
 from app.models.artifact import ArtifactDownloadResponse, ArtifactResponse
 from app.models.auth import CurrentUser
+from app.models.workspace import WorkspaceResponse
 from app.repositories.artifacts import ArtifactRepository
-from app.services.supabase_rest import SupabaseRestError
-from app.services.supabase_storage import SupabaseStorageClient, SupabaseStorageError
+from app.services.supabase_storage import SupabaseStorageClient
 
 router = APIRouter(tags=["artifacts"])
 
@@ -20,26 +20,19 @@ router = APIRouter(tags=["artifacts"])
     response_model=list[ArtifactResponse],
 )
 async def list_artifacts(
-    workspace: Annotated[dict, Depends(require_workspace)],
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
     _: Annotated[CurrentUser, Depends(require_approved_user)],
     artifacts: Annotated[ArtifactRepository, Depends(get_artifact_repository)],
     artifact_type: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
 ) -> list[ArtifactResponse]:
-    try:
-        rows = await artifacts.list_for_workspace(
-            workspace["id"],
-            artifact_type=artifact_type,
-            limit=limit,
-            offset=offset,
-        )
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
+    rows = await artifacts.list_for_workspace(
+        workspace.id,
+        artifact_type=artifact_type,
+        limit=limit,
+        offset=offset,
+    )
     return [ArtifactResponse.model_validate(row) for row in rows]
 
 
@@ -49,13 +42,7 @@ async def get_artifact(
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     artifacts: Annotated[ArtifactRepository, Depends(get_artifact_repository)],
 ) -> ArtifactResponse:
-    try:
-        row = await artifacts.get_for_owner(artifact_id, user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    row = await artifacts.get_for_owner(artifact_id, user.id)
 
     if not row:
         raise HTTPException(
@@ -74,13 +61,7 @@ async def download_artifact(
     artifacts: Annotated[ArtifactRepository, Depends(get_artifact_repository)],
     storage: Annotated[SupabaseStorageClient, Depends(get_supabase_storage_client)],
 ) -> ArtifactDownloadResponse:
-    try:
-        row = await artifacts.get_for_owner(artifact_id, user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    row = await artifacts.get_for_owner(artifact_id, user.id)
 
     if not row:
         raise HTTPException(
@@ -88,17 +69,11 @@ async def download_artifact(
             detail="Artifact not found.",
         )
 
-    try:
-        download_url = await storage.create_signed_url(
-            bucket=settings.artifacts_bucket,
-            path=row["storage_path"],
-            expires_in=settings.signed_url_expires_seconds,
-        )
-    except SupabaseStorageError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    download_url = await storage.create_signed_url(
+        bucket=settings.artifacts_bucket,
+        path=row["storage_path"],
+        expires_in=settings.signed_url_expires_seconds,
+    )
 
     return ArtifactDownloadResponse(
         artifact_id=artifact_id,

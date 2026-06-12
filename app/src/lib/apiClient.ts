@@ -26,6 +26,37 @@ export function hasApiBaseUrl(): boolean {
   return Boolean(apiBaseUrl)
 }
 
+export async function parseApiErrorMessage(response: Response): Promise<string> {
+  const fallback = `API request failed with status ${response.status}.`
+  const body = await response.text()
+
+  if (!body) {
+    return fallback
+  }
+
+  try {
+    const parsed = JSON.parse(body) as { detail?: string | Array<{ msg?: string }> }
+
+    if (typeof parsed.detail === 'string') {
+      return parsed.detail
+    }
+
+    if (Array.isArray(parsed.detail)) {
+      const messages = parsed.detail
+        .map((entry) => entry.msg)
+        .filter((message): message is string => Boolean(message))
+
+      if (messages.length > 0) {
+        return messages.join(' ')
+      }
+    }
+  } catch {
+    // Fall through to the raw body when the response is not JSON.
+  }
+
+  return body
+}
+
 export async function apiRequest<TResponse>(
   path: string,
   options: ApiRequestOptions = {},
@@ -58,8 +89,8 @@ export async function apiRequest<TResponse>(
   })
 
   if (!response.ok) {
-    const message = await response.text()
-    throw new ApiError(message || `API request failed with status ${response.status}.`, response.status)
+    const message = await parseApiErrorMessage(response)
+    throw new ApiError(message, response.status)
   }
 
   return response.json() as Promise<TResponse>

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,6 +13,9 @@ from app.intellex.skills.source_research import SourceResearchSkill
 from app.intellex.skills.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
 from app.intellex.wiki_slug import normalize_slug
 from app.mathesys.skills.eleven_reader_script import ElevenReaderScriptSkill
+from app.mathesys.skills.elevenlabs_structured_text import ElevenLabsStructuredTextSkill
+from app.mathesys.skills.speechify_api_ssml import SpeechifyApiSsmlSkill
+from app.mathesys.skills.speechify_app_epub import SpeechifyAppEpubSkill
 from app.qngen.assessment_promotion import (
     promote_flashcards,
     promote_quizzes,
@@ -20,6 +26,8 @@ from app.qngen.skills.quiz_gen import QuizGenSkill
 from app.qngen.skills.scenario_gen import ScenarioGenSkill
 from app.worker.db import WorkerDatabase
 from app.worker.storage import WorkerStorage
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now_iso() -> str:
@@ -108,6 +116,7 @@ class SourceResearchSkillExecutor:
             )
             return skill_run_id
         except Exception as exc:
+            logger.exception("Skill run %s failed", skill_run_id)
             self.db.update_skill_run(
                 skill_run_id,
                 {
@@ -238,6 +247,7 @@ class DocumentDeconstructorSkillExecutor:
             )
             return skill_run_id
         except Exception as exc:
+            logger.exception("Skill run %s failed", skill_run_id)
             self.db.update_skill_run(
                 skill_run_id,
                 {
@@ -247,6 +257,172 @@ class DocumentDeconstructorSkillExecutor:
                 },
             )
             raise
+
+
+def _serialize_narration_volume(volume: dict[str, Any]) -> tuple[bytes, str, str]:
+    if "epub_bytes" in volume:
+        return volume["epub_bytes"], "application/epub+zip", "epub"
+
+    if "ssml" in volume:
+        payload = str(volume["ssml"]).encode("utf-8")
+        return payload, "application/ssml+xml", "ssml"
+
+    if "structured_text" in volume:
+        payload = json.dumps(volume["structured_text"], indent=2).encode("utf-8")
+        return payload, "application/json", "json"
+
+    raise RuntimeError("Narration volume is missing output bytes.")
+
+
+def _run_mathesys_narration_skill(
+    *,
+    db: WorkerDatabase,
+    storage: WorkerStorage,
+    skill: Any,
+    skill_id: str,
+    skill_version: str,
+    artifact_type: str,
+    artifact_format: str,
+    production_run_id: str,
+    workspace_id: str,
+    source: dict[str, Any],
+    extra_manifest: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+) -> str:
+    source_id = source["id"]
+    segments = db.list_ndr_segments_for_source(source_id)
+
+    if not segments:
+        raise RuntimeError(f"No NDR segments found for source {source_id}.")
+
+    wiki_entries = [
+        entry
+        for entry in db.list_wiki_entries_for_workspace(workspace_id)
+        if entry.get("status") == "canonical"
+    ]
+
+    skill_run = db.create_skill_run(
+        {
+            "production_run_id": production_run_id,
+            "workspace_id": workspace_id,
+            "skill_id": skill_id,
+            "skill_version": skill_version,
+            "module": "mathesys",
+            "status": "running",
+            "inputs": {
+                "source_id": source_id,
+                "segment_count": len(segments),
+                "wiki_entry_count": len(wiki_entries),
+            },
+            "started_at": utc_now_iso(),
+        },
+    )
+    skill_run_id = skill_run["id"]
+
+    try:
+        source_metadata = source.get("source_metadata") or {}
+        if not isinstance(source_metadata, dict):
+            source_metadata = {}
+
+        volumes, execution = skill.run(
+            source_metadata=source_metadata,
+            segments=segments,
+            wiki_entries=wiki_entries,
+        )
+
+        artifact_ids: list[str] = []
+        artifact_files: list[dict[str, Any]] = []
+
+        for volume in volumes:
+            file_bytes, content_type, extension = _serialize_narration_volume(volume)
+            filename = f"{normalize_slug(volume['title'])}.{extension}"
+            manifest = {
+                "pages_approx": volume["pages_approx"],
+                "part": volume["part"],
+                "parts_total": volume["parts_total"],
+                "wiki_ids_cited": execution["wiki_ids_cited"],
+                "segment_ids_used": execution["segment_ids_used"],
+                "transformations": execution["transformations"],
+                "warnings": execution.get("warnings") or [],
+                "validation": volume.get("validation"),
+            }
+
+            if extra_manifest:
+                manifest.update(extra_manifest(volume))
+
+            artifact_row = db.create_artifact(
+                {
+                    "workspace_id": workspace_id,
+                    "source_id": source_id,
+                    "production_run_id": production_run_id,
+                    "artifact_type": artifact_type,
+                    "format": artifact_format,
+                    "filename": filename,
+                    "storage_path": "pending",
+                    "file_size_bytes": 0,
+                    "manifest": manifest,
+                    "origin": {
+                        "skill_run_id": skill_run_id,
+                        "skill_id": skill_id,
+                        "skill_version": skill_version,
+                    },
+                },
+            )
+            artifact_id = artifact_row["id"]
+            storage_path = f"workspaces/{workspace_id}/artifacts/{artifact_id}/{filename}"
+
+            storage.upload(storage_path, file_bytes, content_type=content_type)
+
+            db.update_artifact(
+                artifact_id,
+                {
+                    "storage_path": storage_path,
+                    "file_size_bytes": len(file_bytes),
+                },
+            )
+
+            artifact_ids.append(artifact_id)
+            artifact_files.append(
+                {
+                    "artifact_id": artifact_id,
+                    "filename": filename,
+                    "storage_path": storage_path,
+                    "pages_approx": volume["pages_approx"],
+                    "part": volume["part"],
+                    "parts_total": volume["parts_total"],
+                },
+            )
+
+        db.update_skill_run(
+            skill_run_id,
+            {
+                "status": "completed",
+                "output": {
+                    "files": artifact_files,
+                    "wiki_ids_cited": execution["wiki_ids_cited"],
+                    "segment_ids_used": execution["segment_ids_used"],
+                    "transformations": execution["transformations"],
+                    "warnings": execution.get("warnings") or [],
+                },
+                "promoted": {
+                    "artifact_ids": artifact_ids,
+                },
+                "model": execution["model"],
+                "token_usage": execution["token_usage"],
+                "completed_at": utc_now_iso(),
+            },
+        )
+        return skill_run_id
+    except Exception as exc:
+        logger.exception("Skill run %s failed", skill_run_id)
+        db.update_skill_run(
+            skill_run_id,
+            {
+                "status": "failed",
+                "error": str(exc),
+                "completed_at": utc_now_iso(),
+            },
+        )
+        raise
 
 
 class ElevenReaderScriptSkillExecutor:
@@ -271,138 +447,133 @@ class ElevenReaderScriptSkillExecutor:
         workspace_id: str,
         source: dict[str, Any],
     ) -> str:
-        source_id = source["id"]
-        segments = self.db.list_ndr_segments_for_source(source_id)
+        return _run_mathesys_narration_skill(
+            db=self.db,
+            storage=self.storage,
+            skill=self.skill,
+            skill_id=self.SKILL_ID,
+            skill_version=self.SKILL_VERSION,
+            artifact_type="eleven_reader_script",
+            artifact_format="epub3",
+            production_run_id=production_run_id,
+            workspace_id=workspace_id,
+            source=source,
+        )
 
-        if not segments:
-            raise RuntimeError(f"No NDR segments found for source {source_id}.")
 
-        wiki_entries = [
-            entry
-            for entry in self.db.list_wiki_entries_for_workspace(workspace_id)
-            if entry.get("status") == "canonical"
-        ]
+class SpeechifyAppEpubSkillExecutor:
+    SKILL_ID = "speechify-app-epub"
+    SKILL_VERSION = "1.0.0"
+    MODULE = "mathesys"
 
-        skill_run = self.db.create_skill_run(
-            {
-                "production_run_id": production_run_id,
-                "workspace_id": workspace_id,
-                "skill_id": self.SKILL_ID,
-                "skill_version": self.SKILL_VERSION,
-                "module": self.MODULE,
-                "status": "running",
-                "inputs": {
-                    "source_id": source_id,
-                    "segment_count": len(segments),
-                    "wiki_entry_count": len(wiki_entries),
-                },
-                "started_at": utc_now_iso(),
+    def __init__(
+        self,
+        db: WorkerDatabase | None = None,
+        storage: WorkerStorage | None = None,
+        skill: SpeechifyAppEpubSkill | None = None,
+    ) -> None:
+        self.db = db or WorkerDatabase()
+        self.storage = storage or WorkerStorage()
+        self.skill = skill or SpeechifyAppEpubSkill()
+
+    def run_for_source(
+        self,
+        *,
+        production_run_id: str,
+        workspace_id: str,
+        source: dict[str, Any],
+    ) -> str:
+        return _run_mathesys_narration_skill(
+            db=self.db,
+            storage=self.storage,
+            skill=self.skill,
+            skill_id=self.SKILL_ID,
+            skill_version=self.SKILL_VERSION,
+            artifact_type="speechify_script",
+            artifact_format="epub3",
+            production_run_id=production_run_id,
+            workspace_id=workspace_id,
+            source=source,
+        )
+
+
+class SpeechifyApiSsmlSkillExecutor:
+    SKILL_ID = "speechify-api-ssml"
+    SKILL_VERSION = "1.0.0"
+    MODULE = "mathesys"
+
+    def __init__(
+        self,
+        db: WorkerDatabase | None = None,
+        storage: WorkerStorage | None = None,
+        skill: SpeechifyApiSsmlSkill | None = None,
+    ) -> None:
+        self.db = db or WorkerDatabase()
+        self.storage = storage or WorkerStorage()
+        self.skill = skill or SpeechifyApiSsmlSkill()
+
+    def run_for_source(
+        self,
+        *,
+        production_run_id: str,
+        workspace_id: str,
+        source: dict[str, Any],
+    ) -> str:
+        return _run_mathesys_narration_skill(
+            db=self.db,
+            storage=self.storage,
+            skill=self.skill,
+            skill_id=self.SKILL_ID,
+            skill_version=self.SKILL_VERSION,
+            artifact_type="speechify_audio",
+            artifact_format="ssml",
+            production_run_id=production_run_id,
+            workspace_id=workspace_id,
+            source=source,
+            extra_manifest=lambda volume: {
+                "section_count": volume.get("section_count"),
+                "estimated_character_count": volume.get("estimated_character_count"),
             },
         )
-        skill_run_id = skill_run["id"]
 
-        try:
-            source_metadata = source.get("source_metadata") or {}
-            if not isinstance(source_metadata, dict):
-                source_metadata = {}
 
-            volumes, execution = self.skill.run(
-                source_metadata=source_metadata,
-                segments=segments,
-                wiki_entries=wiki_entries,
-            )
+class ElevenLabsStructuredTextSkillExecutor:
+    SKILL_ID = "elevenlabs-structured-text"
+    SKILL_VERSION = "1.0.0"
+    MODULE = "mathesys"
 
-            artifact_ids: list[str] = []
-            artifact_files: list[dict[str, Any]] = []
+    def __init__(
+        self,
+        db: WorkerDatabase | None = None,
+        storage: WorkerStorage | None = None,
+        skill: ElevenLabsStructuredTextSkill | None = None,
+    ) -> None:
+        self.db = db or WorkerDatabase()
+        self.storage = storage or WorkerStorage()
+        self.skill = skill or ElevenLabsStructuredTextSkill()
 
-            for volume in volumes:
-                filename = f"{normalize_slug(volume['title'])}.epub"
-                artifact_row = self.db.create_artifact(
-                    {
-                        "workspace_id": workspace_id,
-                        "source_id": source_id,
-                        "production_run_id": production_run_id,
-                        "artifact_type": "eleven_reader_script",
-                        "format": "epub3",
-                        "filename": filename,
-                        "storage_path": "pending",
-                        "file_size_bytes": 0,
-                        "manifest": {
-                            "pages_approx": volume["pages_approx"],
-                            "part": volume["part"],
-                            "parts_total": volume["parts_total"],
-                            "wiki_ids_cited": execution["wiki_ids_cited"],
-                            "segment_ids_used": execution["segment_ids_used"],
-                            "transformations": execution["transformations"],
-                        },
-                        "origin": {
-                            "skill_run_id": skill_run_id,
-                            "skill_id": self.SKILL_ID,
-                            "skill_version": self.SKILL_VERSION,
-                        },
-                    },
-                )
-                artifact_id = artifact_row["id"]
-                storage_path = (
-                    f"workspaces/{workspace_id}/artifacts/{artifact_id}/{filename}"
-                )
-                epub_bytes = volume["epub_bytes"]
-
-                self.storage.upload(
-                    storage_path,
-                    epub_bytes,
-                    content_type="application/epub+zip",
-                )
-
-                self.db.update_artifact(
-                    artifact_id,
-                    {
-                        "storage_path": storage_path,
-                        "file_size_bytes": len(epub_bytes),
-                    },
-                )
-
-                artifact_ids.append(artifact_id)
-                artifact_files.append(
-                    {
-                        "artifact_id": artifact_id,
-                        "filename": filename,
-                        "storage_path": storage_path,
-                        "pages_approx": volume["pages_approx"],
-                        "part": volume["part"],
-                        "parts_total": volume["parts_total"],
-                    },
-                )
-
-            self.db.update_skill_run(
-                skill_run_id,
-                {
-                    "status": "completed",
-                    "output": {
-                        "files": artifact_files,
-                        "wiki_ids_cited": execution["wiki_ids_cited"],
-                        "segment_ids_used": execution["segment_ids_used"],
-                        "transformations": execution["transformations"],
-                    },
-                    "promoted": {
-                        "artifact_ids": artifact_ids,
-                    },
-                    "model": execution["model"],
-                    "token_usage": execution["token_usage"],
-                    "completed_at": utc_now_iso(),
-                },
-            )
-            return skill_run_id
-        except Exception as exc:
-            self.db.update_skill_run(
-                skill_run_id,
-                {
-                    "status": "failed",
-                    "error": str(exc),
-                    "completed_at": utc_now_iso(),
-                },
-            )
-            raise
+    def run_for_source(
+        self,
+        *,
+        production_run_id: str,
+        workspace_id: str,
+        source: dict[str, Any],
+    ) -> str:
+        return _run_mathesys_narration_skill(
+            db=self.db,
+            storage=self.storage,
+            skill=self.skill,
+            skill_id=self.SKILL_ID,
+            skill_version=self.SKILL_VERSION,
+            artifact_type="elevenlabs_audio",
+            artifact_format="elevenlabs_json",
+            production_run_id=production_run_id,
+            workspace_id=workspace_id,
+            source=source,
+            extra_manifest=lambda volume: {
+                "model_id": (volume.get("structured_text") or {}).get("model_id"),
+            },
+        )
 
 
 class FlashcardGenSkillExecutor:
@@ -618,6 +789,7 @@ def _run_qngen_skill(
         )
         return skill_run_id
     except Exception as exc:
+        logger.exception("Skill run %s failed", skill_run_id)
         db.update_skill_run(
             skill_run_id,
             {

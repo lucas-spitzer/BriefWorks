@@ -39,23 +39,29 @@ def build_epub(
             lang=language,
         )
 
-        body_parts = [f"<h1>{_escape(chapter_title)}</h1>"]
+        xhtml_body = chapter.get("xhtml_body")
 
-        for section in chapter.get("sections", []):
-            heading = section.get("heading")
-            heading_level = int(section.get("heading_level") or 2)
-            heading_level = min(max(heading_level, 2), 3)
+        if xhtml_body:
+            body_parts: list[str] = [str(xhtml_body)]
+        else:
+            body_parts = [f"<h1>{_escape(chapter_title)}</h1>"]
 
-            if heading:
-                body_parts.append(
-                    f"<h{heading_level}>{_escape(str(heading))}</h{heading_level}>",
-                )
+        if not xhtml_body:
+            for section in chapter.get("sections", []):
+                heading = section.get("heading")
+                heading_level = int(section.get("heading_level") or 2)
+                heading_level = min(max(heading_level, 2), 3)
 
-            for paragraph in section.get("paragraphs", []):
-                cleaned = str(paragraph).strip()
+                if heading:
+                    body_parts.append(
+                        f"<h{heading_level}>{_escape(str(heading))}</h{heading_level}>",
+                    )
 
-                if cleaned:
-                    body_parts.append(f"<p>{_escape(cleaned)}</p>")
+                for paragraph in section.get("paragraphs", []):
+                    cleaned = str(paragraph).strip()
+
+                    if cleaned:
+                        body_parts.append(f"<p>{_escape(cleaned)}</p>")
 
         epub_chapter.content = (
             "<html xmlns='http://www.w3.org/1999/xhtml' lang='"

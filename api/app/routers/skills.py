@@ -7,7 +7,6 @@ from app.dependencies.services import get_skill_repository
 from app.models.auth import CurrentUser
 from app.models.skill import SkillResponse
 from app.repositories.skills import SkillRepository
-from app.services.supabase_rest import SupabaseRestError
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -18,14 +17,7 @@ async def list_skills(
     skills: Annotated[SkillRepository, Depends(get_skill_repository)],
     module: Annotated[str | None, Query(pattern="^(intellex|mathesys|qngen)$")] = None,
 ) -> list[SkillResponse]:
-    try:
-        rows = await skills.list_active(module=module)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
+    rows = await skills.list_active(module=module)
     return [SkillResponse.model_validate(row) for row in rows]
 
 
@@ -36,13 +28,7 @@ async def get_skill(
     _: Annotated[CurrentUser, Depends(require_approved_user)],
     skills: Annotated[SkillRepository, Depends(get_skill_repository)],
 ) -> SkillResponse:
-    try:
-        row = await skills.get(skill_id, version)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    row = await skills.get(skill_id, version)
 
     if not row:
         raise HTTPException(

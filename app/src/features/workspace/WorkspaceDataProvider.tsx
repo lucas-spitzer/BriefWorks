@@ -1,0 +1,202 @@
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  createProductionRun as createProductionRunRequest,
+  getArtifactDownloadUrl,
+  listArtifacts,
+  listFlashcards,
+  listProductionRuns,
+  listQuizzes,
+  listScenarios,
+  listSkillRuns,
+  listSources,
+  listWikiEntries,
+  uploadSource as uploadSourceRequest,
+  type Artifact,
+  type Flashcard,
+  type ProductionRun,
+  type Quiz,
+  type Scenario,
+  type SkillRun,
+  type Source,
+  type WikiEntry,
+} from '../../lib/workspaceApi'
+import { useWorkspace } from './workspaceContext'
+import { WorkspaceDataContext } from './workspaceDataContext'
+
+const POLL_INTERVAL_MS = 5000
+const ACTIVE_STATUSES = new Set(['queued', 'running'])
+
+interface WorkspaceDataProviderProps {
+  children: ReactNode
+}
+
+export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) {
+  const { activeWorkspace } = useWorkspace()
+  const workspaceId = activeWorkspace?.id ?? null
+
+  const [sources, setSources] = useState<Source[]>([])
+  const [productionRuns, setProductionRuns] = useState<ProductionRun[]>([])
+  const [skillRunsByRunId, setSkillRunsByRunId] = useState<Record<string, SkillRun[]>>({})
+  const [artifacts, setArtifacts] = useState<Artifact[]>([])
+  const [wikiEntries, setWikiEntries] = useState<WikiEntry[]>([])
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([])
+  const [quizzes, setQuizzes] = useState<Quiz[]>([])
+  const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const refreshInFlight = useRef(false)
+
+  const refresh = useCallback(async () => {
+    if (!workspaceId || refreshInFlight.current) {
+      return
+    }
+
+    refreshInFlight.current = true
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const [
+        nextSources,
+        nextRuns,
+        nextArtifacts,
+        nextWikiEntries,
+        nextFlashcards,
+        nextQuizzes,
+        nextScenarios,
+      ] = await Promise.all([
+        listSources(workspaceId),
+        listProductionRuns(workspaceId),
+        listArtifacts(workspaceId),
+        listWikiEntries(workspaceId),
+        listFlashcards(workspaceId),
+        listQuizzes(workspaceId),
+        listScenarios(workspaceId),
+      ])
+
+      const skillRunEntries = await Promise.all(
+        nextRuns.map(async (run) => [run.id, await listSkillRuns(run.id)] as const),
+      )
+
+      setSources(nextSources)
+      setProductionRuns(nextRuns)
+      setSkillRunsByRunId(Object.fromEntries(skillRunEntries))
+      setArtifacts(nextArtifacts)
+      setWikiEntries(nextWikiEntries)
+      setFlashcards(nextFlashcards)
+      setQuizzes(nextQuizzes)
+      setScenarios(nextScenarios)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load workspace data.')
+    } finally {
+      setIsLoading(false)
+      refreshInFlight.current = false
+    }
+  }, [workspaceId])
+
+  useEffect(() => {
+    if (!workspaceId) {
+      setSources([])
+      setProductionRuns([])
+      setSkillRunsByRunId({})
+      setArtifacts([])
+      setWikiEntries([])
+      setFlashcards([])
+      setQuizzes([])
+      setScenarios([])
+      setError(null)
+      setIsLoading(false)
+      return
+    }
+
+    void refresh()
+  }, [workspaceId, refresh])
+
+  const activeRunCount = useMemo(
+    () => productionRuns.filter((run) => ACTIVE_STATUSES.has(run.status)).length,
+    [productionRuns],
+  )
+
+  useEffect(() => {
+    if (!workspaceId || activeRunCount === 0) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refresh()
+    }, POLL_INTERVAL_MS)
+
+    return () => window.clearInterval(intervalId)
+  }, [workspaceId, activeRunCount, refresh])
+
+  const uploadSource = useCallback(
+    async (file: File) => {
+      if (!workspaceId) {
+        throw new Error('No active workspace.')
+      }
+
+      const source = await uploadSourceRequest(workspaceId, file)
+      await refresh()
+      return source
+    },
+    [workspaceId, refresh],
+  )
+
+  const createProductionRun = useCallback(
+    async (payload: { source_ids: string[]; target_artifacts: string[] }) => {
+      if (!workspaceId) {
+        throw new Error('No active workspace.')
+      }
+
+      const run = await createProductionRunRequest(workspaceId, payload)
+      await refresh()
+      return run
+    },
+    [workspaceId, refresh],
+  )
+
+  const downloadArtifact = useCallback(async (artifactId: string) => {
+    const { download_url } = await getArtifactDownloadUrl(artifactId)
+    window.open(download_url, '_blank', 'noopener,noreferrer')
+  }, [])
+
+  const value = useMemo(
+    () => ({
+      sources,
+      productionRuns,
+      skillRunsByRunId,
+      artifacts,
+      wikiEntries,
+      flashcards,
+      quizzes,
+      scenarios,
+      isLoading,
+      error,
+      activeRunCount,
+      refresh,
+      uploadSource,
+      createProductionRun,
+      downloadArtifact,
+    }),
+    [
+      sources,
+      productionRuns,
+      skillRunsByRunId,
+      artifacts,
+      wikiEntries,
+      flashcards,
+      quizzes,
+      scenarios,
+      isLoading,
+      error,
+      activeRunCount,
+      refresh,
+      uploadSource,
+      createProductionRun,
+      downloadArtifact,
+    ],
+  )
+
+  return <WorkspaceDataContext.Provider value={value}>{children}</WorkspaceDataContext.Provider>
+}

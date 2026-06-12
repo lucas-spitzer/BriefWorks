@@ -8,7 +8,6 @@ from app.dependencies.workspace import require_workspace
 from app.models.auth import CurrentUser
 from app.models.workspace import WorkspaceCreate, WorkspaceResponse, WorkspaceUpdate
 from app.repositories.workspaces import WorkspaceRepository
-from app.services.supabase_rest import SupabaseRestError
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -18,14 +17,7 @@ async def list_workspaces(
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     workspaces: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
 ) -> list[WorkspaceResponse]:
-    try:
-        rows = await workspaces.list_for_owner(user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
+    rows = await workspaces.list_for_owner(user.id)
     return [WorkspaceResponse.model_validate(row) for row in rows]
 
 
@@ -35,47 +27,34 @@ async def create_workspace(
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     workspaces: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
 ) -> WorkspaceResponse:
-    try:
-        row = await workspaces.create(
-            owner_id=user.id,
-            name=payload.name,
-            description=payload.description,
-        )
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
+    row = await workspaces.create(
+        owner_id=user.id,
+        name=payload.name,
+        description=payload.description,
+    )
     return WorkspaceResponse.model_validate(row)
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceResponse)
 async def get_workspace(
-    workspace: Annotated[dict, Depends(require_workspace)],
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
 ) -> WorkspaceResponse:
-    return WorkspaceResponse.model_validate(workspace)
+    return workspace
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceResponse)
 async def update_workspace(
     payload: WorkspaceUpdate,
-    workspace: Annotated[dict, Depends(require_workspace)],
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     workspaces: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
 ) -> WorkspaceResponse:
     updates = payload.model_dump(exclude_unset=True)
 
     if not updates:
-        return WorkspaceResponse.model_validate(workspace)
+        return workspace
 
-    try:
-        row = await workspaces.update(workspace["id"], user.id, updates)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    row = await workspaces.update(workspace.id, user.id, updates)
 
     if not row:
         raise HTTPException(
@@ -88,14 +67,8 @@ async def update_workspace(
 
 @router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workspace(
-    workspace: Annotated[dict, Depends(require_workspace)],
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     workspaces: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
 ) -> None:
-    try:
-        await workspaces.delete(workspace["id"], user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    await workspaces.delete(workspace.id, user.id)

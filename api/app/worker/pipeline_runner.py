@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -10,13 +11,18 @@ from app.intellex.models import ParsedDocument
 from app.worker.db import WorkerDatabase
 from app.worker.skill_executor import (
     DocumentDeconstructorSkillExecutor,
+    ElevenLabsStructuredTextSkillExecutor,
     ElevenReaderScriptSkillExecutor,
     FlashcardGenSkillExecutor,
     QuizGenSkillExecutor,
     ScenarioGenSkillExecutor,
     SourceResearchSkillExecutor,
+    SpeechifyApiSsmlSkillExecutor,
+    SpeechifyAppEpubSkillExecutor,
 )
 from app.worker.storage import WorkerStorage
+
+logger = logging.getLogger(__name__)
 
 
 def utc_now_iso() -> str:
@@ -67,6 +73,9 @@ class PipelineRunner:
         source_research: SourceResearchSkillExecutor | None = None,
         document_deconstructor: DocumentDeconstructorSkillExecutor | None = None,
         eleven_reader_script: ElevenReaderScriptSkillExecutor | None = None,
+        speechify_app_epub: SpeechifyAppEpubSkillExecutor | None = None,
+        speechify_api_ssml: SpeechifyApiSsmlSkillExecutor | None = None,
+        elevenlabs_structured_text: ElevenLabsStructuredTextSkillExecutor | None = None,
         flashcard_gen: FlashcardGenSkillExecutor | None = None,
         quiz_gen: QuizGenSkillExecutor | None = None,
         scenario_gen: ScenarioGenSkillExecutor | None = None,
@@ -78,6 +87,18 @@ class PipelineRunner:
         self.eleven_reader_script = eleven_reader_script or ElevenReaderScriptSkillExecutor(
             self.db,
             self.storage,
+        )
+        self.speechify_app_epub = speechify_app_epub or SpeechifyAppEpubSkillExecutor(
+            self.db,
+            self.storage,
+        )
+        self.speechify_api_ssml = speechify_api_ssml or SpeechifyApiSsmlSkillExecutor(
+            self.db,
+            self.storage,
+        )
+        self.elevenlabs_structured_text = (
+            elevenlabs_structured_text
+            or ElevenLabsStructuredTextSkillExecutor(self.db, self.storage)
         )
         self.flashcard_gen = flashcard_gen or FlashcardGenSkillExecutor(self.db)
         self.quiz_gen = quiz_gen or QuizGenSkillExecutor(self.db)
@@ -255,13 +276,69 @@ class PipelineRunner:
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        if "eleven_reader_script" not in context.target_artifacts:
+        return self._run_mathesys_narration_step(
+            context,
+            pipeline,
+            target_artifact="eleven_reader_script",
+            step_name="eleven-reader-script",
+            executor=self.eleven_reader_script,
+        )
+
+    def run_speechify_app_epub_step(
+        self,
+        context: PipelineContext,
+        pipeline: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return self._run_mathesys_narration_step(
+            context,
+            pipeline,
+            target_artifact="speechify_script",
+            step_name="speechify-app-epub",
+            executor=self.speechify_app_epub,
+        )
+
+    def run_speechify_api_ssml_step(
+        self,
+        context: PipelineContext,
+        pipeline: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return self._run_mathesys_narration_step(
+            context,
+            pipeline,
+            target_artifact="speechify_audio",
+            step_name="speechify-api-ssml",
+            executor=self.speechify_api_ssml,
+        )
+
+    def run_elevenlabs_structured_text_step(
+        self,
+        context: PipelineContext,
+        pipeline: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return self._run_mathesys_narration_step(
+            context,
+            pipeline,
+            target_artifact="elevenlabs_audio",
+            step_name="elevenlabs-structured-text",
+            executor=self.elevenlabs_structured_text,
+        )
+
+    def _run_mathesys_narration_step(
+        self,
+        context: PipelineContext,
+        pipeline: list[dict[str, Any]],
+        *,
+        target_artifact: str,
+        step_name: str,
+        executor: Any,
+    ) -> list[dict[str, Any]]:
+        if target_artifact not in context.target_artifacts:
             return pipeline
 
         skill_run_ids: list[str] = []
 
         for source in context.sources:
-            skill_run_id = self.eleven_reader_script.run_for_source(
+            skill_run_id = executor.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
@@ -273,7 +350,7 @@ class PipelineRunner:
 
         return mark_step(
             pipeline,
-            "eleven-reader-script",
+            step_name,
             status="completed",
             skill_run_id=last_skill_run_id,
             detail=detail,
@@ -402,6 +479,15 @@ class PipelineRunner:
             pipeline = self.run_eleven_reader_script_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
+            pipeline = self.run_speechify_app_epub_step(context, pipeline)
+            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
+
+            pipeline = self.run_speechify_api_ssml_step(context, pipeline)
+            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
+
+            pipeline = self.run_elevenlabs_structured_text_step(context, pipeline)
+            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
+
             pipeline = self.run_flashcard_gen_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
@@ -425,6 +511,7 @@ class PipelineRunner:
                 "segment_count": segment_count,
             }
         except Exception as exc:
+            logger.exception("Production run %s failed", production_run_id)
             self.db.update_production_run(
                 production_run_id,
                 {

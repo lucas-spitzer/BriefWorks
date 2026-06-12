@@ -72,6 +72,8 @@ class SourceResearchSkill:
         mime_type: str,
         parsed_document: ParsedDocument,
     ) -> tuple[SourceResearchOutput, dict[str, Any]]:
+        # SECURITY: Only a bounded text sample from the parsed document is sent to
+        # the model; full document content is not transmitted.
         document_text = sample_text_for_research(
             parsed_document,
             max_chars=self.max_document_chars,

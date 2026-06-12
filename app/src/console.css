@@ -321,15 +321,14 @@
   flex-direction: column;
   height: 100%;
 }
-/* Last body block before the footer divider — keep gap consistent across card types */
-.bw-console__artifact-card > p,
-.bw-console__ws-desc,
-.bw-console__skill-card .stats {
+/* Last body block before card-fill/footer — 12px gap per style guide */
+.bw-console__source-card > *:has(+ .bw-console__card-fill),
+.bw-console__artifact-card > *:has(+ .bw-console__card-fill),
+.bw-console__ws-card > *:has(+ .bw-console__card-fill),
+.bw-console__source-card > *:has(+ .bw-console__artifact-foot),
+.bw-console__artifact-card > *:has(+ .bw-console__artifact-foot),
+.bw-console__ws-card > *:has(+ .bw-console__artifact-foot) {
   margin-bottom: var(--space-3);
-}
-
-.bw-console__skill-card > p {
-  margin-bottom: 0;
 }
 
 .bw-console__skill-card .stats {
@@ -349,6 +348,7 @@
 
 .bw-console__artifact-card .bw-console__artifact-foot,
 .bw-console__skill-card .bw-console__artifact-foot,
+.bw-console__source-card .bw-console__artifact-foot,
 .bw-console__ws-card .bw-console__artifact-foot {
   margin-top: 0;
 }
@@ -359,7 +359,7 @@
   grid-template-columns: repeat(3, 1fr);
   align-items: center;
   margin-top: auto;
-  padding-top: 12px;
+  padding-top: var(--space-2);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 .bw-console__artifact-foot .seg {

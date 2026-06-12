@@ -129,7 +129,7 @@ GET    /workspaces/{workspace_id}/sources/{source_id}/segments
 DELETE /workspaces/{workspace_id}/sources/{source_id}
 ```
 
-`POST /sources` accepts `multipart/form-data` with a `file` field.
+`POST /sources` accepts `multipart/form-data` with a `file` field. Each successful upload automatically queues an ingest-only production run (Intellex pipeline through `document-deconstructor`). Redis and the RQ worker must be running.
 
 ### Skills
 
@@ -195,6 +195,9 @@ Example production run body:
 Supported `target_artifacts` values:
 
 - `eleven_reader_script` — Mathesys ElevenReader EPUB
+- `speechify_script` — Mathesys Speechify app EPUB
+- `speechify_audio` — Mathesys Speechify API SSML
+- `elevenlabs_audio` — Mathesys ElevenLabs structured API text
 - `flashcards` — QnGen flashcard-gen
 - `quizzes` — QnGen quiz-gen
 - `scenarios` — QnGen scenario-gen
@@ -202,7 +205,7 @@ Supported `target_artifacts` values:
 Full pipeline worker behavior:
 
 - always completes Intellex ingest (`store`, `parse`, `source-research`, `chunk`, `document-deconstructor`)
-- optionally runs Mathesys `eleven-reader-script` and QnGen skills based on `target_artifacts`
+- optionally runs Mathesys narration skills and QnGen skills based on `target_artifacts`
 - promotes Wiki concepts, artifacts, and assessment entities
 - marks production run `completed` when finished
 

@@ -1,5 +1,5 @@
 import { getAccessToken } from '../features/auth/authService'
-import { apiRequest, hasApiBaseUrl } from './apiClient'
+import { apiRequest, hasApiBaseUrl, parseApiErrorMessage } from './apiClient'
 
 export interface Workspace {
   id: string
@@ -34,15 +34,6 @@ export interface WikiEntry {
   canonical_slug: string
   aliases: string[]
   pronunciation: string | null
-  created_at: string
-}
-
-export interface WikiDispute {
-  id: string
-  workspace_id: string
-  wiki_entry_id: string | null
-  status: string
-  summary: string
   created_at: string
 }
 
@@ -133,6 +124,9 @@ export interface SkillRun {
 
 export const TARGET_ARTIFACT_OPTIONS = [
   { value: 'eleven_reader_script', label: 'ElevenReader EPUB' },
+  { value: 'speechify_script', label: 'Speechify EPUB' },
+  { value: 'speechify_audio', label: 'Speechify SSML' },
+  { value: 'elevenlabs_audio', label: 'ElevenLabs Audio' },
   { value: 'flashcards', label: 'Flashcards' },
   { value: 'quizzes', label: 'Quizzes' },
   { value: 'scenarios', label: 'Scenarios' },
@@ -177,8 +171,8 @@ export async function uploadSource(workspaceId: string, file: File): Promise<Sou
   })
 
   if (!response.ok) {
-    const message = await response.text()
-    throw new Error(message || `Upload failed with status ${response.status}.`)
+    const message = await parseApiErrorMessage(response)
+    throw new Error(message)
   }
 
   return response.json() as Promise<Source>
@@ -196,10 +190,6 @@ export async function listWikiEntries(
   return apiRequest<WikiEntry[]>(
     `/workspaces/${workspaceId}/wiki/entries${query ? `?${query}` : ''}`,
   )
-}
-
-export async function listWikiDisputes(workspaceId: string): Promise<WikiDispute[]> {
-  return apiRequest<WikiDispute[]>(`/workspaces/${workspaceId}/wiki/disputes`)
 }
 
 export async function listArtifacts(workspaceId: string): Promise<Artifact[]> {
@@ -240,14 +230,6 @@ export async function createProductionRun(
   })
 }
 
-export async function getProductionRun(runId: string): Promise<ProductionRun> {
-  return apiRequest<ProductionRun>(`/production-runs/${runId}`)
-}
-
 export async function listSkillRuns(runId: string): Promise<SkillRun[]> {
   return apiRequest<SkillRun[]>(`/production-runs/${runId}/skill-runs`)
-}
-
-export async function getSkillRun(skillRunId: string): Promise<SkillRun> {
-  return apiRequest<SkillRun>(`/skill-runs/${skillRunId}`)
 }

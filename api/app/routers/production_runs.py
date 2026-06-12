@@ -10,17 +10,17 @@ from app.dependencies.services import (
     get_source_repository,
     get_workspace_repository,
 )
-from app.repositories.workspaces import WorkspaceRepository
 from app.dependencies.workspace import require_workspace
 from app.models.auth import CurrentUser
 from app.models.production_run import ProductionRunCreate, ProductionRunResponse
 from app.models.skill_run import SkillRunResponse
-from app.pipeline import SUPPORTED_TARGET_ARTIFACTS, build_pipeline
+from app.models.workspace import WorkspaceResponse
+from app.pipeline import SUPPORTED_TARGET_ARTIFACTS
 from app.repositories.production_runs import ProductionRunRepository
 from app.repositories.skill_runs import SkillRunRepository
 from app.repositories.sources import SourceRepository
-from app.services.queue import enqueue_production_run
-from app.services.supabase_rest import SupabaseRestError
+from app.repositories.workspaces import WorkspaceRepository
+from app.services.production_runs import create_and_enqueue_production_run
 
 router = APIRouter(tags=["production-runs"])
 
@@ -44,21 +44,14 @@ def _validate_target_artifacts(target_artifacts: list[str]) -> None:
     response_model=list[ProductionRunResponse],
 )
 async def list_production_runs(
-    workspace: Annotated[dict, Depends(require_workspace)],
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     production_runs: Annotated[
         ProductionRunRepository,
         Depends(get_production_run_repository),
     ],
 ) -> list[ProductionRunResponse]:
-    try:
-        rows = await production_runs.list_for_workspace(workspace["id"], user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
+    rows = await production_runs.list_for_workspace(workspace.id, user.id)
     return [ProductionRunResponse.model_validate(row) for row in rows]
 
 
@@ -69,7 +62,7 @@ async def list_production_runs(
 )
 async def create_production_run(
     payload: ProductionRunCreate,
-    workspace: Annotated[dict, Depends(require_workspace)],
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     settings: Annotated[Settings, Depends(get_settings)],
     sources: Annotated[SourceRepository, Depends(get_source_repository)],
@@ -80,17 +73,11 @@ async def create_production_run(
 ) -> ProductionRunResponse:
     _validate_target_artifacts(payload.target_artifacts)
 
-    try:
-        found_sources = await sources.get_many_for_workspace(
-            payload.source_ids,
-            workspace["id"],
-            user.id,
-        )
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    found_sources = await sources.get_many_for_workspace(
+        payload.source_ids,
+        workspace.id,
+        user.id,
+    )
 
     if len(found_sources) != len(set(payload.source_ids)):
         raise HTTPException(
@@ -98,39 +85,14 @@ async def create_production_run(
             detail="One or more source_ids are invalid for this workspace.",
         )
 
-    pipeline = build_pipeline(payload.target_artifacts)
-
-    try:
-        row = await production_runs.create(
-            {
-                "workspace_id": workspace["id"],
-                "owner_id": user.id,
-                "source_ids": payload.source_ids,
-                "target_artifacts": payload.target_artifacts,
-                "pipeline": pipeline,
-                "status": "queued",
-            },
-        )
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
-    try:
-        enqueue_production_run(settings, row["id"])
-    except Exception as exc:
-        await production_runs.update(
-            row["id"],
-            {
-                "status": "failed",
-                "error": f"Failed to enqueue production run: {exc}",
-            },
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Production run could not be queued. Is Redis running?",
-        ) from exc
+    row = await create_and_enqueue_production_run(
+        workspace_id=workspace.id,
+        owner_id=user.id,
+        source_ids=payload.source_ids,
+        target_artifacts=payload.target_artifacts,
+        settings=settings,
+        production_runs=production_runs,
+    )
 
     return ProductionRunResponse.model_validate(row)
 
@@ -144,13 +106,7 @@ async def get_production_run(
         Depends(get_production_run_repository),
     ],
 ) -> ProductionRunResponse:
-    try:
-        row = await production_runs.get_for_owner(production_run_id, user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    row = await production_runs.get_for_owner(production_run_id, user.id)
 
     if not row:
         raise HTTPException(
@@ -174,13 +130,7 @@ async def list_production_run_skill_runs(
     ],
     skill_runs: Annotated[SkillRunRepository, Depends(get_skill_run_repository)],
 ) -> list[SkillRunResponse]:
-    try:
-        production_run = await production_runs.get_for_owner(production_run_id, user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    production_run = await production_runs.get_for_owner(production_run_id, user.id)
 
     if not production_run:
         raise HTTPException(
@@ -188,14 +138,7 @@ async def list_production_run_skill_runs(
             detail="Production run not found.",
         )
 
-    try:
-        rows = await skill_runs.list_for_production_run(production_run_id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
-
+    rows = await skill_runs.list_for_production_run(production_run_id)
     return [SkillRunResponse.model_validate(row) for row in rows]
 
 
@@ -206,13 +149,7 @@ async def get_skill_run(
     skill_runs: Annotated[SkillRunRepository, Depends(get_skill_run_repository)],
     workspaces: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
 ) -> SkillRunResponse:
-    try:
-        row = await skill_runs.get(skill_run_id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    row = await skill_runs.get(skill_run_id)
 
     if not row:
         raise HTTPException(
@@ -220,13 +157,7 @@ async def get_skill_run(
             detail="Skill run not found.",
         )
 
-    try:
-        workspace = await workspaces.get_for_owner(row["workspace_id"], user.id)
-    except SupabaseRestError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=str(exc),
-        ) from exc
+    workspace = await workspaces.get_for_owner(row["workspace_id"], user.id)
 
     if not workspace:
         raise HTTPException(

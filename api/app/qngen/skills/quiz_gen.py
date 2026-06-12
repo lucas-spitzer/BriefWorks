@@ -54,6 +54,8 @@ class QuizGenSkill:
         segments: list[dict[str, Any]],
         wiki_entries: list[dict[str, Any]],
     ) -> tuple[QuizGenOutput, dict[str, Any]]:
+        # SECURITY: Compact source segments and approved wiki entries are sent to
+        # the model for assessment generation within the authenticated workspace.
         result = self.openai_client.complete_json(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=USER_TEMPLATE.format(

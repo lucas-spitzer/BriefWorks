@@ -57,6 +57,8 @@ class DocumentDeconstructorSkill:
         segments: list[dict[str, Any]],
         existing_labels: list[str] | None = None,
     ) -> tuple[DocumentDeconstructorOutput, dict[str, Any]]:
+        # SECURITY: NDR segment text is private source material sent to the model
+        # for workspace-scoped knowledge extraction only.
         if not segments:
             raise RuntimeError("NDR segments are required for document deconstruction.")
 

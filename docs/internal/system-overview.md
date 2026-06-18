@@ -43,9 +43,9 @@ A **production run** is the unit of work that turns selected source files into a
    - Speechify Script
    - ElevenLabs Audio
    - Speechify Audio
-4. **Intellex Stage** — deconstruction skill(s) always run for each corresponding source file, producing a structured knowledge base (essential terms, concepts, and wiki entries) grounded in the parsed source material.
+4. **Intellex Stage** — ingest skills always run for each selected source: parse, prepare learning-only content, chunk NDR segments, research metadata, then deconstruct into persisted chapters/sections.
 5. **Mathesys Stage** — artifact-generation skills run for each selected Document Narration type, using Intellex outputs as input.
-6. **QnGen Stage** — all QnGen skills always run, producing three assessment outputs: a **flashcard set**, a **question set**, and a **scenario set**.
+6. **QnGen Stage** — when the user selects review targets (flashcards, quizzes, and/or scenarios), the corresponding generate skills run per source (`generate-flashcards`, `generate-questions`, `generate-scenarios`).
 
 ### Pipeline rules
 
@@ -56,7 +56,7 @@ A **production run** is the unit of work that turns selected source files into a
 | Artifact type selection | The user may select any combination of the four Document Narration artifact types. |
 | Intellex deconstruction | Deconstruction skill(s) always run during the Intellex Stage, scoped to the selected source file(s). |
 | Mathesys generation | Only the Mathesys skills that correspond to the user's selected artifact type(s) run. |
-| QnGen assessment | All QnGen skills always run at the end of every production run, regardless of which artifact types were selected. |
+| QnGen assessment | Runs when review targets are selected. Requires intellex extract-knowledge (canonical wiki entries). Each selected target appends its own generate skill step per source. |
 
 ### Pipeline flowchart
 
@@ -75,34 +75,36 @@ flowchart TD
     end
 
     subgraph intellex["Intellex Stage"]
-        F[Ingest & parse sources]
-        G[Source research]
-        H[Chunk into NDR segments]
-        I[Document Deconstructor per source]
-        F --> G --> H --> I
+        F[Parse with LlamaParse]
+        H[Prepare learning content GPT]
+        I[Chunk NDR segments]
+        G[Source research metadata slice]
+        J[Deconstruct into chapters]
+        K[Extract chapter knowledge]
+        F --> H --> I --> G --> J --> K
     end
 
     subgraph mathesys["Mathesys Stage"]
-        J{Selected artifact types}
-        J --> K1[ElevenReader Script skill]
-        J --> K2[Speechify Script skill]
-        J --> K3[ElevenLabs Audio skill]
-        J --> K4[Speechify Audio skill]
+        K{Selected artifact types}
+        K --> L1[ElevenReader Script skill]
+        K --> L2[Speechify Script skill]
+        K --> L3[ElevenLabs Audio skill]
+        K --> L4[Speechify Audio skill]
     end
 
-    subgraph qngen["QnGen Stage (always runs)"]
-        O[Run all QnGen skills]
-        O --> L[Flashcard set]
-        O --> M[Question set]
-        O --> N[Scenario set]
+    subgraph qngen["QnGen Stage (when review selected)"]
+        P1[generate-flashcards]
+        P2[generate-questions]
+        P3[generate-scenarios]
+        P1 & P2 & P3 --> N[flashcards / quizzes / scenarios]
     end
 
     E1 & E2 & E3 & E4 --> F
-    I --> J
-    K1 & K2 & K3 & K4 --> O
+    J --> K
+    L1 & L2 & L3 & L4 --> qngen
 ```
 
-Intellex preparatory steps (ingest, parse, chunk, source research) run before deconstruction on every run. Mathesys only executes skills for the artifact types the user selected. QnGen always produces all three assessment sets as the final stage.
+Intellex preparatory steps (`store`, `parse`, `prepare-document`, `chunk`, `source-research`, `deconstruct-document`, `extract-knowledge`) run on every ingest. `prepare-document` owns all non-learning content removal; `deconstruct-document` persists chapter/section groupings; `extract-knowledge` runs one LLM call per chapter to populate `wiki_entries` with terms, concepts, and insights. Mathesys only executes skills for the artifact types the user selected. `elevenreader-ebook` (v2) requires `document_chapters` and emits one audio-friendly EPUB per source — each chapter is a spine item with an h1 title, h2 subsection cues, and paragraph body text for manual ElevenReader upload. QnGen runs when review targets are selected and requires canonical wiki entries from knowledge extraction.
 
 ## High-Level Architecture
 

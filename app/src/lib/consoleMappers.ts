@@ -5,7 +5,12 @@ import type {
   SkillRun,
   Source,
 } from './workspaceApi'
-import { documentTypeLabel, formatBytes, mimeLabel } from './consoleFormat'
+import {
+  artifactKindLabel,
+  documentTypeLabel,
+  formatBytes,
+  mimeLabel,
+} from './consoleFormat'
 
 function metadataRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -100,7 +105,9 @@ export function productionRunLabel(run: ProductionRun, sources: Source[]): strin
 
   const sourcePart = titles.length ? titles.join(', ') : `${run.source_ids.length} source(s)`
   const targetPart =
-    run.target_artifacts.length > 0 ? run.target_artifacts.join(', ') : 'ingest only'
+    run.target_artifacts.length > 0
+      ? run.target_artifacts.map((artifact) => artifactKindLabel(artifact)).join(', ')
+      : 'ingest only'
   return `${sourcePart} → ${targetPart}`
 }
 
@@ -113,9 +120,7 @@ export function productionRunProgress(run: ProductionRun): number {
 
 export function productionRunDurationSec(run: ProductionRun): number {
   const start = new Date(run.created_at).getTime()
-  const end = run.completed_at
-    ? new Date(run.completed_at).getTime()
-    : new Date(run.updated_at).getTime()
+  const end = run.completed_at ? new Date(run.completed_at).getTime() : Date.now()
   return Math.max(0, Math.round((end - start) / 1000))
 }
 
@@ -127,7 +132,7 @@ export function skillRunDurationSec(skill: SkillRun): number {
 }
 
 export function skillRunSummary(skill: SkillRun): string {
-  if (skill.error) return skill.error
+  if (skill.error) return 'Execution failed.'
   if (skill.output && typeof skill.output.summary === 'string') {
     return skill.output.summary
   }
@@ -144,6 +149,65 @@ export function skillRunTokens(skill: SkillRun): { in: number; out: number } {
     in: usage.input_tokens ?? usage.prompt_tokens ?? 0,
     out: usage.output_tokens ?? usage.completion_tokens ?? 0,
   }
+}
+
+export function skillRunApiUsageTotals(
+  skill: SkillRun,
+): { costUsd: number; elevenlabsTokens: number } {
+  const usage = skill.api_usage
+
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) {
+    return { costUsd: 0, elevenlabsTokens: 0 }
+  }
+
+  const totals = (usage as { totals?: Record<string, unknown> }).totals
+
+  if (!totals || typeof totals !== 'object') {
+    return { costUsd: 0, elevenlabsTokens: 0 }
+  }
+
+  const costUsd = typeof totals.cost_usd === 'number' ? totals.cost_usd : 0
+  const elevenlabsTokens =
+    typeof totals.elevenlabs_tokens === 'number'
+      ? totals.elevenlabs_tokens
+      : typeof totals.character_count === 'number'
+        ? totals.character_count
+        : 0
+
+  return { costUsd, elevenlabsTokens }
+}
+
+export function skillRunCostUsd(skill: SkillRun): number {
+  const stored = typeof skill.cost_usd === 'number' ? skill.cost_usd : 0
+
+  if (stored > 0) {
+    return stored
+  }
+
+  return skillRunApiUsageTotals(skill).costUsd
+}
+
+export function skillRunElevenLabsTokens(skill: SkillRun): number {
+  return skillRunApiUsageTotals(skill).elevenlabsTokens
+}
+
+export function productionRunCostUsd(
+  run: ProductionRun,
+  skillRuns: SkillRun[] = [],
+): number {
+  const rolledUp = typeof run.cost_usd === 'number' ? run.cost_usd : 0
+  const fromSkills = skillRuns.reduce((total, skill) => total + skillRunCostUsd(skill), 0)
+  return Math.max(rolledUp, fromSkills)
+}
+
+export function sumWorkspaceCostUsd(
+  productionRuns: ProductionRun[],
+  skillRunsByRunId: Record<string, SkillRun[]>,
+): number {
+  return productionRuns.reduce(
+    (total, run) => total + productionRunCostUsd(run, skillRunsByRunId[run.id] ?? []),
+    0,
+  )
 }
 
 export function skillRunDisplayName(skill: SkillRun): string {
@@ -172,12 +236,6 @@ export function artifactModule(artifact: Artifact): string {
     return 'mathesys'
   }
   return 'intellex'
-}
-
-export function artifactSummary(artifact: Artifact): string {
-  const manifest = artifact.manifest
-  if (typeof manifest.summary === 'string') return manifest.summary
-  return `${artifact.format} · ${formatBytes(artifact.file_size_bytes)}`
 }
 
 export interface SourceDisplay {

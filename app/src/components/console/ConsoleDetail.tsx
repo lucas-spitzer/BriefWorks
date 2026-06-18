@@ -1,17 +1,28 @@
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
-import { artifactKindLabel, formatBytes, formatDuration, statusLabel } from '../../lib/consoleFormat'
+import { useLiveTick } from '../../hooks/useLiveTick'
+import {
+  artifactFormatLabel,
+  artifactKindLabel,
+  formatBytes,
+  formatCostUsd,
+  formatDuration,
+  statusLabel,
+} from '../../lib/consoleFormat'
 import {
   pipelineStepLabel,
+  productionRunCostUsd,
   productionRunDurationSec,
   productionRunLabel,
   productionRunProgress,
+  skillRunCostUsd,
   skillRunDisplayName,
   skillRunDurationSec,
+  skillRunElevenLabsTokens,
   skillRunSummary,
   skillRunTokens,
 } from '../../lib/consoleMappers'
 import type { ProductionRun } from '../../lib/workspaceApi'
-import { moduleLabel } from './moduleLabel'
+import { moduleLabel, pipelineStepModuleLabel } from './moduleLabel'
 
 interface ConsoleDetailProps {
   run: ProductionRun
@@ -21,8 +32,14 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
   const { sources, skillRunsByRunId, artifacts, wikiEntries, downloadArtifact } = useWorkspaceData()
   const skillRuns = skillRunsByRunId[run.id] ?? []
   const runArtifacts = artifacts.filter((artifact) => artifact.production_run_id === run.id)
+  const hasLiveDuration =
+    run.status === 'queued' ||
+    run.status === 'running' ||
+    skillRuns.some((skill) => skill.status === 'queued' || skill.status === 'running')
+  useLiveTick(hasLiveDuration)
   const progress = productionRunProgress(run)
   const durationSec = productionRunDurationSec(run)
+  const runCost = productionRunCostUsd(run, skillRuns)
 
   return (
     <section className="bw-console__panel">
@@ -34,6 +51,7 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
         <h4>{productionRunLabel(run, sources)}</h4>
         <div className="meta">
           {statusLabel(run.status)} · {formatDuration(durationSec)} · {progress}% complete
+          {runCost > 0 ? ` · ${formatCostUsd(runCost)}` : ''}
           {run.target_artifacts.length
             ? ` · target ${run.target_artifacts.map((kind) => artifactKindLabel(kind)).join(', ')}`
             : ' · ingest only'}
@@ -64,7 +82,7 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
               <div className="name">
                 {pipelineStepLabel(step)}{' '}
                 {step.module ? (
-                  <span className="bw-console__module-tag">{moduleLabel(step.module)}</span>
+                  <span className="bw-console__module-tag">{pipelineStepModuleLabel(step)}</span>
                 ) : null}
               </div>
               <div className="desc">{step.detail ?? statusLabel(step.status)}</div>
@@ -79,6 +97,8 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
             </div>
             {skillRuns.map((skill) => {
               const tokens = skillRunTokens(skill)
+              const elevenlabsTokens = skillRunElevenLabsTokens(skill)
+              const costUsd = skillRunCostUsd(skill)
               return (
                 <div className="bw-console__step" key={skill.id}>
                   <span className={`bw-console__step-dot bw-console__step-dot--${skill.status}`}>
@@ -95,7 +115,10 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
                       <span>{formatDuration(skillRunDurationSec(skill))}</span>
                       {tokens.in + tokens.out > 0 ? (
                         <span>{((tokens.in + tokens.out) / 1000).toFixed(1)}K tok</span>
+                      ) : elevenlabsTokens > 0 ? (
+                        <span>{(elevenlabsTokens / 1000).toFixed(1)}K EL tok</span>
                       ) : null}
+                      {costUsd > 0 ? <span>{formatCostUsd(costUsd)}</span> : null}
                     </div>
                   </div>
                 </div>
@@ -116,7 +139,7 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
                 key={artifact.id}
                 onClick={() => void downloadArtifact(artifact.id)}
               >
-                <span className="ic">{artifact.format}</span>
+                <span className="ic">{artifactFormatLabel(artifact.format)}</span>
                 <span>
                   <div className="t">{artifact.filename}</div>
                   <div className="s">
@@ -137,6 +160,7 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
               {wikiEntries.slice(0, 8).map((entry) => (
                 <span className="bw-console__chip" key={entry.id}>
                   {entry.preferred_label}
+                  <span style={{ opacity: 0.65, marginLeft: 6 }}>{entry.entry_kind}</span>
                 </span>
               ))}
             </div>

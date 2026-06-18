@@ -52,13 +52,31 @@ def _flush_paragraph(
     return sequence_index + 1
 
 
+def _classify_line(document: ParsedDocument, line: ParsedLine) -> str:
+    if line.kind == "heading":
+        return "heading"
+
+    if line.kind == "paragraph":
+        return "paragraph"
+
+    classified = classify_lines(
+        ParsedDocument(page_count=document.page_count, lines=[line], parser=document.parser),
+    )
+
+    if classified:
+        return classified[0][0]
+
+    return "paragraph"
+
+
 def build_ndr_segments(document: ParsedDocument) -> list[dict[str, Any]]:
-    classified = classify_lines(document)
     segments: list[dict[str, Any]] = []
     paragraph_parts: list[ParsedLine] = []
     sequence_index = 0
 
-    for kind, line in classified:
+    for line in document.lines:
+        kind = _classify_line(document, line)
+
         if kind == "heading":
             sequence_index = _flush_paragraph(
                 parts=paragraph_parts,

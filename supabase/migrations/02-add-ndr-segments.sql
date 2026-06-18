@@ -1,4 +1,4 @@
--- Phase B: NDR segments for parsed and chunked source content
+-- NDR segments for parsed and chunked source content
 
 create table public.ndr_segments (
   id uuid primary key default gen_random_uuid(),

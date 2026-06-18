@@ -1,6 +1,47 @@
-# BriefWorks Supabase Migrations
+# BriefWorks Supabase
 
-## Apply Phase A migration
+Database bootstrap for BriefWorks. Two paths depending on whether you are starting fresh or upgrading an existing project.
+
+| Path | Use when |
+|------|----------|
+| [`setup/`](setup/README.md) | New Supabase project — greenfield install |
+| [`migrations/`](migrations/) | Existing database — incremental upgrade history |
+
+## Prerequisites
+
+- **Google OAuth** configured in Supabase Auth (required for sign-in).
+- The FastAPI backend uses the **service role** key for data access in V1. Client roles are revoked from application tables.
+
+After either path, replace the placeholder owner email in `approved_users` with your own Google account address.
+
+---
+
+## New project setup (recommended)
+
+For a fresh Supabase project, run the consolidated scripts in [`setup/`](setup/README.md). They create the full current schema and skill seeds — no incremental refactors or renames.
+
+```text
+supabase/setup/01-auth-and-extensions.sql
+supabase/setup/02-schema.sql
+supabase/setup/03-seed-skills.sql
+supabase/setup/04-storage-and-rls.sql
+```
+
+Run them in order in the Supabase SQL editor, or with the CLI linked to your project:
+
+```bash
+for f in supabase/setup/*.sql; do
+  supabase db execute --file "$f"
+done
+```
+
+See [`setup/README.md`](setup/README.md) for the full inventory of tables, buckets, and seeded skills.
+
+---
+
+## Migrations (existing databases)
+
+If the database was already built from earlier BriefWorks schema files, apply new changes from `migrations/` in numeric order. Do **not** run the setup scripts on a database that already has BriefWorks tables — use migrations instead.
 
 Run the SQL in the Supabase SQL editor, or use the Supabase CLI if linked:
 
@@ -11,55 +52,51 @@ supabase db push
 Migration files (apply in order):
 
 ```text
-supabase/migrations/20260606120000_phase_a_foundation.sql
-supabase/migrations/20260607120000_phase_b_ndr_segments.sql
-supabase/migrations/20260608120000_phase_c_source_research_prompt.sql
-supabase/migrations/20260609120000_phase_d_wiki_entries.sql
-supabase/migrations/20260609130000_phase_d_document_deconstructor_prompt.sql
-supabase/migrations/20260610120000_phase_e_artifacts.sql
-supabase/migrations/20260611120000_phase_f_assessments.sql
+supabase/migrations/00-add-users.sql
+supabase/migrations/01-add-workspace-skills.sql
+supabase/migrations/02-add-ndr-segments.sql
+supabase/migrations/03-update-source-research.sql
+supabase/migrations/04-add-wiki-entries.sql
+supabase/migrations/05-update-document-deconstructor.sql
+supabase/migrations/06-add-artifacts.sql
+supabase/migrations/07-add-assessments.sql
+supabase/migrations/08-add-narration-artifacts.sql
+supabase/migrations/09-mathesys-audio-skills.sql
+supabase/migrations/10-add-api-cost-tracking.sql
+supabase/migrations/12-update-source-research-metadata-slice.sql
+supabase/migrations/13-add-prepare-skill.sql
+supabase/migrations/14-add-assessment-sets.sql
+supabase/migrations/15-rename-skills.sql
+supabase/migrations/16-rename-mathesys-skills.sql
+supabase/migrations/17-refocus-prepare-deconstruct.sql
+supabase/migrations/18-add-extract-chapter-knowledge.sql
+supabase/migrations/19-rename-extract-knowledge.sql
+supabase/migrations/19-elevenreader-ebook-v2.sql
 ```
 
-## What Phase A creates
+### Migration reference
 
-- `workspaces`
-- `skills` (seeded with v1 Intellex/Mathesys skills)
-- `sources`
-- `production_runs`
-- `skill_runs`
-- private Storage bucket `sources`
+These files record how the schema evolved. The final state they produce is equivalent to running `setup/` on an empty database.
 
-## What Phase B adds
-
-- `ndr_segments` — chunked NDR text segments with page locators
-
-## What Phase C adds
-
-- Updated `source-research` skill prompt/schema metadata
-- No new tables (skill output is stored on `skill_runs.output` and promoted to `sources.source_metadata.research`)
-
-## What Phase D adds
-
-- `wiki_entries` — canonical workspace terms/concepts
-- `wiki_disputes` — non-blocking conflict log for competing definitions
-- `document-deconstructor` skill promotion into Wiki
-
-## What Phase E adds
-
-- `artifacts` — generated EPUB and future Mathesys outputs
-- private Storage bucket `artifacts`
-- `eleven-reader-script` skill (Mathesys)
-
-## What Phase F adds
-
-- `flashcards`, `quizzes`, `scenarios` — promoted QnGen assessment entities
-- seeded QnGen skills: `flashcard-gen`, `quiz-gen`, `scenario-gen`
-
-## Prerequisites
-
-The auth migration from `docs/internal/authentication-plan.md` should already be applied:
-
-- `profiles`
-- `approved_users`
-
-The FastAPI backend uses the service role key for data access in V1. Client roles are revoked from the Phase A–F tables.
+| File | Adds or changes |
+|------|-----------------|
+| `00-add-users.sql` | `approved_users` allowlist |
+| `01-add-workspace-skills.sql` | Core tables, initial skill seeds, `sources` bucket |
+| `02-add-ndr-segments.sql` | `ndr_segments` |
+| `03-update-source-research.sql` | `source-research` skill metadata |
+| `04-add-wiki-entries.sql` | `wiki_entries`, `wiki_disputes` |
+| `05-update-document-deconstructor.sql` | `deconstruct-document` skill metadata |
+| `06-add-artifacts.sql` | `artifacts`, `artifacts` bucket |
+| `07-add-assessments.sql` | `flashcards`, `quizzes`, `scenarios`, QnGen skill seeds |
+| `08-add-narration-artifacts.sql` | Expanded `artifacts.artifact_type` values |
+| `09-mathesys-audio-skills.sql` | `speechify-audio`, `elevenlabs-audio` skill seeds |
+| `10-add-api-cost-tracking.sql` | `api_usage`, `cost_usd` on runs |
+| `12-update-source-research-metadata-slice.sql` | `source-research` metadata-slice prompts |
+| `13-add-prepare-skill.sql` | `prepare-document` v1.0.0 |
+| `14-add-assessment-sets.sql` | `assessment_sets`, assessment linkage columns |
+| `15-rename-skills.sql` | Skill ID renames (Intellex + QnGen) |
+| `16-rename-mathesys-skills.sql` | Mathesys skill ID renames |
+| `17-refocus-prepare-deconstruct.sql` | `document_chapters`, prepare/deconstruct v2.0.0 |
+| `18-add-extract-chapter-knowledge.sql` | `wiki_entries.entry_kind`, `extract-knowledge` skill |
+| `19-rename-extract-knowledge.sql` | Rename to `extract-knowledge` |
+| `19-elevenreader-ebook-v2.sql` | `elevenreader-ebook` v2.0.0 |

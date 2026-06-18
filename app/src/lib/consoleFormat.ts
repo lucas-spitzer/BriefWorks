@@ -25,9 +25,8 @@ export function documentTypeLabel(type: string): string {
 }
 
 export const artifactKindLabels: Record<string, string> = {
-  eleven_reader_script: 'ElevenReader EPUB',
-  speechify_script: 'Speechify EPUB',
-  speechify_audio: 'Speechify SSML',
+  eleven_reader_script: 'ElevenReader EBook',
+  speechify_audio: 'Speechify Audio',
   elevenlabs_audio: 'ElevenLabs Audio',
   lesson: 'Lesson Module',
   assessment: 'Assessment Bank',
@@ -77,8 +76,28 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+export function formatCostUsd(amount: number): string {
+  if (!Number.isFinite(amount) || amount <= 0) return '—'
+  if (amount < 0.01) return `$${amount.toFixed(4)}`
+  if (amount < 1) return `$${amount.toFixed(3)}`
+  return `$${amount.toFixed(2)}`
+}
+
 export function mimeLabel(mimeType: string): string {
   const parts = mimeType.split('/')
   const subtype = parts[parts.length - 1] ?? mimeType
   return subtype.toUpperCase()
+}
+
+const artifactFormatLabels: Record<string, string> = {
+  epub3: 'EPUB',
+  ssml: 'SSML',
+  elevenlabs_json: 'JSON',
+}
+
+export function artifactFormatLabel(format: string): string {
+  if (artifactFormatLabels[format]) {
+    return artifactFormatLabels[format]
+  }
+  return format.replace(/\d+$/, '').toUpperCase()
 }

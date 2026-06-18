@@ -3,6 +3,7 @@ import {
   createProductionRun as createProductionRunRequest,
   getArtifactDownloadUrl,
   listArtifacts,
+  listAssessmentSets,
   listFlashcards,
   listProductionRuns,
   listQuizzes,
@@ -12,6 +13,7 @@ import {
   listWikiEntries,
   uploadSource as uploadSourceRequest,
   type Artifact,
+  type AssessmentSetSummary,
   type Flashcard,
   type ProductionRun,
   type Quiz,
@@ -39,6 +41,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
   const [skillRunsByRunId, setSkillRunsByRunId] = useState<Record<string, SkillRun[]>>({})
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [wikiEntries, setWikiEntries] = useState<WikiEntry[]>([])
+  const [assessmentSets, setAssessmentSets] = useState<AssessmentSetSummary[]>([])
   const [flashcards, setFlashcards] = useState<Flashcard[]>([])
   const [quizzes, setQuizzes] = useState<Quiz[]>([])
   const [scenarios, setScenarios] = useState<Scenario[]>([])
@@ -62,6 +65,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
         nextRuns,
         nextArtifacts,
         nextWikiEntries,
+        nextAssessmentSets,
         nextFlashcards,
         nextQuizzes,
         nextScenarios,
@@ -70,6 +74,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
         listProductionRuns(workspaceId),
         listArtifacts(workspaceId),
         listWikiEntries(workspaceId),
+        listAssessmentSets(workspaceId),
         listFlashcards(workspaceId),
         listQuizzes(workspaceId),
         listScenarios(workspaceId),
@@ -84,6 +89,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       setSkillRunsByRunId(Object.fromEntries(skillRunEntries))
       setArtifacts(nextArtifacts)
       setWikiEntries(nextWikiEntries)
+      setAssessmentSets(nextAssessmentSets)
       setFlashcards(nextFlashcards)
       setQuizzes(nextQuizzes)
       setScenarios(nextScenarios)
@@ -102,6 +108,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       setSkillRunsByRunId({})
       setArtifacts([])
       setWikiEntries([])
+      setAssessmentSets([])
       setFlashcards([])
       setQuizzes([])
       setScenarios([])
@@ -168,13 +175,13 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       skillRunsByRunId,
       artifacts,
       wikiEntries,
+      assessmentSets,
       flashcards,
       quizzes,
       scenarios,
       isLoading,
       error,
       activeRunCount,
-      refresh,
       uploadSource,
       createProductionRun,
       downloadArtifact,
@@ -185,13 +192,13 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       skillRunsByRunId,
       artifacts,
       wikiEntries,
+      assessmentSets,
       flashcards,
       quizzes,
       scenarios,
       isLoading,
       error,
       activeRunCount,
-      refresh,
       uploadSource,
       createProductionRun,
       downloadArtifact,

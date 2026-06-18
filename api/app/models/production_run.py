@@ -18,6 +18,7 @@ class ProductionRunResponse(BaseModel):
     pipeline: list[dict[str, Any]]
     status: str
     error: str | None
+    cost_usd: float = 0
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None

@@ -1,0 +1,87 @@
+from app.services.skill_run_backfill import (
+    backfill_fields_for_skill_run,
+    enrich_skill_run_row,
+    execution_from_skill_run,
+)
+
+
+def test_enrich_skill_run_row_fills_missing_cost() -> None:
+    enriched = enrich_skill_run_row(
+        {
+            "skill_id": "elevenreader-ebook",
+            "model": "gpt-4o-mini",
+            "cost_usd": 0,
+            "token_usage": {"input_tokens": 500, "output_tokens": 100},
+            "api_usage": {},
+        },
+    )
+
+    assert enriched["cost_usd"] > 0
+    assert enriched["api_usage"]["totals"]["input_tokens"] == 500
+
+
+def test_execution_from_source_research_infers_tavily() -> None:
+    execution = execution_from_skill_run(
+        {
+            "skill_id": "source-research",
+            "model": "gpt-4o-mini",
+            "token_usage": {"input_tokens": 100, "output_tokens": 50},
+            "output": {"web_sources": [{"url": "https://example.com"}]},
+        },
+    )
+
+    assert execution["web_search_count"] == 1
+
+
+def test_backfill_fields_from_existing_token_usage() -> None:
+    fields = backfill_fields_for_skill_run(
+        {
+            "skill_id": "deconstruct-document",
+            "model": "gpt-4o-mini",
+            "token_usage": {
+                "input_tokens": 66471,
+                "output_tokens": 10249,
+            },
+        },
+    )
+
+    assert fields["cost_usd"] > 0
+    assert fields["api_usage"]["totals"]["input_tokens"] == 66471
+    assert fields["api_usage"]["totals"]["output_tokens"] == 10249
+
+
+def test_backfill_fields_for_mathesys_llm_token_usage() -> None:
+    fields = backfill_fields_for_skill_run(
+        {
+            "skill_id": "elevenreader-ebook",
+            "model": "gpt-4o-mini",
+            "token_usage": {
+                "input_tokens": 12_000,
+                "output_tokens": 3_000,
+            },
+        },
+    )
+
+    assert fields["cost_usd"] > 0
+    assert fields["api_usage"]["totals"]["input_tokens"] == 12_000
+    assert fields["api_usage"]["totals"]["output_tokens"] == 3_000
+
+
+def test_backfill_fields_include_elevenlabs_tts_from_artifacts() -> None:
+    fields = backfill_fields_for_skill_run(
+        {
+            "skill_id": "elevenlabs-audio",
+            "model": "deterministic-passthrough",
+            "token_usage": {},
+        },
+        artifact_manifests=[
+            {
+                "model_id": "eleven_v3",
+                "character_count": 10_000,
+                "tts_request_count": 4,
+            },
+        ],
+    )
+
+    assert fields["cost_usd"] > 0
+    assert fields["api_usage"]["totals"]["elevenlabs_tokens"] == 10_000

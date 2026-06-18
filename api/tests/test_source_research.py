@@ -1,8 +1,8 @@
+from app.intellex.metadata_slice import build_metadata_slice
 from app.intellex.models import ParsedDocument, ParsedLine
 from app.intellex.skills.models import SourceResearchOutput
 from app.intellex.skills.promotion import merge_research_into_source_metadata
 from app.intellex.skills.source_research import SourceResearchSkill
-from app.intellex.text_sampling import sample_text_for_research
 from app.services.openai_client import OpenAICompletionResult
 
 
@@ -38,7 +38,7 @@ class DisabledWebClient:
         return []
 
 
-def test_sample_text_for_research_prefers_early_pages() -> None:
+def test_build_metadata_slice_prefers_early_pages() -> None:
     document = ParsedDocument(
         page_count=10,
         lines=[
@@ -48,7 +48,7 @@ def test_sample_text_for_research_prefers_early_pages() -> None:
         ],
     )
 
-    sample = sample_text_for_research(document, max_chars=500)
+    sample = build_metadata_slice(document, max_chars=500)
 
     assert "MCDP 1 Warfighting" in sample
     assert "Late page content" not in sample
@@ -62,6 +62,7 @@ def test_merge_research_into_source_metadata_preserves_parse_block() -> None:
         issuing_authority="US Marine Corps",
         publication_date_in_document="1997-06-20",
         publication_date_public="1997-06-20",
+        distribution_line="Approved for public release; distribution is unlimited.",
         confidence={"title": 0.98},
         provenance={"title": "document"},
     )
@@ -75,9 +76,10 @@ def test_merge_research_into_source_metadata_preserves_parse_block() -> None:
     assert merged["parse"]["page_count"] == 96
     assert merged["research"]["title"] == "Warfighting"
     assert merged["research"]["identifier"] == "MCDP 1"
+    assert merged["research"]["distribution_line"].startswith("Approved")
 
 
-def test_source_research_skill_uses_document_first_and_infers_public_date_without_web() -> None:
+def test_source_research_skill_extracts_metadata_slice_fields() -> None:
     document = ParsedDocument(
         page_count=1,
         lines=[ParsedLine(text="MCDP 1 Warfighting", page=1, font_size=12.0)],
@@ -95,6 +97,7 @@ def test_source_research_skill_uses_document_first_and_infers_public_date_withou
                 "publication_date_public": None,
                 "source_url": None,
                 "abstract": None,
+                "distribution_line": "Approved for public release; distribution is unlimited.",
                 "confidence": {"title": 0.98},
                 "provenance": {"title": "document"},
             },
@@ -109,6 +112,5 @@ def test_source_research_skill_uses_document_first_and_infers_public_date_withou
     )
 
     assert output.title == "Warfighting"
-    assert output.publication_date_public == "1997-06-20"
-    assert output.provenance["publication_date_public"] == "inferred"
+    assert output.distribution_line.startswith("Approved")
     assert execution["token_usage"]["total_tokens"] == 150

@@ -6,7 +6,7 @@ from typing import Any, Callable
 from app.mathesys.audio.audio_document_builder import AudioDocumentBuilder
 from app.mathesys.chapter_grouping import (
     chapter_page_count,
-    group_segments_into_chapters,
+    resolve_chapters_for_source,
     split_chapters_into_volumes,
 )
 from app.mathesys.epub_builder import build_epub
@@ -28,6 +28,10 @@ class NarrationSkillBase:
         self.max_pages_per_volume = max_pages_per_volume or int(
             os.getenv("ELEVEN_READER_MAX_PAGES", "500"),
         )
+
+    @property
+    def _build_model_label(self) -> str:
+        return "deterministic-passthrough"
 
     def _extract_publication_metadata(self, source_metadata: dict[str, Any]) -> dict[str, Any]:
         research = source_metadata.get("research") or {}
@@ -70,6 +74,7 @@ class NarrationSkillBase:
         source_metadata: dict[str, Any],
         segments: list[dict[str, Any]],
         wiki_entries: list[dict[str, Any]],
+        chapter_rows: list[dict[str, Any]] | None = None,
         emit_volume: Callable[
             [AudioDocument, dict[str, Any]],
             tuple[dict[str, Any], ValidationResult],
@@ -77,7 +82,13 @@ class NarrationSkillBase:
         transformations: list[str],
         audience: str | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        grouped_chapters = group_segments_into_chapters(segments)
+        if not segments:
+            raise RuntimeError("No NDR segments available for narration.")
+
+        grouped_chapters = resolve_chapters_for_source(
+            chapter_rows=chapter_rows or [],
+            segments=segments,
+        )
         volumes = split_chapters_into_volumes(
             grouped_chapters,
             max_pages=self.max_pages_per_volume,
@@ -87,7 +98,7 @@ class NarrationSkillBase:
         base_title = metadata["title"]
         generated_volumes: list[dict[str, Any]] = []
         token_usage: dict[str, int] = {}
-        model = self.document_builder.openai_client.model
+        model = self._build_model_label
         all_wiki_ids: set[str] = set()
         all_segment_ids: set[str] = set()
         all_warnings: list[str] = []
@@ -139,16 +150,16 @@ class NarrationSkillBase:
             "segment_ids_used": sorted(all_segment_ids),
             "transformations": transformations,
             "warnings": all_warnings,
+            "prepare": source_metadata.get("prepare"),
         }
 
 
-def emit_epub_volume(
-    *,
-    target: str,
-) -> Callable[[AudioDocument, dict[str, Any]], tuple[dict[str, Any], ValidationResult]]:
+def emit_epub_volume() -> Callable[
+    [AudioDocument, dict[str, Any]],
+    tuple[dict[str, Any], ValidationResult],
+]:
     def _emit(document: AudioDocument, metadata: dict[str, Any]) -> tuple[dict[str, Any], ValidationResult]:
-        epub_target = "elevenreader_app_epub" if target == "elevenreader_app_epub" else "speechify_app_epub"
-        chapters = audio_document_to_epub_chapters(document, target=epub_target)
+        chapters = audio_document_to_epub_chapters(document, target="elevenreader_app_epub")
         epub_bytes = build_epub(
             title=document.title,
             author=metadata["author"],

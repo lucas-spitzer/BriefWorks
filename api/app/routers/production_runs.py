@@ -21,6 +21,7 @@ from app.repositories.skill_runs import SkillRunRepository
 from app.repositories.sources import SourceRepository
 from app.repositories.workspaces import WorkspaceRepository
 from app.services.production_runs import create_and_enqueue_production_run
+from app.services.skill_run_backfill import enrich_skill_run_row
 
 router = APIRouter(tags=["production-runs"])
 
@@ -139,7 +140,7 @@ async def list_production_run_skill_runs(
         )
 
     rows = await skill_runs.list_for_production_run(production_run_id)
-    return [SkillRunResponse.model_validate(row) for row in rows]
+    return [SkillRunResponse.model_validate(enrich_skill_run_row(row)) for row in rows]
 
 
 @router.get("/skill-runs/{skill_run_id}", response_model=SkillRunResponse)
@@ -165,4 +166,4 @@ async def get_skill_run(
             detail="Skill run not found.",
         )
 
-    return SkillRunResponse.model_validate(row)
+    return SkillRunResponse.model_validate(enrich_skill_run_row(row))

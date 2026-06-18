@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.mathesys.skills.narration_base import NarrationSkillBase, emit_epub_volume
+from app.mathesys.skills.elevenreader_epub import build_single_elevenreader_epub
+from app.mathesys.skills.narration_base import NarrationSkillBase
 
 
 class ElevenReaderScriptSkill(NarrationSkillBase):
@@ -12,19 +13,14 @@ class ElevenReaderScriptSkill(NarrationSkillBase):
         source_metadata: dict[str, Any],
         segments: list[dict[str, Any]],
         wiki_entries: list[dict[str, Any]],
+        chapter_rows: list[dict[str, Any]] | None = None,
         audience: str | None = None,
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-        return self.run_volumes(
+        return build_single_elevenreader_epub(
             source_metadata=source_metadata,
             segments=segments,
+            chapter_rows=chapter_rows,
             wiki_entries=wiki_entries,
             audience=audience,
-            emit_volume=emit_epub_volume(target="elevenreader_app_epub"),
-            transformations=[
-                "audio_document_normalization",
-                "elevenreader_epub_xhtml",
-                "acronym_expansion",
-                "paragraph_preservation",
-                "wiki_terminology",
-            ],
+            narration_base=self,
         )

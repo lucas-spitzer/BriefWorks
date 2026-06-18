@@ -1,4 +1,4 @@
--- Expand artifact types for Document Narration outputs.
+-- Expand artifact types for Document Narration outputs
 
 alter table public.artifacts
   drop constraint if exists artifacts_type_check;

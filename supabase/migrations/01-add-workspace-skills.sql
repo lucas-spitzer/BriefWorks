@@ -1,5 +1,4 @@
--- Phase A: BriefWorks foundation schema
--- workspaces, skills, sources, production_runs, skill_runs, storage bucket
+-- Foundation schema: workspaces, skills, sources, production_runs, skill_runs, storage bucket
 
 create extension if not exists pgcrypto;
 
@@ -184,10 +183,10 @@ values
     '{"system":"Extract document metadata from parsed text first, then corroborate gaps using public web sources when needed.","user_template":"Source metadata extraction for {{source_id}}."}'::jsonb
   ),
   (
-    'document-deconstructor',
+    'deconstruct-document',
     '1.0.0',
     'intellex',
-    'Document Deconstructor',
+    'Deconstruct Document',
     'Identify essential terms and concepts required to understand a document.',
     array['text'],
     '{"type":"object","properties":{"source_id":{"type":"string"},"ndr_segment_ids":{"type":"array"}}}'::jsonb,
@@ -195,11 +194,11 @@ values
     '{"system":"Deconstruct the document into essential terms and concepts. Do not summarize or produce lesson narrative.","user_template":"Extract concepts for source {{source_id}}."}'::jsonb
   ),
   (
-    'eleven-reader-script',
+    'elevenreader-ebook',
     '1.0.0',
     'mathesys',
-    'ElevenReader Script',
-    'Generate a Wiki-aware EPUB script for ElevenReader upload.',
+    'ElevenReader EBook',
+    'Generate a Wiki-aware, content-only EPUB EBook for easy import into ElevenReader.',
     array['text'],
     '{"type":"object","properties":{"source_id":{"type":"string"},"wiki_entry_ids":{"type":"array"}}}'::jsonb,
     '{"type":"object","properties":{"manifest":{"type":"object"},"files":{"type":"array"}}}'::jsonb,

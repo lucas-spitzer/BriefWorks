@@ -108,6 +108,49 @@ class WorkerDatabase:
             params={"source_id": f"eq.{source_id}"},
         )
 
+    def delete_document_chapters_for_source(self, source_id: str) -> None:
+        self._request(
+            "DELETE",
+            "document_chapters",
+            params={"source_id": f"eq.{source_id}"},
+        )
+
+    def insert_document_chapters(self, chapters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not chapters:
+            return []
+
+        created: list[dict[str, Any]] = []
+
+        for start in range(0, len(chapters), NDR_SEGMENT_BATCH_SIZE):
+            batch = chapters[start : start + NDR_SEGMENT_BATCH_SIZE]
+            created.extend(self._request("POST", "document_chapters", json_body=batch) or [])
+
+        return created
+
+    def list_document_chapters_for_source(self, source_id: str) -> list[dict[str, Any]]:
+        rows = self._request(
+            "GET",
+            "document_chapters",
+            params={
+                "select": "*",
+                "source_id": f"eq.{source_id}",
+                "order": "sequence_index.asc",
+            },
+        )
+        return rows or []
+
+    def has_document_chapters_for_source(self, source_id: str) -> bool:
+        rows = self._request(
+            "GET",
+            "document_chapters",
+            params={
+                "select": "id",
+                "source_id": f"eq.{source_id}",
+                "limit": "1",
+            },
+        )
+        return bool(rows)
+
     def insert_ndr_segments(self, segments: list[dict[str, Any]]) -> None:
         if not segments:
             return
@@ -153,6 +196,20 @@ class WorkerDatabase:
             },
         )
         return rows or []
+
+    def has_completed_skill_run_for_source(self, source_id: str, skill_id: str) -> bool:
+        rows = self._request(
+            "GET",
+            "skill_runs",
+            params={
+                "select": "id",
+                "skill_id": f"eq.{skill_id}",
+                "status": "eq.completed",
+                "inputs->>source_id": f"eq.{source_id}",
+                "limit": "1",
+            },
+        )
+        return bool(rows)
 
     def list_wiki_entries_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
         rows = self._request(
@@ -254,6 +311,51 @@ class WorkerDatabase:
 
         return created
 
+    def sum_skill_run_costs(self, production_run_id: str) -> float:
+        rows = self._request(
+            "GET",
+            "skill_runs",
+            params={
+                "select": "cost_usd",
+                "production_run_id": f"eq.{production_run_id}",
+            },
+        )
+
+        return round(
+            sum(float(row.get("cost_usd") or 0) for row in (rows or [])),
+            6,
+        )
+
+    def list_skill_runs_for_production_run(
+        self,
+        production_run_id: str,
+    ) -> list[dict[str, Any]]:
+        rows = self._request(
+            "GET",
+            "skill_runs",
+            params={
+                "select": "*",
+                "production_run_id": f"eq.{production_run_id}",
+                "order": "created_at.asc",
+            },
+        )
+        return rows or []
+
+    def list_skill_runs_for_workspace(
+        self,
+        workspace_id: str,
+    ) -> list[dict[str, Any]]:
+        rows = self._request(
+            "GET",
+            "skill_runs",
+            params={
+                "select": "*",
+                "workspace_id": f"eq.{workspace_id}",
+                "order": "created_at.asc",
+            },
+        )
+        return rows or []
+
     def insert_scenarios(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not rows:
             return []
@@ -264,4 +366,10 @@ class WorkerDatabase:
             batch = rows[start : start + NDR_SEGMENT_BATCH_SIZE]
             created.extend(self._request("POST", "scenarios", json_body=batch) or [])
 
+        return created
+
+    def insert_assessment_set(self, row: dict[str, Any]) -> dict[str, Any]:
+        created = self._request("POST", "assessment_sets", json_body=row)
+        if isinstance(created, list):
+            return created[0]
         return created

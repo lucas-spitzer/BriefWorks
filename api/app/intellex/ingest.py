@@ -3,8 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 from app.intellex.chunker import build_ndr_segments
-from app.intellex.models import ParsedDocument
-from app.intellex.pdf_parser import parse_pdf
+from app.intellex.llamaparse_normalizer import normalize_llamaparse_result
+from app.intellex.models import ParseResult, ParsedDocument
+from app.services.llamaparse_client import LlamaParseClient
 
 PDF_MIME_TYPES = {
     "application/pdf",
@@ -19,17 +20,31 @@ def is_pdf_source(mime_type: str, filename: str) -> bool:
     return filename.lower().endswith(".pdf")
 
 
-def parse_source_content(*, mime_type: str, filename: str, content: bytes) -> ParsedDocument:
+def parse_artifact_path(storage_path: str) -> str:
+    parent = storage_path.rsplit("/", 1)[0]
+    return f"{parent}/parse/raw.md"
+
+
+def parse_source_content(
+    *,
+    mime_type: str,
+    filename: str,
+    content: bytes,
+    llamaparse_client: LlamaParseClient | None = None,
+) -> ParseResult:
     if not is_pdf_source(mime_type, filename):
         raise ValueError(
             f"Unsupported source type for parse step: {mime_type or filename}. "
-            "Phase B supports PDF only.",
+            "Only PDF sources are supported for parsing.",
         )
 
     if not content:
         raise ValueError("Source file is empty.")
 
-    return parse_pdf(content)
+    client = llamaparse_client or LlamaParseClient()
+    parse_result = client.parse_pdf(filename=filename or "source.pdf", content=content)
+    document = normalize_llamaparse_result(parse_result)
+    return ParseResult(document=document, raw_markdown=parse_result.raw_markdown)
 
 
 def chunk_parsed_document(

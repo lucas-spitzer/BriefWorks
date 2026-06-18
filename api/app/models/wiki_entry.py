@@ -14,6 +14,7 @@ class WikiEntryResponse(BaseModel):
     aliases: list[str]
     prerequisites: list[str]
     importance: str
+    entry_kind: str
     status: str
     evidence: list[dict[str, Any]]
     origin: dict[str, Any]

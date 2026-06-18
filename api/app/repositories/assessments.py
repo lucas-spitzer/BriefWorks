@@ -136,3 +136,55 @@ class AssessmentRepository:
             columns="id",
         )
         return row if workspace else None
+
+    async def list_assessment_sets(
+        self,
+        workspace_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        rows = await self.db.select_many(
+            "assessment_sets",
+            filters={"workspace_id": f"eq.{workspace_id}"},
+            order="created_at.desc",
+            limit=limit,
+            offset=offset,
+        )
+
+        summaries: list[dict[str, Any]] = []
+        for row in rows:
+            items = row.get("items") or []
+            summaries.append(
+                {
+                    **row,
+                    "item_count": len(items) if isinstance(items, list) else 0,
+                },
+            )
+        return summaries
+
+    async def get_assessment_set(
+        self,
+        assessment_set_id: str,
+        workspace_id: str,
+    ) -> dict[str, Any] | None:
+        return await self.db.select_one(
+            "assessment_sets",
+            filters={
+                "id": f"eq.{assessment_set_id}",
+                "workspace_id": f"eq.{workspace_id}",
+            },
+        )
+
+    async def get_assessment_set_for_owner(
+        self,
+        assessment_set_id: str,
+        owner_id: str,
+    ) -> dict[str, Any] | None:
+        row = await self.db.select_one(
+            "assessment_sets",
+            filters={"id": f"eq.{assessment_set_id}"},
+        )
+        if not row:
+            return None
+        return await self._verify_workspace_owner(row["workspace_id"], owner_id, row)

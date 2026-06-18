@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
-import { artifactKindLabel, formatBytes, formatDate } from '../../lib/consoleFormat'
-import { artifactModule, artifactSummary, sourceTitle } from '../../lib/consoleMappers'
+import { artifactFormatLabel, artifactKindLabel, formatBytes, formatDate } from '../../lib/consoleFormat'
+import { artifactModule, sourceTitle } from '../../lib/consoleMappers'
 import { ConsoleViewToggle } from './ConsoleViewToggle'
 import { ErrorBanner } from './ErrorBanner'
 import { moduleLabel } from './moduleLabel'
@@ -77,7 +77,12 @@ export function ConsoleArtifacts() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((artifact) => (
+                {filtered.map((artifact) => {
+                  const source = artifact.source_id
+                    ? sourceById.get(artifact.source_id)
+                    : undefined
+
+                  return (
                   <tr key={artifact.id}>
                     <td>
                       <button
@@ -93,15 +98,12 @@ export function ConsoleArtifacts() {
                     </td>
                     <td>{artifactKindLabel(artifact.artifact_type)}</td>
                     <td>{moduleLabel(artifactModule(artifact))}</td>
-                    <td className="num">{artifact.format}</td>
+                    <td className="num">{artifactFormatLabel(artifact.format)}</td>
                     <td className="num">{formatBytes(artifact.file_size_bytes)}</td>
-                    <td>
-                      {artifact.source_id && sourceById.get(artifact.source_id)
-                        ? sourceTitle(sourceById.get(artifact.source_id)!)
-                        : '—'}
-                    </td>
+                    <td>{source ? sourceTitle(source) : '—'}</td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </section>
@@ -117,7 +119,7 @@ export function ConsoleArtifacts() {
               >
                 <div>
                   <div style={{ fontFamily: 'var(--bw-grotesk)', fontWeight: 600, color: '#fff' }}>
-                    {artifact.filename}
+                    {artifactKindLabel(artifact.artifact_type)}
                   </div>
                   <div
                     style={{
@@ -127,16 +129,16 @@ export function ConsoleArtifacts() {
                       marginTop: 3,
                     }}
                   >
-                    {artifactKindLabel(artifact.artifact_type)} · {moduleLabel(artifactModule(artifact))}
+                    {moduleLabel(artifactModule(artifact))}
                   </div>
                 </div>
                 <p style={{ fontSize: '0.84rem', color: '#b6c4cb', marginTop: 12, lineHeight: 1.5 }}>
-                  {artifactSummary(artifact)}
+                  {artifact.filename}
                 </p>
                 <div className="bw-console__card-fill" aria-hidden="true" />
                 <div className="bw-console__artifact-foot">
                   <span className="seg">{formatBytes(artifact.file_size_bytes)}</span>
-                  <span className="seg">{artifact.format}</span>
+                  <span className="seg">{artifactFormatLabel(artifact.format)}</span>
                   <span className="seg">Download</span>
                 </div>
               </button>

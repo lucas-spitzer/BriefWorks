@@ -1,4 +1,4 @@
--- Phase C: refresh Source Research skill prompts to match implementation
+-- Refresh Source Research skill prompts to match implementation
 
 update public.skills
 set

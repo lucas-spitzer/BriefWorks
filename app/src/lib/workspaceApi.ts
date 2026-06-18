@@ -30,6 +30,7 @@ export interface WikiEntry {
   workspace_id: string
   preferred_label: string
   definition: string
+  entry_kind: string
   status: string
   canonical_slug: string
   aliases: string[]
@@ -53,6 +54,9 @@ export interface Artifact {
 
 export interface Flashcard {
   id: string
+  assessment_set_id?: string | null
+  item_id?: string | null
+  subtype?: string | null
   front: string
   back: string
   difficulty: string
@@ -62,6 +66,9 @@ export interface Flashcard {
 
 export interface Quiz {
   id: string
+  assessment_set_id?: string | null
+  item_id?: string | null
+  subtype?: string | null
   question: string
   question_type: string
   options: string[]
@@ -73,11 +80,26 @@ export interface Quiz {
 
 export interface Scenario {
   id: string
+  assessment_set_id?: string | null
+  item_id?: string | null
+  subtype?: string | null
   title: string
   prompt: string
   context: string | null
   evaluation_criteria: string[]
   difficulty: string
+  created_at: string
+}
+
+export interface AssessmentSetSummary {
+  id: string
+  workspace_id: string
+  source_id: string | null
+  production_run_id: string | null
+  title: string
+  learning_goal: string | null
+  assessment_types: string[]
+  item_count: number
   created_at: string
 }
 
@@ -102,6 +124,7 @@ export interface ProductionRun {
   created_at: string
   updated_at: string
   completed_at: string | null
+  cost_usd: number
 }
 
 export interface SkillRun {
@@ -117,19 +140,27 @@ export interface SkillRun {
   promoted: Record<string, unknown> | null
   model: string | null
   token_usage: Record<string, number> | null
+  api_usage: Record<string, unknown> | null
+  cost_usd: number
   error: string | null
   started_at: string | null
   completed_at: string | null
 }
 
-export const TARGET_ARTIFACT_OPTIONS = [
-  { value: 'eleven_reader_script', label: 'ElevenReader EPUB' },
-  { value: 'speechify_script', label: 'Speechify EPUB' },
-  { value: 'speechify_audio', label: 'Speechify SSML' },
+// A production run produces at most one narration artifact, chosen here.
+export const NARRATION_ARTIFACT_OPTIONS = [
+  { value: 'eleven_reader_script', label: 'ElevenReader EBook' },
+  { value: 'speechify_audio', label: 'Speechify Audio' },
   { value: 'elevenlabs_audio', label: 'ElevenLabs Audio' },
-  { value: 'flashcards', label: 'Flashcards' },
-  { value: 'quizzes', label: 'Quizzes' },
-  { value: 'scenarios', label: 'Scenarios' },
+] as const
+
+// Review material is generated as a single bundle of all three assessment types.
+export const REVIEW_ARTIFACT_VALUES = ['flashcards', 'quizzes', 'scenarios'] as const
+
+export const REVIEW_PURPOSES = [
+  { label: 'Flashcards', purpose: 'Memorization' },
+  { label: 'Quizzes', purpose: 'Understanding' },
+  { label: 'Scenarios', purpose: 'Application' },
 ] as const
 
 export async function listWorkspaces(): Promise<Workspace[]> {
@@ -214,6 +245,10 @@ export async function listQuizzes(workspaceId: string): Promise<Quiz[]> {
 
 export async function listScenarios(workspaceId: string): Promise<Scenario[]> {
   return apiRequest<Scenario[]>(`/workspaces/${workspaceId}/scenarios`)
+}
+
+export async function listAssessmentSets(workspaceId: string): Promise<AssessmentSetSummary[]> {
+  return apiRequest<AssessmentSetSummary[]>(`/workspaces/${workspaceId}/assessment-sets`)
 }
 
 export async function listProductionRuns(workspaceId: string): Promise<ProductionRun[]> {

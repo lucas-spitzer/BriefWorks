@@ -3,43 +3,45 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from app.intellex.metadata_slice import build_metadata_slice
 from app.intellex.models import ParsedDocument
 from app.intellex.skills.models import SourceResearchOutput
-from app.intellex.text_sampling import sample_text_for_research
 from app.services.openai_client import OpenAIClient
 from app.services.web_research import WebResearchClient, build_research_query
 
-DOCUMENT_SYSTEM_PROMPT = """You extract bibliographic metadata from parsed document text.
+DOCUMENT_SYSTEM_PROMPT = """You extract bibliographic metadata from the early pages of a parsed document.
+
+Extract ONLY these document-origin fields from the provided text:
+- title
+- issuing_authority
+- version
+- publication_date_in_document (ISO-8601 YYYY-MM-DD when possible, otherwise null)
+- distribution_line (distribution / dissemination / releasability statement when present)
 
 Rules:
-- Use only evidence from the provided document text for document-origin fields.
-- Prefer official titles, designators, issuing authorities, authors, versions, and publication dates printed in the document.
-- Classify document_type as one of: military_doctrine, research_paper, white_paper, report, unknown.
-- publication_date_in_document must be an ISO-8601 date (YYYY-MM-DD) when possible, otherwise null.
-- publication_date_public should be null in this step unless the document text itself states a public release date to constituents.
-- source_url should be null unless a URL is printed in the document text.
-- Provide per-field confidence from 0.0 to 1.0.
-- Set provenance for each populated field to "document".
+- Use only evidence from the provided document text.
+- Leave other fields null or empty unless explicitly present in the text.
+- document_type may be inferred when obvious (military_doctrine, research_paper, white_paper, report, unknown).
+- Provide per-field confidence from 0.0 to 1.0 for populated fields.
+- Set provenance to "document" for populated fields.
 - Return valid JSON only."""
 
 DOCUMENT_USER_TEMPLATE = """Filename: {filename}
 MIME type: {mime_type}
 
-Document text sample:
+Metadata slice (early pages):
 {document_text}
 
 Return JSON with keys:
 document_type, title, identifier, issuing_authority, authors, version,
 publication_date_in_document, publication_date_public, source_url, abstract,
-confidence, provenance"""
+distribution_line, confidence, provenance"""
 
 WEB_SYSTEM_PROMPT = """You fill missing bibliographic metadata using web search snippets.
 
 Rules:
-- Only fill fields that are null or low-confidence in the document draft.
+- Only fill title or issuing_authority when null or low-confidence in the document draft.
 - Do not overwrite high-confidence document values.
-- publication_date_public is the date the document was published to its audience or public web.
-- source_url should be the best canonical public URL when available.
 - Set provenance to "web" for fields filled from web snippets.
 - Keep existing provenance "document" for unchanged fields.
 - Return valid JSON only."""
@@ -72,9 +74,8 @@ class SourceResearchSkill:
         mime_type: str,
         parsed_document: ParsedDocument,
     ) -> tuple[SourceResearchOutput, dict[str, Any]]:
-        # SECURITY: Only a bounded text sample from the parsed document is sent to
-        # the model; full document content is not transmitted.
-        document_text = sample_text_for_research(
+        # SECURITY: Only a bounded metadata slice from early pages is sent to the model.
+        document_text = build_metadata_slice(
             parsed_document,
             max_chars=self.max_document_chars,
         )
@@ -95,6 +96,7 @@ class SourceResearchSkill:
         token_usage = dict(document_result.token_usage)
         model = document_result.model
         web_sources: list[dict[str, str]] = []
+        web_search_count = 0
 
         if self._needs_web_gap_fill(draft) and self.web_client.enabled:
             query = build_research_query(
@@ -104,6 +106,7 @@ class SourceResearchSkill:
 
             if query:
                 web_sources = self.web_client.search(query)
+                web_search_count = 1
                 web_result = self.openai_client.complete_json(
                     system_prompt=WEB_SYSTEM_PROMPT,
                     user_prompt=WEB_USER_TEMPLATE.format(
@@ -117,25 +120,20 @@ class SourceResearchSkill:
                 for key, value in web_result.token_usage.items():
                     token_usage[key] = token_usage.get(key, 0) + value
 
-        elif self._needs_web_gap_fill(draft) and not draft.publication_date_public:
-            draft.publication_date_public = draft.publication_date_in_document
-            if draft.publication_date_in_document:
-                draft.provenance["publication_date_public"] = "inferred"
-
         return draft, {
             "model": model,
             "token_usage": token_usage,
+            "web_search_count": web_search_count,
         }
 
     def _needs_web_gap_fill(self, draft: SourceResearchOutput) -> bool:
-        if not draft.publication_date_public:
+        if not draft.title or draft.title == "Untitled document":
             return True
 
-        if not draft.source_url:
+        if draft.confidence.get("title", 1.0) < 0.75:
             return True
 
-        if not draft.issuing_authority and draft.document_type == "military_doctrine":
+        if not draft.issuing_authority:
             return True
 
-        low_confidence_publication = draft.confidence.get("publication_date_public", 1.0) < 0.75
-        return low_confidence_publication
+        return draft.confidence.get("issuing_authority", 1.0) < 0.75

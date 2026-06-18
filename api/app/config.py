@@ -53,6 +53,23 @@ class Settings:
     artifacts_bucket: str
     signed_url_expires_seconds: int
     max_source_upload_bytes: int
+    elevenlabs_api_key: str | None
+    elevenlabs_voice_id: str
+    elevenlabs_model_id: str
+    elevenlabs_max_chars: int
+    elevenlabs_request_timeout_seconds: int
+    elevenlabs_max_retries: int
+    elevenlabs_chunk_chars: int
+    production_run_job_timeout: str
+    speechify_api_key: str | None
+    speechify_voice_id: str
+    speechify_model: str
+    speechify_max_chars: int
+    llama_cloud_api_key: str | None
+    llamaparse_tier: str
+    prepare_batch_pages: int
+    qngen_model: str
+    qngen_concept_batch_size: int
 
 
 @lru_cache
@@ -74,4 +91,23 @@ def get_settings() -> Settings:
         max_source_upload_bytes=int(
             os.getenv("MAX_SOURCE_UPLOAD_BYTES", str(100 * 1024 * 1024)),
         ),
+        elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY"),
+        elevenlabs_voice_id=os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+        elevenlabs_model_id=os.getenv("ELEVENLABS_MODEL_ID", "eleven_v3"),
+        elevenlabs_max_chars=int(os.getenv("ELEVENLABS_MAX_CHARS", "200000")),
+        elevenlabs_request_timeout_seconds=int(
+            os.getenv("ELEVENLABS_REQUEST_TIMEOUT_SECONDS", "600"),
+        ),
+        elevenlabs_max_retries=int(os.getenv("ELEVENLABS_MAX_RETRIES", "3")),
+        elevenlabs_chunk_chars=int(os.getenv("ELEVENLABS_CHUNK_CHARS", "2500")),
+        production_run_job_timeout=os.getenv("PRODUCTION_RUN_JOB_TIMEOUT", "2h"),
+        speechify_api_key=os.getenv("SPEECHIFY_API_KEY"),
+        speechify_voice_id=os.getenv("SPEECHIFY_VOICE_ID", "george"),
+        speechify_model=os.getenv("SPEECHIFY_MODEL", "simba-english"),
+        speechify_max_chars=int(os.getenv("SPEECHIFY_MAX_CHARS", "200000")),
+        llama_cloud_api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
+        llamaparse_tier=os.getenv("LLAMAPARSE_TIER", "agentic"),
+        prepare_batch_pages=int(os.getenv("PREPARE_BATCH_PAGES", "15")),
+        qngen_model=os.getenv("QNGEN_MODEL", "gpt-4o"),
+        qngen_concept_batch_size=int(os.getenv("QNGEN_CONCEPT_BATCH_SIZE", "8")),
     )

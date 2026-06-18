@@ -38,10 +38,15 @@ def split_segments_into_batches(
     current_batch: list[dict[str, Any]] = []
 
     for segment in segments:
-        if segment.get("kind") == "heading" and current_batch:
+        # Prefer to start a new batch at a heading so a section stays together,
+        # but only once the current batch is already full enough. Splitting on
+        # every heading produces one LLM call per heading in heading-dense
+        # documents, which is needlessly slow and expensive.
+        is_heading = segment.get("kind") == "heading"
+
+        if is_heading and len(current_batch) >= batch_size:
             batches.append(current_batch)
-            current_batch = [segment]
-            continue
+            current_batch = []
 
         current_batch.append(segment)
 

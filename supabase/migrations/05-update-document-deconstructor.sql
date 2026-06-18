@@ -1,4 +1,4 @@
--- Phase D: refresh Document Deconstructor skill metadata
+-- Refresh Deconstruct Document skill metadata
 
 update public.skills
 set
@@ -30,5 +30,5 @@ set
     "system": "Deconstruct the document into essential terms and concepts. Do not summarize or produce lesson narrative.",
     "user_template": "Extract concepts for source {{source_id}} from NDR segments."
   }'::jsonb
-where skill_id = 'document-deconstructor'
+where skill_id = 'deconstruct-document'
   and version = '1.0.0';

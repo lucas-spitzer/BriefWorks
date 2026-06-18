@@ -1,4 +1,4 @@
--- Phase E: Generated artifacts (ElevenReader EPUB, etc.)
+-- Generated artifacts (ElevenReader EPUB, etc.)
 
 create table public.artifacts (
   id uuid primary key default gen_random_uuid(),

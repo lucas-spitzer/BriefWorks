@@ -1,4 +1,4 @@
--- Phase F: QnGen assessment entities (flashcards, quizzes, scenarios)
+-- QnGen assessment entities (flashcards, quizzes, scenarios)
 
 create table public.flashcards (
   id uuid primary key default gen_random_uuid(),
@@ -78,10 +78,10 @@ insert into public.skills (
 )
 values
   (
-    'flashcard-gen',
+    'generate-flashcards',
     '1.0.0',
     'qngen',
-    'Flashcard Generator',
+    'Generate Flashcards',
     'Generate memorization flashcards grounded in source segments and canonical wiki terminology.',
     array['text'],
     '{"type":"object"}'::jsonb,
@@ -112,10 +112,10 @@ values
     }'::jsonb
   ),
   (
-    'quiz-gen',
+    'generate-questions',
     '1.0.0',
     'qngen',
-    'Quiz Generator',
+    'Generate Questions',
     'Generate understanding checks grounded in source segments and canonical wiki terminology.',
     array['text'],
     '{"type":"object"}'::jsonb,
@@ -148,10 +148,10 @@ values
     }'::jsonb
   ),
   (
-    'scenario-gen',
+    'generate-scenarios',
     '1.0.0',
     'qngen',
-    'Scenario Generator',
+    'Generate Scenarios',
     'Generate application scenarios grounded in source doctrine and canonical wiki terminology.',
     array['text'],
     '{"type":"object"}'::jsonb,

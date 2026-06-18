@@ -31,15 +31,43 @@ SOURCES_BUCKET
 RQ_QUEUE_NAME
 OPENAI_API_KEY
 OPENAI_MODEL
-TAVILY_API_KEY (optional, enables web gap-fill for Source Research)
+QNGEN_MODEL (default gpt-4o)
+QNGEN_CONCEPT_BATCH_SIZE (default 8)
+LLAMA_CLOUD_API_KEY
+LLAMAPARSE_TIER (default agentic)
+PREPARE_BATCH_PAGES (default 15)
+TAVILY_API_KEY (optional, enables web gap-fill for Source Research title/authority)
 SOURCE_RESEARCH_MAX_CHARS
 ```
+
+Mathesys audio (text-to-speech) variables:
+
+```text
+ELEVENLABS_API_KEY (enables ElevenLabs Audio MP3 synthesis)
+ELEVENLABS_VOICE_ID (default 21m00Tcm4TlvDq8ikWAM — pick a voice from your ElevenLabs voice library)
+ELEVENLABS_REQUEST_TIMEOUT_SECONDS (default 600 — per-chunk read timeout for TTS API calls)
+ELEVENLABS_MAX_RETRIES (default 3 — retries on timeout or 429/502/503/504)
+ELEVENLABS_CHUNK_CHARS (default 2500 — max characters per TTS request)
+PRODUCTION_RUN_JOB_TIMEOUT (default 2h — RQ worker timeout for full pipeline jobs)
+ELEVENLABS_MODEL_ID (default eleven_v3)
+ELEVENLABS_MAX_CHARS (default 200000 — cost guardrail; raise intentionally for large jobs)
+ELEVENLABS_PRICE_PER_TOKEN (default 0.00018333 — subscription credit cost per character/token)
+SPEECHIFY_API_KEY (optional; when unset, Speechify Audio runs emit a .ssml artifact instead of MP3)
+SPEECHIFY_VOICE_ID (default george)
+SPEECHIFY_MODEL (default simba-english)
+SPEECHIFY_MAX_CHARS (default 200000)
+```
+
+Set `ELEVENLABS_API_KEY` and choose `ELEVENLABS_VOICE_ID` from your ElevenLabs
+voice library to produce ElevenLabs Audio MP3s. Speechify Audio synthesizes MP3s
+once `SPEECHIFY_API_KEY` is set; until then it stores clean SSML for later
+synthesis.
 
 `SUPABASE_ANON_KEY` may be used instead of `SUPABASE_PUBLISHABLE_KEY` for older Supabase projects.
 
 Never put `SUPABASE_SERVICE_ROLE_KEY` in the Vite frontend.
 
-Apply the Supabase migrations in `supabase/migrations/` (Phase A through F) before using the ingest endpoints.
+Apply the Supabase migrations in `supabase/migrations/` in order before using the ingest endpoints (see [`supabase/README.md`](../supabase/README.md)).
 
 ## Run API
 
@@ -129,7 +157,7 @@ GET    /workspaces/{workspace_id}/sources/{source_id}/segments
 DELETE /workspaces/{workspace_id}/sources/{source_id}
 ```
 
-`POST /sources` accepts `multipart/form-data` with a `file` field. Each successful upload automatically queues an ingest-only production run (Intellex pipeline through `document-deconstructor`). Redis and the RQ worker must be running.
+`POST /sources` accepts `multipart/form-data` with a `file` field. Each successful upload automatically queues an ingest-only production run (Intellex pipeline through `deconstruct-document`). Redis and the RQ worker must be running.
 
 ### Skills
 
@@ -190,21 +218,20 @@ Example production run body:
 }
 ```
 
-`target_artifacts` is optional. An empty list runs Intellex ingest only (`store` through `document-deconstructor`).
+`target_artifacts` is optional. An empty list runs Intellex ingest only (`store` through `deconstruct-document`).
 
 Supported `target_artifacts` values:
 
-- `eleven_reader_script` — Mathesys ElevenReader EPUB
-- `speechify_script` — Mathesys Speechify app EPUB
-- `speechify_audio` — Mathesys Speechify API SSML
-- `elevenlabs_audio` — Mathesys ElevenLabs structured API text
-- `flashcards` — QnGen flashcard-gen
-- `quizzes` — QnGen quiz-gen
-- `scenarios` — QnGen scenario-gen
+- `eleven_reader_script` — Mathesys ElevenReader EBook (one chapter-based EPUB per source; requires `deconstruct-document`)
+- `speechify_audio` — Mathesys Speechify Audio (MP3 via API; SSML when no key)
+- `elevenlabs_audio` — Mathesys ElevenLabs Audio (MP3 via API)
+- `flashcards` — QnGen generate-flashcards
+- `quizzes` — QnGen generate-questions
+- `scenarios` — QnGen generate-scenarios
 
 Full pipeline worker behavior:
 
-- always completes Intellex ingest (`store`, `parse`, `source-research`, `chunk`, `document-deconstructor`)
+- always completes Intellex ingest (`store`, `parse`, `prepare-document`, `chunk`, `source-research`, `deconstruct-document`, `extract-knowledge`); reuses prior ingest/Intellex results when a source was already processed
 - optionally runs Mathesys narration skills and QnGen skills based on `target_artifacts`
 - promotes Wiki concepts, artifacts, and assessment entities
 - marks production run `completed` when finished

@@ -22,7 +22,8 @@ def _section_text_expressive(
     if not is_first:
         parts.append(section_pause_tag)
 
-    parts.append(f"[focused] {section.title}... {title_pause_tag}")
+    parts.append(section.title)
+    parts.append(title_pause_tag)
 
     for paragraph in section.paragraphs:
         cleaned = paragraph.text.strip()

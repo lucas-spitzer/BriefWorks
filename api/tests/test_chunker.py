@@ -2,6 +2,24 @@ from app.intellex.chunker import build_ndr_segments
 from app.intellex.models import ParsedDocument, ParsedLine
 
 
+def test_build_ndr_segments_respects_markdown_line_kind() -> None:
+    document = ParsedDocument(
+        page_count=1,
+        lines=[
+            ParsedLine(text="Chapter 1", page=1, kind="heading"),
+            ParsedLine(text="First sentence.", page=1, kind="paragraph"),
+            ParsedLine(text="Second sentence.", page=1, kind="paragraph"),
+        ],
+        parser="llamaparse",
+    )
+
+    segments = build_ndr_segments(document)
+
+    assert len(segments) == 2
+    assert segments[0]["kind"] == "heading"
+    assert segments[1]["text"] == "First sentence. Second sentence."
+
+
 def test_build_ndr_segments_merges_paragraph_lines_and_keeps_headings() -> None:
     document = ParsedDocument(
         page_count=2,

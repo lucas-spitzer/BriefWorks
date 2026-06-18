@@ -9,3 +9,4 @@ redis
 rq
 uvicorn[standard]
 pytest
+llama-cloud

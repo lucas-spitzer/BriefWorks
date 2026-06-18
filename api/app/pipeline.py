@@ -5,11 +5,27 @@ BASE_PIPELINE: list[dict[str, Any]] = [
     {
         "step": "store",
         "type": "deterministic",
+        "module": "intellex",
         "status": "pending",
     },
     {
         "step": "parse",
         "type": "deterministic",
+        "module": "intellex",
+        "status": "pending",
+    },
+    {
+        "step": "prepare-document",
+        "type": "skill",
+        "module": "intellex",
+        "skill_id": "prepare-document",
+        "skill_version": "2.0.0",
+        "status": "pending",
+    },
+    {
+        "step": "chunk",
+        "type": "deterministic",
+        "module": "intellex",
         "status": "pending",
     },
     {
@@ -21,15 +37,18 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "status": "pending",
     },
     {
-        "step": "chunk",
-        "type": "deterministic",
+        "step": "deconstruct-document",
+        "type": "skill",
+        "module": "intellex",
+        "skill_id": "deconstruct-document",
+        "skill_version": "2.0.0",
         "status": "pending",
     },
     {
-        "step": "document-deconstructor",
+        "step": "extract-knowledge",
         "type": "skill",
         "module": "intellex",
-        "skill_id": "document-deconstructor",
+        "skill_id": "extract-knowledge",
         "skill_version": "1.0.0",
         "status": "pending",
     },
@@ -37,64 +56,66 @@ BASE_PIPELINE: list[dict[str, Any]] = [
 
 OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
     "eleven_reader_script": {
-        "step": "eleven-reader-script",
+        "step": "elevenreader-ebook",
         "type": "skill",
         "module": "mathesys",
-        "skill_id": "eleven-reader-script",
-        "skill_version": "1.0.0",
-        "status": "pending",
-    },
-    "speechify_script": {
-        "step": "speechify-app-epub",
-        "type": "skill",
-        "module": "mathesys",
-        "skill_id": "speechify-app-epub",
-        "skill_version": "1.0.0",
+        "skill_id": "elevenreader-ebook",
+        "skill_version": "2.0.0",
         "status": "pending",
     },
     "speechify_audio": {
-        "step": "speechify-api-ssml",
+        "step": "speechify-audio",
         "type": "skill",
         "module": "mathesys",
-        "skill_id": "speechify-api-ssml",
+        "skill_id": "speechify-audio",
         "skill_version": "1.0.0",
         "status": "pending",
     },
     "elevenlabs_audio": {
-        "step": "elevenlabs-structured-text",
+        "step": "elevenlabs-audio",
         "type": "skill",
         "module": "mathesys",
-        "skill_id": "elevenlabs-structured-text",
+        "skill_id": "elevenlabs-audio",
         "skill_version": "1.0.0",
         "status": "pending",
     },
     "flashcards": {
-        "step": "flashcard-gen",
+        "step": "generate-flashcards",
         "type": "skill",
         "module": "qngen",
-        "skill_id": "flashcard-gen",
+        "skill_id": "generate-flashcards",
         "skill_version": "1.0.0",
         "status": "pending",
     },
     "quizzes": {
-        "step": "quiz-gen",
+        "step": "generate-questions",
         "type": "skill",
         "module": "qngen",
-        "skill_id": "quiz-gen",
+        "skill_id": "generate-questions",
         "skill_version": "1.0.0",
         "status": "pending",
     },
     "scenarios": {
-        "step": "scenario-gen",
+        "step": "generate-scenarios",
         "type": "skill",
         "module": "qngen",
-        "skill_id": "scenario-gen",
+        "skill_id": "generate-scenarios",
         "skill_version": "1.0.0",
         "status": "pending",
     },
 }
 
+QNGEN_TARGET_ARTIFACTS = frozenset({"flashcards", "quizzes", "scenarios"})
+
 SUPPORTED_TARGET_ARTIFACTS = frozenset(OPTIONAL_PIPELINE_STEPS.keys())
+
+
+def derive_qngen_assessment_types(target_artifacts: list[str]) -> list[str]:
+    return [
+        artifact
+        for artifact in ("flashcards", "quizzes", "scenarios")
+        if artifact in target_artifacts
+    ]
 
 
 def build_pipeline(target_artifacts: list[str]) -> list[dict[str, Any]]:

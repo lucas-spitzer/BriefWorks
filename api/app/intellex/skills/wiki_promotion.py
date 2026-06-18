@@ -3,8 +3,21 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.intellex.skills.deconstructor_models import DeconstructedConcept
+from app.intellex.skills.concept_models import DeconstructedConcept
 from app.intellex.wiki_slug import normalize_slug
+
+
+def _wiki_slug_for_concept(
+    concept: DeconstructedConcept,
+    entries_by_slug: dict[str, dict[str, Any]],
+) -> str:
+    base = normalize_slug(concept.term_label)
+    existing = entries_by_slug.get(base)
+
+    if existing and str(existing.get("entry_kind") or "concept") != concept.entry_kind:
+        return f"{base}--{concept.entry_kind}"
+
+    return base
 
 
 def _normalize_definition(definition: str) -> str:
@@ -75,7 +88,7 @@ def promote_concepts_to_wiki(
     disputes: list[dict[str, Any]] = []
 
     for output_index, concept in enumerate(concepts):
-        slug = normalize_slug(concept.term_label)
+        slug = _wiki_slug_for_concept(concept, entries_by_slug)
         evidence = build_evidence_records(
             source_id=source_id,
             concept=concept,
@@ -87,6 +100,10 @@ def promote_concepts_to_wiki(
             "skill_id": skill_id,
             "skill_version": skill_version,
         }
+        if concept.chapter_id:
+            origin["chapter_id"] = concept.chapter_id
+        if concept.chapter_sequence_index is not None:
+            origin["chapter_sequence_index"] = concept.chapter_sequence_index
         existing = entries_by_slug.get(slug)
 
         if not existing:
@@ -99,6 +116,7 @@ def promote_concepts_to_wiki(
                 "aliases": concept.aliases,
                 "prerequisites": [],
                 "importance": concept.importance,
+                "entry_kind": concept.entry_kind,
                 "status": "canonical",
                 "evidence": evidence,
                 "origin": origin,
@@ -146,6 +164,7 @@ def promote_concepts_to_wiki(
                     str(existing.get("importance") or "supporting"),
                     concept.importance,
                 ),
+                "entry_kind": concept.entry_kind,
                 "evidence": _merge_evidence(existing.get("evidence") or [], evidence),
                 "origin": origin,
             },

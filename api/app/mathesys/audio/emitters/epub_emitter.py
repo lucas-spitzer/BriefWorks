@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from app.mathesys.audio.models import AudioDocument, AudioSection, EpubChapterOutput
 
-EpubTarget = Literal["speechify_app_epub", "elevenreader_app_epub"]
+EpubTarget = Literal["elevenreader_app_epub"]
 
 
 def _escape(text: str) -> str:

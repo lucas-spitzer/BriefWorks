@@ -1,4 +1,4 @@
-from app.pipeline import build_pipeline
+from app.pipeline import build_pipeline, derive_qngen_assessment_types
 
 
 def test_build_pipeline_always_includes_intellex_steps() -> None:
@@ -9,9 +9,11 @@ def test_build_pipeline_always_includes_intellex_steps() -> None:
     assert step_names == [
         "store",
         "parse",
-        "source-research",
+        "prepare-document",
         "chunk",
-        "document-deconstructor",
+        "source-research",
+        "deconstruct-document",
+        "extract-knowledge",
     ]
 
 
@@ -23,8 +25,17 @@ def test_build_pipeline_appends_selected_targets() -> None:
     step_names = [step["step"] for step in pipeline]
 
     assert step_names[-4:] == [
-        "eleven-reader-script",
-        "flashcard-gen",
-        "quiz-gen",
-        "scenario-gen",
+        "elevenreader-ebook",
+        "generate-flashcards",
+        "generate-questions",
+        "generate-scenarios",
     ]
+
+
+def test_derive_qngen_assessment_types() -> None:
+    assert derive_qngen_assessment_types(["flashcards", "eleven_reader_script"]) == [
+        "flashcards",
+    ]
+    assert derive_qngen_assessment_types(
+        ["flashcards", "quizzes", "scenarios"],
+    ) == ["flashcards", "quizzes", "scenarios"]

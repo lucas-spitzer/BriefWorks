@@ -17,6 +17,8 @@ class SkillRunResponse(BaseModel):
     promoted: dict[str, Any]
     model: str | None
     token_usage: dict[str, Any]
+    api_usage: dict[str, Any] = {}
+    cost_usd: float = 0
     error: str | None
     created_at: datetime
     started_at: datetime | None

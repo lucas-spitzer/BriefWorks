@@ -1,4 +1,4 @@
--- Phase D: Wiki entries and dispute logging for Document Deconstructor
+-- Wiki entries and dispute logging for Document Deconstructor
 
 create table public.wiki_entries (
   id uuid primary key default gen_random_uuid(),

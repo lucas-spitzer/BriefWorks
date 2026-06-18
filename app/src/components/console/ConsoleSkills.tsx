@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
-import { formatDate, formatDateTime, formatDuration, statusLabel } from '../../lib/consoleFormat'
+import { useLiveTick } from '../../hooks/useLiveTick'
+import { formatDate, formatDateTime, formatDuration, formatCostUsd, statusLabel } from '../../lib/consoleFormat'
 import {
   flattenSkillRuns,
+  skillRunCostUsd,
   skillRunDisplayName,
   skillRunDurationSec,
+  skillRunElevenLabsTokens,
   skillRunSummary,
   skillRunTokens,
 } from '../../lib/consoleMappers'
+import { ConsoleDialog } from './ConsoleDialog'
 import { ConsoleViewToggle } from './ConsoleViewToggle'
 import { ErrorBanner } from './ErrorBanner'
 import { moduleLabel } from './moduleLabel'
@@ -21,11 +25,17 @@ export function ConsoleSkills({ onGoToOps }: ConsoleSkillsProps) {
   const { productionRuns, skillRunsByRunId, sources, isLoading, error } = useWorkspaceData()
   const [query, setQuery] = useState('')
   const [view, setView] = useState<ConsoleView>('grid')
+  const [errorSkillId, setErrorSkillId] = useState<string | null>(null)
 
   const skillRuns = useMemo(
     () => flattenSkillRuns(productionRuns, skillRunsByRunId, sources),
     [productionRuns, skillRunsByRunId, sources],
   )
+
+  const hasLiveDuration = skillRuns.some(
+    (skill) => skill.status === 'queued' || skill.status === 'running',
+  )
+  useLiveTick(hasLiveDuration)
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
@@ -37,6 +47,11 @@ export function ConsoleSkills({ onGoToOps }: ConsoleSkillsProps) {
         moduleLabel(skill.module).toLowerCase().includes(q),
     )
   }, [skillRuns, query])
+
+  const errorSkill = useMemo(
+    () => (errorSkillId ? skillRuns.find((skill) => skill.id === errorSkillId) : undefined),
+    [errorSkillId, skillRuns],
+  )
 
   return (
     <>
@@ -77,12 +92,15 @@ export function ConsoleSkills({ onGoToOps }: ConsoleSkillsProps) {
                   <th>Status</th>
                   <th>Duration</th>
                   <th>Tokens</th>
+                  <th>Cost</th>
                   <th>Run</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((skill) => {
                   const tokens = skillRunTokens(skill)
+                  const elevenlabsTokens = skillRunElevenLabsTokens(skill)
+                  const costUsd = skillRunCostUsd(skill)
                   return (
                     <tr key={skill.id}>
                       <td>
@@ -107,8 +125,11 @@ export function ConsoleSkills({ onGoToOps }: ConsoleSkillsProps) {
                       <td className="num">
                         {tokens.in + tokens.out > 0
                           ? `${((tokens.in + tokens.out) / 1000).toFixed(1)}K`
-                          : '—'}
+                          : elevenlabsTokens > 0
+                            ? `${(elevenlabsTokens / 1000).toFixed(1)}K EL`
+                            : '—'}
                       </td>
+                      <td className="num">{formatCostUsd(costUsd)}</td>
                       <td>{skill.runId.slice(0, 8).toUpperCase()}</td>
                     </tr>
                   )
@@ -120,6 +141,8 @@ export function ConsoleSkills({ onGoToOps }: ConsoleSkillsProps) {
           <div className="bw-console__sources">
             {filtered.map((skill) => {
               const tokens = skillRunTokens(skill)
+              const elevenlabsTokens = skillRunElevenLabsTokens(skill)
+              const costUsd = skillRunCostUsd(skill)
               return (
                 <div
                   className="bw-console__panel bw-console__artifact-card bw-console__skill-card"
@@ -150,14 +173,26 @@ export function ConsoleSkills({ onGoToOps }: ConsoleSkillsProps) {
                     <span>{formatDuration(skillRunDurationSec(skill))}</span>
                     {tokens.in + tokens.out > 0 ? (
                       <span>{((tokens.in + tokens.out) / 1000).toFixed(1)}K tok</span>
+                    ) : elevenlabsTokens > 0 ? (
+                      <span>{(elevenlabsTokens / 1000).toFixed(1)}K EL tok</span>
                     ) : null}
+                    {costUsd > 0 ? <span>{formatCostUsd(costUsd)}</span> : null}
                   </div>
+                  {skill.error ? (
+                    <button
+                      type="button"
+                      className="bw-console__error-trigger"
+                      onClick={() => setErrorSkillId(skill.id)}
+                    >
+                      Show error message
+                    </button>
+                  ) : null}
                   <div className="bw-console__card-fill" aria-hidden="true" />
                   <div className="bw-console__artifact-foot">
-                    <span className="seg">{skill.runId.slice(0, 8).toUpperCase()}</span>
                     <span className="seg">
                       {skill.started_at ? formatDate(skill.started_at) : '—'}
                     </span>
+                    <span className="seg">{skill.runId.slice(0, 8).toUpperCase()}</span>
                     <span className="seg">
                       <span className={`bw-console__statepill bw-state--${skill.status}`}>
                         {statusLabel(skill.status)}
@@ -170,6 +205,13 @@ export function ConsoleSkills({ onGoToOps }: ConsoleSkillsProps) {
           </div>
         )}
       </div>
+      <ConsoleDialog
+        title={errorSkill ? `${skillRunDisplayName(errorSkill)} error` : 'Skill run error'}
+        open={errorSkillId !== null && Boolean(errorSkill?.error)}
+        onClose={() => setErrorSkillId(null)}
+      >
+        <pre className="bw-console__error-detail">{errorSkill?.error}</pre>
+      </ConsoleDialog>
     </>
   )
 }

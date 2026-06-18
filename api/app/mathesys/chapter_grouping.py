@@ -63,6 +63,46 @@ def group_segments_into_chapters(segments: list[dict[str, Any]]) -> list[dict[st
     return chapters
 
 
+def hydrate_chapters_from_rows(
+    chapter_rows: list[dict[str, Any]],
+    segment_index: dict[str, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    chapters: list[dict[str, Any]] = []
+
+    for row in chapter_rows:
+        segments = [
+            segment_index[str(segment_id)]
+            for segment_id in (row.get("segment_ids") or [])
+            if str(segment_id) in segment_index
+        ]
+
+        if not segments:
+            continue
+
+        chapters.append(
+            {
+                "title": str(row.get("title") or "Untitled Section"),
+                "segments": segments,
+            },
+        )
+
+    return chapters
+
+
+def resolve_chapters_for_source(
+    *,
+    chapter_rows: list[dict[str, Any]],
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if chapter_rows:
+        segment_index = {str(segment["id"]): segment for segment in segments}
+        hydrated = hydrate_chapters_from_rows(chapter_rows, segment_index)
+        if hydrated:
+            return hydrated
+
+    return group_segments_into_chapters(segments)
+
+
 def split_chapters_into_volumes(
     chapters: list[dict[str, Any]],
     *,

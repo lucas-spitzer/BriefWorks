@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react'
 import type {
   Artifact,
+  AssessmentSetSummary,
   Flashcard,
   ProductionRun,
   Quiz,
@@ -16,13 +17,13 @@ export interface WorkspaceDataContextValue {
   skillRunsByRunId: Record<string, SkillRun[]>
   artifacts: Artifact[]
   wikiEntries: WikiEntry[]
+  assessmentSets: AssessmentSetSummary[]
   flashcards: Flashcard[]
   quizzes: Quiz[]
   scenarios: Scenario[]
   isLoading: boolean
   error: string | null
   activeRunCount: number
-  refresh: () => Promise<void>
   uploadSource: (file: File) => Promise<Source>
   createProductionRun: (payload: {
     source_ids: string[]

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
-import { formatDateTime, formatDuration, statusLabel } from '../../lib/consoleFormat'
+import { formatDateTime, formatDuration, formatCostUsd, statusLabel } from '../../lib/consoleFormat'
 import {
+  productionRunCostUsd,
   productionRunDurationSec,
   productionRunLabel,
   productionRunProgress,
   skillRunTokens,
+  sumWorkspaceCostUsd,
 } from '../../lib/consoleMappers'
 import { ConsoleDetail } from './ConsoleDetail'
 import { ErrorBanner } from './ErrorBanner'
@@ -20,8 +22,6 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
     sources,
     productionRuns,
     skillRunsByRunId,
-    artifacts,
-    wikiEntries,
     activeRunCount,
     isLoading,
     error,
@@ -69,21 +69,27 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
       }
     }
 
+    const totalCost = sumWorkspaceCostUsd(productionRuns, skillRunsByRunId)
+
     return [
-      { label: 'Pipeline runs', value: String(productionRuns.length), delta: '', trend: 'flat' as const },
-      { label: 'Artifacts produced', value: String(artifacts.length), delta: '', trend: 'flat' as const },
-      { label: 'Success rate', value: finished ? `${successRate}%` : '—', delta: '', trend: 'flat' as const },
       { label: 'Active runs', value: String(activeRunCount), delta: '', trend: 'flat' as const },
-      { label: 'Wiki entries', value: String(wikiEntries.length), delta: '', trend: 'flat' as const },
+      { label: 'Pipeline runs', value: String(productionRuns.length), delta: '', trend: 'flat' as const },
+      { label: 'Success rate', value: finished ? `${successRate}%` : '—', delta: '', trend: 'flat' as const },
       {
         label: 'Tokens used',
         value: totalTokens > 1_000_000 ? `${(totalTokens / 1_000_000).toFixed(1)}M` : `${Math.round(totalTokens / 1000)}K`,
         delta: '',
         trend: 'flat' as const,
       },
+      {
+        label: 'Total API cost',
+        value: formatCostUsd(totalCost),
+        delta: '',
+        trend: 'flat' as const,
+      },
       { label: 'Avg run time', value: avgDuration, delta: '', trend: 'flat' as const },
     ]
-  }, [productionRuns, artifacts.length, activeRunCount, wikiEntries.length, skillRunsByRunId])
+  }, [productionRuns, activeRunCount, skillRunsByRunId])
 
   return (
     <>
@@ -147,6 +153,7 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
               {sortedRuns.map((run) => {
                 const progress = productionRunProgress(run)
                 const skillCount = skillRunsByRunId[run.id]?.length ?? 0
+                const runCost = productionRunCostUsd(run, skillRunsByRunId[run.id] ?? [])
                 return (
                   <button
                     key={run.id}
@@ -157,7 +164,8 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
                     <span>
                       <div className="title">{productionRunLabel(run, sources)}</div>
                       <div className="sub">
-                        {run.id.slice(0, 8).toUpperCase()} · {skillCount} skill runs ·{' '}
+                        {run.id.slice(0, 8).toUpperCase()} · {skillCount} skill runs
+                        {runCost > 0 ? ` · ${formatCostUsd(runCost)}` : ''} ·{' '}
                         {formatDateTime(run.created_at)}
                       </div>
                       {run.status === 'running' || run.status === 'queued' ? (

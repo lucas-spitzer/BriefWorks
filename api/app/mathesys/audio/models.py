@@ -5,7 +5,6 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 AudioOutputTarget = Literal[
-    "speechify_app_epub",
     "elevenreader_app_epub",
     "speechify_api_ssml",
     "elevenlabs_api_structured_text",

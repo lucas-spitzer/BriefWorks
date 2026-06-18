@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { sourceTitle } from '../../lib/consoleMappers'
-import { TARGET_ARTIFACT_OPTIONS } from '../../lib/workspaceApi'
+import {
+  NARRATION_ARTIFACT_OPTIONS,
+  REVIEW_ARTIFACT_VALUES,
+  REVIEW_PURPOSES,
+} from '../../lib/workspaceApi'
 import { ErrorBanner } from './ErrorBanner'
 
 interface NewRunPanelProps {
@@ -12,7 +16,8 @@ interface NewRunPanelProps {
 export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
   const { sources, createProductionRun } = useWorkspaceData()
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
-  const [selectedTargets, setSelectedTargets] = useState<string[]>([])
+  const [narrationTarget, setNarrationTarget] = useState<string | null>(null)
+  const [includeReview, setIncludeReview] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -22,10 +27,8 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
     )
   }
 
-  const toggleTarget = (value: string) => {
-    setSelectedTargets((current) =>
-      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
-    )
+  const selectNarration = (value: string) => {
+    setNarrationTarget((current) => (current === value ? null : value))
   }
 
   const handleSubmit = async () => {
@@ -34,13 +37,21 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
       return
     }
 
+    const targetArtifacts: string[] = []
+    if (narrationTarget) {
+      targetArtifacts.push(narrationTarget)
+    }
+    if (includeReview) {
+      targetArtifacts.push(...REVIEW_ARTIFACT_VALUES)
+    }
+
     setIsSubmitting(true)
     setSubmitError(null)
 
     try {
       await createProductionRun({
         source_ids: selectedSourceIds,
-        target_artifacts: selectedTargets,
+        target_artifacts: targetArtifacts,
       })
       onCreated()
       onClose()
@@ -64,8 +75,8 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
           <p className="bw-console__empty">Upload a source before starting a production run.</p>
         ) : (
           <>
-            <p style={{ fontSize: '0.84rem', color: '#9fb2bb', marginBottom: 12 }}>Sources</p>
-            <div className="bw-console__chips" style={{ marginBottom: 18 }}>
+            <p className="bw-console__field-label">Sources</p>
+            <div className="bw-console__chips" style={{ marginBottom: 20 }}>
               {sources.map((source) => (
                 <button
                   key={source.id}
@@ -77,32 +88,59 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
                 </button>
               ))}
             </div>
-            <p style={{ fontSize: '0.84rem', color: '#9fb2bb', marginBottom: 12 }}>
-              Target artifacts (optional — ingest-only if none selected)
-            </p>
-            <div className="bw-console__chips" style={{ marginBottom: 18 }}>
-              {TARGET_ARTIFACT_OPTIONS.map((option) => (
+
+            <p className="bw-console__field-label">Narration output</p>
+            <p className="bw-console__field-hint">Choose one. Leave unselected to run ingest only.</p>
+            <div className="bw-console__chips" style={{ marginBottom: 20 }}>
+              {NARRATION_ARTIFACT_OPTIONS.map((option) => (
                 <button
                   key={option.value}
                   type="button"
-                  className={`bw-console__chip${selectedTargets.includes(option.value) ? ' is-active' : ''}`}
-                  onClick={() => toggleTarget(option.value)}
+                  className={`bw-console__chip${narrationTarget === option.value ? ' is-active' : ''}`}
+                  onClick={() => selectNarration(option.value)}
                 >
                   {option.label}
                 </button>
               ))}
             </div>
+
+            <p className="bw-console__field-label">Review material</p>
+            <div className="bw-console__review-material">
+              <button
+                type="button"
+                className={`bw-console__toggle${includeReview ? ' is-on' : ''}`}
+                role="switch"
+                aria-checked={includeReview}
+                onClick={() => setIncludeReview((current) => !current)}
+              >
+                <span className="bw-console__toggle-track" aria-hidden="true">
+                  <span className="bw-console__toggle-thumb" />
+                </span>
+                <span className="bw-console__toggle-label">
+                  {includeReview ? 'Generating review material' : 'Generate review material'}
+                </span>
+              </button>
+              <div className={`bw-console__purposes${includeReview ? ' is-on' : ''}`}>
+                {REVIEW_PURPOSES.map((item) => (
+                  <div key={item.label} className="bw-console__purpose">
+                    <span className="bw-console__purpose-name">{item.label}</span>
+                    <span className="bw-console__purpose-arrow" aria-hidden="true">→</span>
+                    <span className="bw-console__purpose-goal">{item.purpose}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            {submitError ? <ErrorBanner message={submitError} /> : null}
+            <button
+              type="button"
+              className="bw-console__cta bw-console__run-submit"
+              disabled={isSubmitting}
+              onClick={() => void handleSubmit()}
+            >
+              {isSubmitting ? 'Starting…' : 'Start run'}
+            </button>
           </>
         )}
-        {submitError ? <ErrorBanner message={submitError} /> : null}
-        <button
-          type="button"
-          className="bw-console__cta"
-          disabled={isSubmitting || sources.length === 0}
-          onClick={() => void handleSubmit()}
-        >
-          {isSubmitting ? 'Starting…' : 'Start run'}
-        </button>
       </div>
     </section>
   )

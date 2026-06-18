@@ -64,6 +64,7 @@ def parse_pdf(content: bytes) -> ParsedDocument:
     try:
         for page_index, page in enumerate(document, start=1):
             page_dict = page.get_text("dict")
+            line_index = 0
 
             for block in page_dict.get("blocks", []):
                 if block.get("type") != 0:
@@ -89,12 +90,14 @@ def parse_pdf(content: bytes) -> ParsedDocument:
 
                     lines.append(
                         ParsedLine(
+                            line_id=f"p{page_index}-l{line_index}",
                             text=line_text,
                             page=page_index,
                             font_size=font_size,
                             bbox=bbox,
                         ),
                     )
+                    line_index += 1
     finally:
         document.close()
 

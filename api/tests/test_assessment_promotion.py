@@ -25,7 +25,7 @@ def test_promote_flashcards_maps_rows() -> None:
         source_id="src-1",
         production_run_id="run-1",
         skill_run_id="skill-1",
-        skill_id="flashcard-gen",
+        skill_id="generate-flashcards",
         skill_version="1.0.0",
         flashcards=[
             {
@@ -41,7 +41,7 @@ def test_promote_flashcards_maps_rows() -> None:
 
     assert len(rows) == 1
     assert rows[0]["front"] == "What is METT-T?"
-    assert rows[0]["origin"]["skill_id"] == "flashcard-gen"
+    assert rows[0]["origin"]["skill_id"] == "generate-flashcards"
 
 
 def test_promote_quizzes_maps_rows() -> None:
@@ -50,7 +50,7 @@ def test_promote_quizzes_maps_rows() -> None:
         source_id="src-1",
         production_run_id="run-1",
         skill_run_id="skill-1",
-        skill_id="quiz-gen",
+        skill_id="generate-questions",
         skill_version="1.0.0",
         questions=[
             {
@@ -72,7 +72,7 @@ def test_promote_scenarios_maps_rows() -> None:
         source_id="src-1",
         production_run_id="run-1",
         skill_run_id="skill-1",
-        skill_id="scenario-gen",
+        skill_id="generate-scenarios",
         skill_version="1.0.0",
         scenarios=[
             {

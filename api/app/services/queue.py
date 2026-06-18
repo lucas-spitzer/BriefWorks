@@ -20,6 +20,6 @@ def enqueue_production_run(settings: Settings, production_run_id: str) -> str:
     job = queue.enqueue(
         "app.worker.jobs.orchestrate_production_run",
         production_run_id,
-        job_timeout="30m",
+        job_timeout=settings.production_run_job_timeout,
     )
     return job.id

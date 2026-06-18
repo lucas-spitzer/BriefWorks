@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.dependencies.auth import require_approved_user
 from app.dependencies.services import get_assessment_repository
 from app.dependencies.workspace import require_workspace
-from app.models.assessment import FlashcardResponse, QuizResponse, ScenarioResponse
+from app.models.assessment import (
+    AssessmentSetResponse,
+    AssessmentSetSummaryResponse,
+    FlashcardResponse,
+    QuizResponse,
+    ScenarioResponse,
+)
 from app.models.auth import CurrentUser
 from app.models.workspace import WorkspaceResponse
 from app.repositories.assessments import AssessmentRepository
@@ -119,3 +125,39 @@ async def get_scenario(
         )
 
     return ScenarioResponse.model_validate(row)
+
+
+@router.get(
+    "/workspaces/{workspace_id}/assessment-sets",
+    response_model=list[AssessmentSetSummaryResponse],
+)
+async def list_assessment_sets(
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
+    _: Annotated[CurrentUser, Depends(require_approved_user)],
+    assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[AssessmentSetSummaryResponse]:
+    rows = await assessments.list_assessment_sets(
+        workspace.id,
+        limit=limit,
+        offset=offset,
+    )
+    return [AssessmentSetSummaryResponse.model_validate(row) for row in rows]
+
+
+@router.get("/assessment-sets/{assessment_set_id}", response_model=AssessmentSetResponse)
+async def get_assessment_set(
+    assessment_set_id: str,
+    user: Annotated[CurrentUser, Depends(require_approved_user)],
+    assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+) -> AssessmentSetResponse:
+    row = await assessments.get_assessment_set_for_owner(assessment_set_id, user.id)
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assessment set not found.",
+        )
+
+    return AssessmentSetResponse.model_validate(row)

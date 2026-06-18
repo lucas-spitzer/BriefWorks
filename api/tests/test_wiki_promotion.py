@@ -1,4 +1,4 @@
-from app.intellex.skills.deconstructor_models import DeconstructedConcept
+from app.intellex.skills.concept_models import DeconstructedConcept
 from app.intellex.skills.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
 from app.intellex.wiki_slug import normalize_slug
 
@@ -21,7 +21,7 @@ def test_promote_concepts_creates_insert_for_new_term() -> None:
         workspace_id="ws-1",
         source_id="src-1",
         skill_run_id="run-1",
-        skill_id="document-deconstructor",
+        skill_id="deconstruct-document",
         skill_version="1.0.0",
         concepts=[concept],
         segment_index={
@@ -35,6 +35,7 @@ def test_promote_concepts_creates_insert_for_new_term() -> None:
 
     assert len(inserts) == 1
     assert inserts[0]["canonical_slug"] == "mett-t"
+    assert inserts[0]["entry_kind"] == "concept"
     assert inserts[0]["status"] == "canonical"
     assert updates == []
     assert disputes == []
@@ -53,7 +54,7 @@ def test_promote_concepts_logs_dispute_on_conflicting_definition() -> None:
         workspace_id="ws-1",
         source_id="src-1",
         skill_run_id="run-1",
-        skill_id="document-deconstructor",
+        skill_id="deconstruct-document",
         skill_version="1.0.0",
         concepts=[concept],
         segment_index={},

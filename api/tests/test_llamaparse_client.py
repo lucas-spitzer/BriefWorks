@@ -41,3 +41,23 @@ def test_response_json_raises_on_empty_body() -> None:
         assert False, "expected LlamaParseError"
     except LlamaParseError as exc:
         assert "non-JSON response (307)" in str(exc)
+
+
+def test_summarize_llamaparse_api_payload_strips_markdown_bodies() -> None:
+    from app.services.llamaparse_client import summarize_llamaparse_api_payload
+
+    summary = summarize_llamaparse_api_payload(
+        {
+            "job": {"id": "job-1", "status": "COMPLETED"},
+            "markdown": {
+                "pages": [
+                    {"page": 1, "markdown": "# Title"},
+                    {"page": 2, "markdown": "Body"},
+                ],
+            },
+        },
+    )
+
+    assert summary["job"]["status"] == "COMPLETED"
+    assert summary["pages"][0]["markdown_length"] == len("# Title")
+    assert "markdown" not in summary["pages"][0]

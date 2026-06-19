@@ -1,6 +1,6 @@
 # BriefWorks API
 
-FastAPI service for BriefWorks backend authorization, workspaces, sources, skills, and production-run orchestration.
+FastAPI service for BriefWorks backend authorization, workspaces, sources, stages, and production-run orchestration.
 
 ## Local Setup
 
@@ -159,11 +159,11 @@ DELETE /workspaces/{workspace_id}/sources/{source_id}
 
 `POST /sources` accepts `multipart/form-data` with a `file` field. Each successful upload automatically queues an ingest-only production run (Intellex pipeline through `deconstruct-document`). Redis and the RQ worker must be running.
 
-### Skills
+### Stages
 
 ```text
-GET /skills
-GET /skills/{skill_id}/{version}
+GET /stages
+GET /stages/{stage_id}/{version}
 ```
 
 Optional query param: `?module=intellex|mathesys|qngen`
@@ -205,8 +205,8 @@ GET /artifacts/{artifact_id}/download
 GET  /workspaces/{workspace_id}/production-runs
 POST /workspaces/{workspace_id}/production-runs
 GET  /production-runs/{production_run_id}
-GET  /production-runs/{production_run_id}/skill-runs
-GET  /skill-runs/{skill_run_id}
+GET  /production-runs/{production_run_id}/stage-runs
+GET  /stage-runs/{stage_run_id}
 ```
 
 Example production run body:
@@ -232,7 +232,7 @@ Supported `target_artifacts` values:
 Full pipeline worker behavior:
 
 - always completes Intellex ingest (`store`, `parse`, `prepare-document`, `chunk`, `source-research`, `deconstruct-document`, `extract-knowledge`); reuses prior ingest/Intellex results when a source was already processed
-- optionally runs Mathesys narration skills and QnGen skills based on `target_artifacts`
+- optionally runs Mathesys narration stages and QnGen stages based on `target_artifacts`
 - promotes Wiki concepts, artifacts, and assessment entities
 - marks production run `completed` when finished
 

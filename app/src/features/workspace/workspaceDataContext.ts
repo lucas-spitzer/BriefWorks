@@ -6,7 +6,7 @@ import type {
   ProductionRun,
   Quiz,
   Scenario,
-  SkillRun,
+  StageRun,
   Source,
   WikiEntry,
 } from '../../lib/workspaceApi'
@@ -14,7 +14,7 @@ import type {
 export interface WorkspaceDataContextValue {
   sources: Source[]
   productionRuns: ProductionRun[]
-  skillRunsByRunId: Record<string, SkillRun[]>
+  stageRunsByRunId: Record<string, StageRun[]>
   artifacts: Artifact[]
   wikiEntries: WikiEntry[]
   assessmentSets: AssessmentSetSummary[]

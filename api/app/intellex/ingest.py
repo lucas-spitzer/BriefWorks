@@ -34,7 +34,7 @@ def parse_source_content(
 ) -> ParseResult:
     if not is_pdf_source(mime_type, filename):
         raise ValueError(
-            f"Unsupported source type for parse step: {mime_type or filename}. "
+            f"Unsupported source type for parse stage: {mime_type or filename}. "
             "Only PDF sources are supported for parsing.",
         )
 
@@ -44,7 +44,11 @@ def parse_source_content(
     client = llamaparse_client or LlamaParseClient()
     parse_result = client.parse_pdf(filename=filename or "source.pdf", content=content)
     document = normalize_llamaparse_result(parse_result)
-    return ParseResult(document=document, raw_markdown=parse_result.raw_markdown)
+    return ParseResult(
+        document=document,
+        raw_markdown=parse_result.raw_markdown,
+        api_payload=parse_result.api_payload,
+    )
 
 
 def chunk_parsed_document(

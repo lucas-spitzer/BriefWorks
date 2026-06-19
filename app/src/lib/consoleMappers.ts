@@ -2,11 +2,12 @@ import type {
   Artifact,
   PipelineStep,
   ProductionRun,
-  SkillRun,
+  StageRun,
   Source,
 } from './workspaceApi'
 import {
   artifactKindLabel,
+  artifactKindShortLabel,
   documentTypeLabel,
   formatBytes,
   mimeLabel,
@@ -72,6 +73,35 @@ export function sourceIssuingAuthority(source: Source): string | null {
   return metadataString(meta.issuing_authority)
 }
 
+export function sourceAbstract(source: Source): string | null {
+  const research = researchMetadata(source)
+  const researchedAbstract = metadataString(research?.abstract)
+  if (researchedAbstract) return researchedAbstract
+
+  const meta = source.source_metadata
+  return metadataString(meta.abstract)
+}
+
+export function sourceResearchTitle(source: Source): string {
+  const research = researchMetadata(source)
+  const researchedTitle = metadataString(research?.title)
+  if (researchedTitle) return researchedTitle
+
+  const identifier = metadataString(research?.identifier)
+  if (identifier) return identifier
+
+  const meta = source.source_metadata
+  const flatTitle = metadataString(meta.title)
+  if (flatTitle) return flatTitle
+
+  return filenameStem(source.filename)
+}
+
+export function artifactCardTitle(artifact: Artifact, source: Source | undefined): string {
+  const name = source ? sourceResearchTitle(source) : filenameStem(artifact.filename)
+  return `${name} ${artifactKindShortLabel(artifact.artifact_type)}`
+}
+
 export function sourcePages(source: Source): number | null {
   const parse = parseMetadata(source)
   if (typeof parse?.page_count === 'number') return parse.page_count
@@ -107,7 +137,7 @@ export function productionRunLabel(run: ProductionRun, sources: Source[]): strin
   const targetPart =
     run.target_artifacts.length > 0
       ? run.target_artifacts.map((artifact) => artifactKindLabel(artifact)).join(', ')
-      : 'ingest only'
+      : 'Upload'
   return `${sourcePart} → ${targetPart}`
 }
 
@@ -124,26 +154,26 @@ export function productionRunDurationSec(run: ProductionRun): number {
   return Math.max(0, Math.round((end - start) / 1000))
 }
 
-export function skillRunDurationSec(skill: SkillRun): number {
-  if (!skill.started_at) return 0
-  const start = new Date(skill.started_at).getTime()
-  const end = skill.completed_at ? new Date(skill.completed_at).getTime() : Date.now()
+export function stageRunDurationSec(stageRun: StageRun): number {
+  if (!stageRun.started_at) return 0
+  const start = new Date(stageRun.started_at).getTime()
+  const end = stageRun.completed_at ? new Date(stageRun.completed_at).getTime() : Date.now()
   return Math.max(0, Math.round((end - start) / 1000))
 }
 
-export function skillRunSummary(skill: SkillRun): string {
-  if (skill.error) return 'Execution failed.'
-  if (skill.output && typeof skill.output.summary === 'string') {
-    return skill.output.summary
+export function stageRunSummary(stageRun: StageRun): string {
+  if (stageRun.error) return 'Execution failed.'
+  if (stageRun.output && typeof stageRun.output.summary === 'string') {
+    return stageRun.output.summary
   }
-  if (skill.status === 'completed') return 'Completed successfully.'
-  if (skill.status === 'running') return 'In progress…'
-  if (skill.status === 'queued') return 'Queued.'
-  return skill.status
+  if (stageRun.status === 'completed') return 'Completed successfully.'
+  if (stageRun.status === 'running') return 'In progress…'
+  if (stageRun.status === 'queued') return 'Queued.'
+  return stageRun.status
 }
 
-export function skillRunTokens(skill: SkillRun): { in: number; out: number } {
-  const usage = skill.token_usage
+export function stageRunTokens(stageRun: StageRun): { in: number; out: number } {
+  const usage = stageRun.token_usage
   if (!usage) return { in: 0, out: 0 }
   return {
     in: usage.input_tokens ?? usage.prompt_tokens ?? 0,
@@ -151,10 +181,10 @@ export function skillRunTokens(skill: SkillRun): { in: number; out: number } {
   }
 }
 
-export function skillRunApiUsageTotals(
-  skill: SkillRun,
+export function stageRunApiUsageTotals(
+  stageRun: StageRun,
 ): { costUsd: number; elevenlabsTokens: number } {
-  const usage = skill.api_usage
+  const usage = stageRun.api_usage
 
   if (!usage || typeof usage !== 'object' || Array.isArray(usage)) {
     return { costUsd: 0, elevenlabsTokens: 0 }
@@ -177,41 +207,41 @@ export function skillRunApiUsageTotals(
   return { costUsd, elevenlabsTokens }
 }
 
-export function skillRunCostUsd(skill: SkillRun): number {
-  const stored = typeof skill.cost_usd === 'number' ? skill.cost_usd : 0
+export function stageRunCostUsd(stageRun: StageRun): number {
+  const stored = typeof stageRun.cost_usd === 'number' ? stageRun.cost_usd : 0
 
   if (stored > 0) {
     return stored
   }
 
-  return skillRunApiUsageTotals(skill).costUsd
+  return stageRunApiUsageTotals(stageRun).costUsd
 }
 
-export function skillRunElevenLabsTokens(skill: SkillRun): number {
-  return skillRunApiUsageTotals(skill).elevenlabsTokens
+export function stageRunElevenLabsTokens(stageRun: StageRun): number {
+  return stageRunApiUsageTotals(stageRun).elevenlabsTokens
 }
 
 export function productionRunCostUsd(
   run: ProductionRun,
-  skillRuns: SkillRun[] = [],
+  stageRuns: StageRun[] = [],
 ): number {
   const rolledUp = typeof run.cost_usd === 'number' ? run.cost_usd : 0
-  const fromSkills = skillRuns.reduce((total, skill) => total + skillRunCostUsd(skill), 0)
-  return Math.max(rolledUp, fromSkills)
+  const fromStages = stageRuns.reduce((total, stageRun) => total + stageRunCostUsd(stageRun), 0)
+  return Math.max(rolledUp, fromStages)
 }
 
 export function sumWorkspaceCostUsd(
   productionRuns: ProductionRun[],
-  skillRunsByRunId: Record<string, SkillRun[]>,
+  stageRunsByRunId: Record<string, StageRun[]>,
 ): number {
   return productionRuns.reduce(
-    (total, run) => total + productionRunCostUsd(run, skillRunsByRunId[run.id] ?? []),
+    (total, run) => total + productionRunCostUsd(run, stageRunsByRunId[run.id] ?? []),
     0,
   )
 }
 
-export function skillRunDisplayName(skill: SkillRun): string {
-  return skill.skill_id
+export function stageRunDisplayName(stageRun: StageRun): string {
+  return stageRun.stage_id
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
@@ -222,6 +252,68 @@ export function pipelineStepLabel(step: PipelineStep): string {
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+export type PipelineStepDisplayStatus = 'completed' | 'running' | 'failed' | 'queued'
+
+export function pipelineStepDisplayStatus(
+  step: PipelineStep,
+  pipeline: PipelineStep[],
+  stageRuns: StageRun[],
+  runStatus: string,
+): PipelineStepDisplayStatus {
+  if (step.status === 'completed') return 'completed'
+  if (step.status === 'failed') return 'failed'
+
+  if (step.stage_id) {
+    const activeStageRun = stageRuns.find(
+      (stageRun) =>
+        stageRun.stage_id === step.stage_id &&
+        (stageRun.status === 'running' || stageRun.status === 'queued'),
+    )
+    if (activeStageRun) {
+      return activeStageRun.status === 'running' ? 'running' : 'queued'
+    }
+
+    const failedStageRun = stageRuns.find(
+      (stageRun) => stageRun.stage_id === step.stage_id && stageRun.status === 'failed',
+    )
+    if (failedStageRun) return 'failed'
+  }
+
+  if (runStatus === 'running' || runStatus === 'queued') {
+    const currentStep = pipeline.find(
+      (pipelineStep) => pipelineStep.status !== 'completed' && pipelineStep.status !== 'failed',
+    )
+    if (currentStep?.step === step.step) {
+      return runStatus === 'running' ? 'running' : 'queued'
+    }
+  }
+
+  return 'queued'
+}
+
+export function pipelineStepDetail(
+  step: PipelineStep,
+  pipeline: PipelineStep[],
+  stageRuns: StageRun[],
+  runStatus: string,
+): string {
+  if (step.detail) return step.detail
+
+  if (step.stage_id) {
+    const activeStageRun = stageRuns.find(
+      (stageRun) =>
+        stageRun.stage_id === step.stage_id &&
+        (stageRun.status === 'running' || stageRun.status === 'queued'),
+    )
+    if (activeStageRun) return stageRunSummary(activeStageRun)
+  }
+
+  const displayStatus = pipelineStepDisplayStatus(step, pipeline, stageRuns, runStatus)
+  if (displayStatus === 'running') return 'In progress…'
+  if (displayStatus === 'queued') return 'Queued.'
+  return displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)
 }
 
 export function artifactModule(artifact: Artifact): string {
@@ -270,20 +362,20 @@ export function mapSourceDisplay(source: Source): SourceDisplay {
   }
 }
 
-export interface SkillRunWithContext extends SkillRun {
+export interface StageRunWithContext extends StageRun {
   runId: string
   runLabel: string
 }
 
-export function flattenSkillRuns(
+export function flattenStageRuns(
   runs: ProductionRun[],
-  skillRunsByRunId: Record<string, SkillRun[]>,
+  stageRunsByRunId: Record<string, StageRun[]>,
   sources: Source[],
-): SkillRunWithContext[] {
+): StageRunWithContext[] {
   return runs
     .flatMap((run) =>
-      (skillRunsByRunId[run.id] ?? []).map((skill) => ({
-        ...skill,
+      (stageRunsByRunId[run.id] ?? []).map((stageRun) => ({
+        ...stageRun,
         runId: run.id,
         runLabel: productionRunLabel(run, sources),
       })),

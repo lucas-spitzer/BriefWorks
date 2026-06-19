@@ -33,6 +33,39 @@ def _response_json(response: httpx.Response) -> dict[str, Any]:
     return payload
 
 
+def summarize_llamaparse_api_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return a JSON-serializable summary of the LlamaParse job response."""
+
+    summary: dict[str, Any] = {}
+
+    job = payload.get("job")
+    if isinstance(job, dict):
+        summary["job"] = {
+            key: job.get(key)
+            for key in ("id", "status", "error_message", "created_at", "updated_at")
+            if key in job
+        }
+
+    markdown = payload.get("markdown")
+    if isinstance(markdown, dict):
+        pages_payload = markdown.get("pages")
+        if isinstance(pages_payload, list):
+            summary["pages"] = [
+                {
+                    "page": page.get("page") or page.get("page_number") or index,
+                    "markdown_length": len(str(page.get("markdown") or page.get("md") or "")),
+                }
+                for index, page in enumerate(pages_payload, start=1)
+                if isinstance(page, dict)
+            ]
+
+    markdown_full = payload.get("markdown_full")
+    if isinstance(markdown_full, str) and markdown_full.strip():
+        summary["markdown_full_length"] = len(markdown_full)
+
+    return summary
+
+
 @dataclass(frozen=True)
 class LlamaParsePage:
     page: int
@@ -44,6 +77,7 @@ class LlamaParseResult:
     job_id: str
     pages: list[LlamaParsePage]
     raw_markdown: str
+    api_payload: dict[str, Any]
 
 
 class LlamaParseClient:
@@ -84,7 +118,12 @@ class LlamaParseClient:
             if page.markdown.strip()
         )
 
-        return LlamaParseResult(job_id=job_id, pages=pages, raw_markdown=raw_markdown)
+        return LlamaParseResult(
+            job_id=job_id,
+            pages=pages,
+            raw_markdown=raw_markdown,
+            api_payload=summarize_llamaparse_api_payload(payload),
+        )
 
     def _upload_file(self, *, filename: str, content: bytes) -> str:
         with httpx.Client(**_HTTP_CLIENT_KWARGS) as client:

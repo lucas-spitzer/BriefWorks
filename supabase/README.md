@@ -18,12 +18,12 @@ After either path, replace the placeholder owner email in `approved_users` with 
 
 ## New project setup (recommended)
 
-For a fresh Supabase project, run the consolidated scripts in [`setup/`](setup/README.md). They create the full current schema and skill seeds — no incremental refactors or renames.
+For a fresh Supabase project, run the consolidated scripts in [`setup/`](setup/README.md). They create the full current schema and stage seeds — no incremental refactors or renames.
 
 ```text
 supabase/setup/01-auth-and-extensions.sql
 supabase/setup/02-schema.sql
-supabase/setup/03-seed-skills.sql
+supabase/setup/03-seed-stages.sql
 supabase/setup/04-storage-and-rls.sql
 ```
 
@@ -35,7 +35,7 @@ for f in supabase/setup/*.sql; do
 done
 ```
 
-See [`setup/README.md`](setup/README.md) for the full inventory of tables, buckets, and seeded skills.
+See [`setup/README.md`](setup/README.md) for the full inventory of tables, buckets, and seeded stages.
 
 ---
 
@@ -72,6 +72,8 @@ supabase/migrations/17-refocus-prepare-deconstruct.sql
 supabase/migrations/18-add-extract-chapter-knowledge.sql
 supabase/migrations/19-rename-extract-knowledge.sql
 supabase/migrations/19-elevenreader-ebook-v2.sql
+supabase/migrations/20-rename-skills-to-stages.sql
+supabase/migrations/21-add-parse-stage.sql
 ```
 
 ### Migration reference
@@ -100,3 +102,5 @@ These files record how the schema evolved. The final state they produce is equiv
 | `18-add-extract-chapter-knowledge.sql` | `wiki_entries.entry_kind`, `extract-knowledge` skill |
 | `19-rename-extract-knowledge.sql` | Rename to `extract-knowledge` |
 | `19-elevenreader-ebook-v2.sql` | `elevenreader-ebook` v2.0.0 |
+| `20-rename-skills-to-stages.sql` | Rename `skills`/`skill_runs` to `stages`/`stage_runs` |
+| `21-add-parse-stage.sql` | Register `parse` stage and upgrade pipeline parse step |

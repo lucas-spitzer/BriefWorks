@@ -45,9 +45,9 @@ def promote_assessment_set(
     workspace_id: str,
     source_id: str,
     production_run_id: str,
-    skill_run_id: str,
-    skill_id: str,
-    skill_version: str,
+    stage_run_id: str,
+    stage_id: str,
+    stage_version: str,
     source_metadata: dict[str, Any],
     assessment_types: list[str],
     items: list[dict[str, Any]],
@@ -58,7 +58,7 @@ def promote_assessment_set(
         "workspace_id": workspace_id,
         "source_id": source_id,
         "production_run_id": production_run_id,
-        "skill_run_id": skill_run_id,
+        "stage_run_id": stage_run_id,
         "title": build_assessment_set_title(
             source_metadata=source_metadata,
             item_count=len(items),
@@ -67,9 +67,9 @@ def promote_assessment_set(
         "assessment_types": assessment_types,
         "items": items,
         "origin": {
-            "skill_run_id": skill_run_id,
-            "skill_id": skill_id,
-            "skill_version": skill_version,
+            "stage_run_id": stage_run_id,
+            "stage_id": stage_id,
+            "stage_version": stage_version,
         },
     }
 
@@ -87,14 +87,14 @@ def promote_assessment_set(
             "workspace_id": workspace_id,
             "source_id": source_id,
             "production_run_id": production_run_id,
-            "skill_run_id": skill_run_id,
+            "stage_run_id": stage_run_id,
             "assessment_set_id": assessment_set_id,
             "item_id": item.get("item_id"),
             "citations": citations,
             "origin": {
-                "skill_run_id": skill_run_id,
-                "skill_id": skill_id,
-                "skill_version": skill_version,
+                "stage_run_id": stage_run_id,
+                "stage_id": stage_id,
+                "stage_version": stage_version,
             },
         }
 

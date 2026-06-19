@@ -6,21 +6,22 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app.intellex.ingest import chunk_parsed_document, parse_artifact_path, parse_source_content
+from app.intellex.ingest import chunk_parsed_document
 from app.intellex.models import ParsedDocument
 from app.intellex.source_readiness import source_intellex_complete
 from app.worker.db import WorkerDatabase
-from app.worker.skill_executor import (
-    DocumentDeconstructorSkillExecutor,
-    ElevenLabsStructuredTextSkillExecutor,
-    ElevenReaderScriptSkillExecutor,
-    ExtractChapterKnowledgeSkillExecutor,
-    FlashcardGenSkillExecutor,
-    PrepareSkillExecutor,
-    QuizGenSkillExecutor,
-    ScenarioGenSkillExecutor,
-    SourceResearchSkillExecutor,
-    SpeechifyApiSsmlSkillExecutor,
+from app.worker.stage_executor import (
+    DocumentDeconstructorStageExecutor,
+    ElevenLabsStructuredTextStageExecutor,
+    ElevenReaderScriptStageExecutor,
+    ExtractChapterKnowledgeStageExecutor,
+    FlashcardGenStageExecutor,
+    ParseStageExecutor,
+    PrepareStageExecutor,
+    QuizGenStageExecutor,
+    ScenarioGenStageExecutor,
+    SourceResearchStageExecutor,
+    SpeechifyApiSsmlStageExecutor,
 )
 from app.worker.storage import WorkerStorage
 
@@ -36,7 +37,7 @@ def mark_step(
     step_name: str,
     *,
     status: str,
-    skill_run_id: str | None = None,
+    stage_run_id: str | None = None,
     detail: str | None = None,
 ) -> list[dict[str, Any]]:
     updated_pipeline: list[dict[str, Any]] = []
@@ -47,8 +48,8 @@ def mark_step(
         if next_step.get("step") == step_name:
             next_step["status"] = status
 
-            if skill_run_id:
-                next_step["skill_run_id"] = skill_run_id
+            if stage_run_id:
+                next_step["stage_run_id"] = stage_run_id
 
             if detail:
                 next_step["detail"] = detail
@@ -91,40 +92,42 @@ class PipelineRunner:
         self,
         db: WorkerDatabase | None = None,
         storage: WorkerStorage | None = None,
-        source_research: SourceResearchSkillExecutor | None = None,
-        prepare: PrepareSkillExecutor | None = None,
-        document_deconstructor: DocumentDeconstructorSkillExecutor | None = None,
-        extract_chapter_knowledge: ExtractChapterKnowledgeSkillExecutor | None = None,
-        eleven_reader_script: ElevenReaderScriptSkillExecutor | None = None,
-        speechify_api_ssml: SpeechifyApiSsmlSkillExecutor | None = None,
-        elevenlabs_structured_text: ElevenLabsStructuredTextSkillExecutor | None = None,
-        flashcard_gen: FlashcardGenSkillExecutor | None = None,
-        quiz_gen: QuizGenSkillExecutor | None = None,
-        scenario_gen: ScenarioGenSkillExecutor | None = None,
+        source_research: SourceResearchStageExecutor | None = None,
+        parse: ParseStageExecutor | None = None,
+        prepare: PrepareStageExecutor | None = None,
+        document_deconstructor: DocumentDeconstructorStageExecutor | None = None,
+        extract_chapter_knowledge: ExtractChapterKnowledgeStageExecutor | None = None,
+        eleven_reader_script: ElevenReaderScriptStageExecutor | None = None,
+        speechify_api_ssml: SpeechifyApiSsmlStageExecutor | None = None,
+        elevenlabs_structured_text: ElevenLabsStructuredTextStageExecutor | None = None,
+        flashcard_gen: FlashcardGenStageExecutor | None = None,
+        quiz_gen: QuizGenStageExecutor | None = None,
+        scenario_gen: ScenarioGenStageExecutor | None = None,
     ) -> None:
         self.db = db or WorkerDatabase()
         self.storage = storage or WorkerStorage()
-        self.source_research = source_research or SourceResearchSkillExecutor(self.db)
-        self.prepare = prepare or PrepareSkillExecutor(self.db)
-        self.document_deconstructor = document_deconstructor or DocumentDeconstructorSkillExecutor(self.db)
+        self.source_research = source_research or SourceResearchStageExecutor(self.db)
+        self.parse = parse or ParseStageExecutor(self.db, self.storage)
+        self.prepare = prepare or PrepareStageExecutor(self.db)
+        self.document_deconstructor = document_deconstructor or DocumentDeconstructorStageExecutor(self.db)
         self.extract_chapter_knowledge = (
-            extract_chapter_knowledge or ExtractChapterKnowledgeSkillExecutor(self.db)
+            extract_chapter_knowledge or ExtractChapterKnowledgeStageExecutor(self.db)
         )
-        self.eleven_reader_script = eleven_reader_script or ElevenReaderScriptSkillExecutor(
+        self.eleven_reader_script = eleven_reader_script or ElevenReaderScriptStageExecutor(
             self.db,
             self.storage,
         )
-        self.speechify_api_ssml = speechify_api_ssml or SpeechifyApiSsmlSkillExecutor(
+        self.speechify_api_ssml = speechify_api_ssml or SpeechifyApiSsmlStageExecutor(
             self.db,
             self.storage,
         )
         self.elevenlabs_structured_text = (
             elevenlabs_structured_text
-            or ElevenLabsStructuredTextSkillExecutor(self.db, self.storage)
+            or ElevenLabsStructuredTextStageExecutor(self.db, self.storage)
         )
-        self.flashcard_gen = flashcard_gen or FlashcardGenSkillExecutor(self.db)
-        self.quiz_gen = quiz_gen or QuizGenSkillExecutor(self.db)
-        self.scenario_gen = scenario_gen or ScenarioGenSkillExecutor(self.db)
+        self.flashcard_gen = flashcard_gen or FlashcardGenStageExecutor(self.db)
+        self.quiz_gen = quiz_gen or QuizGenStageExecutor(self.db)
+        self.scenario_gen = scenario_gen or ScenarioGenStageExecutor(self.db)
 
     def run_store_step(self, context: PipelineContext, pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
         unstored = [
@@ -147,67 +150,46 @@ class PipelineRunner:
         )
 
     def run_parse_step(self, context: PipelineContext, pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        stage_run_ids: list[str] = []
+        total_pages = 0
         reused = 0
 
         for source in context.sources:
             source_id = source["id"]
 
             if source_id in context.intellex_complete_source_ids:
+                parse_metadata = (source.get("source_metadata") or {}).get("parse")
+                if isinstance(parse_metadata, dict):
+                    page_count = parse_metadata.get("page_count")
+                    if isinstance(page_count, int):
+                        total_pages += page_count
                 reused += 1
                 continue
 
-            self.db.update_source(
-                source_id,
-                {
-                    "status": "processing",
-                },
-            )
-
             content = self.storage.download(source["storage_path"])
-            parse_result = parse_source_content(
-                mime_type=source.get("mime_type", ""),
-                filename=source.get("filename", ""),
+            stage_run_id, parsed_document = self.parse.run_for_source(
+                production_run_id=context.production_run_id,
+                workspace_id=context.workspace_id,
+                source=source,
                 content=content,
             )
-            parsed_document = parse_result.document
             context.parsed_documents[source_id] = parsed_document
-
-            raw_markdown_path = parse_artifact_path(source["storage_path"])
-            self.storage.upload(
-                raw_markdown_path,
-                parse_result.raw_markdown.encode("utf-8"),
-                bucket=self.storage.sources_bucket,
-                content_type="text/markdown",
-            )
-
-            existing_metadata = source.get("source_metadata") or {}
-            if not isinstance(existing_metadata, dict):
-                existing_metadata = {}
-
-            updated_metadata = {
-                **existing_metadata,
-                "parse": {
-                    **parsed_document.to_parse_metadata(),
-                    "parsed_at": utc_now_iso(),
-                    "raw_markdown_path": raw_markdown_path,
-                },
-            }
-
-            self.db.update_source(
-                source_id,
-                {
-                    "source_metadata": updated_metadata,
-                },
-            )
-            source["source_metadata"] = updated_metadata
+            stage_run_ids.append(stage_run_id)
+            total_pages += parsed_document.page_count
 
         processed = len(context.sources) - reused
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
             "parse",
             status="completed",
-            detail=step_detail(processed=processed, reused=reused),
+            stage_run_id=last_stage_run_id,
+            detail=step_detail(
+                processed=processed,
+                reused=reused,
+                suffix=f"{total_pages} pages",
+            ),
         )
 
     def run_prepare_step(
@@ -215,7 +197,7 @@ class PipelineRunner:
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        skill_run_ids: list[str] = []
+        stage_run_ids: list[str] = []
         reused = 0
 
         for source in context.sources:
@@ -230,27 +212,27 @@ class PipelineRunner:
             if not parsed_document:
                 raise RuntimeError(f"Parsed document missing for source {source_id}.")
 
-            skill_run_id, prepared_document = self.prepare.run_for_source(
+            stage_run_id, prepared_document = self.prepare.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
                 parsed_document=parsed_document,
             )
             context.prepared_documents[source_id] = prepared_document
-            skill_run_ids.append(skill_run_id)
+            stage_run_ids.append(stage_run_id)
 
         processed = len(context.sources) - reused
-        last_skill_run_id = skill_run_ids[-1] if skill_run_ids else None
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
             "prepare-document",
             status="completed",
-            skill_run_id=last_skill_run_id,
+            stage_run_id=last_stage_run_id,
             detail=step_detail(
                 processed=processed,
                 reused=reused,
-                suffix=f"{len(skill_run_ids)} skill run(s)" if skill_run_ids else None,
+                suffix=f"{len(stage_run_ids)} stage run(s)" if stage_run_ids else None,
             ),
         )
 
@@ -329,7 +311,7 @@ class PipelineRunner:
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        skill_run_ids: list[str] = []
+        stage_run_ids: list[str] = []
         reused = 0
 
         for source in context.sources:
@@ -344,26 +326,26 @@ class PipelineRunner:
             if not parsed_document:
                 raise RuntimeError(f"Parsed document missing for source {source_id}.")
 
-            skill_run_id = self.source_research.run_for_source(
+            stage_run_id = self.source_research.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
                 parsed_document=parsed_document,
             )
-            skill_run_ids.append(skill_run_id)
+            stage_run_ids.append(stage_run_id)
 
         processed = len(context.sources) - reused
-        last_skill_run_id = skill_run_ids[-1] if skill_run_ids else None
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
             "source-research",
             status="completed",
-            skill_run_id=last_skill_run_id,
+            stage_run_id=last_stage_run_id,
             detail=step_detail(
                 processed=processed,
                 reused=reused,
-                suffix=f"{len(skill_run_ids)} skill run(s)" if skill_run_ids else None,
+                suffix=f"{len(stage_run_ids)} stage run(s)" if stage_run_ids else None,
             ),
         )
 
@@ -372,7 +354,7 @@ class PipelineRunner:
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        skill_run_ids: list[str] = []
+        stage_run_ids: list[str] = []
         reused = 0
 
         for source in context.sources:
@@ -382,25 +364,25 @@ class PipelineRunner:
                 reused += 1
                 continue
 
-            skill_run_id = self.document_deconstructor.run_for_source(
+            stage_run_id = self.document_deconstructor.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
             )
-            skill_run_ids.append(skill_run_id)
+            stage_run_ids.append(stage_run_id)
 
         processed = len(context.sources) - reused
-        last_skill_run_id = skill_run_ids[-1] if skill_run_ids else None
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
             "deconstruct-document",
             status="completed",
-            skill_run_id=last_skill_run_id,
+            stage_run_id=last_stage_run_id,
             detail=step_detail(
                 processed=processed,
                 reused=reused,
-                suffix=f"{len(skill_run_ids)} skill run(s)" if skill_run_ids else None,
+                suffix=f"{len(stage_run_ids)} stage run(s)" if stage_run_ids else None,
             ),
         )
 
@@ -409,7 +391,7 @@ class PipelineRunner:
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        skill_run_ids: list[str] = []
+        stage_run_ids: list[str] = []
         reused = 0
 
         for source in context.sources:
@@ -419,25 +401,25 @@ class PipelineRunner:
                 reused += 1
                 continue
 
-            skill_run_id = self.extract_chapter_knowledge.run_for_source(
+            stage_run_id = self.extract_chapter_knowledge.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
             )
-            skill_run_ids.append(skill_run_id)
+            stage_run_ids.append(stage_run_id)
 
         processed = len(context.sources) - reused
-        last_skill_run_id = skill_run_ids[-1] if skill_run_ids else None
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
             "extract-knowledge",
             status="completed",
-            skill_run_id=last_skill_run_id,
+            stage_run_id=last_stage_run_id,
             detail=step_detail(
                 processed=processed,
                 reused=reused,
-                suffix=f"{len(skill_run_ids)} skill run(s)" if skill_run_ids else None,
+                suffix=f"{len(stage_run_ids)} stage run(s)" if stage_run_ids else None,
             ),
         )
 
@@ -492,24 +474,24 @@ class PipelineRunner:
         if target_artifact not in context.target_artifacts:
             return pipeline
 
-        skill_run_ids: list[str] = []
+        stage_run_ids: list[str] = []
 
         for source in context.sources:
-            skill_run_id = executor.run_for_source(
+            stage_run_id = executor.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
             )
-            skill_run_ids.append(skill_run_id)
+            stage_run_ids.append(stage_run_id)
 
-        detail = f"{len(skill_run_ids)} skill run(s)"
-        last_skill_run_id = skill_run_ids[-1] if skill_run_ids else None
+        detail = f"{len(stage_run_ids)} stage run(s)"
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
             step_name,
             status="completed",
-            skill_run_id=last_skill_run_id,
+            stage_run_id=last_stage_run_id,
             detail=detail,
         )
 
@@ -564,24 +546,24 @@ class PipelineRunner:
         if target_artifact not in context.target_artifacts:
             return pipeline
 
-        skill_run_ids: list[str] = []
+        stage_run_ids: list[str] = []
 
         for source in context.sources:
-            skill_run_id = executor.run_for_source(
+            stage_run_id = executor.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
             )
-            skill_run_ids.append(skill_run_id)
+            stage_run_ids.append(stage_run_id)
 
-        detail = f"{len(skill_run_ids)} skill run(s)"
-        last_skill_run_id = skill_run_ids[-1] if skill_run_ids else None
+        detail = f"{len(stage_run_ids)} stage run(s)"
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
             step_name,
             status="completed",
-            skill_run_id=last_skill_run_id,
+            stage_run_id=last_stage_run_id,
             detail=detail,
         )
 
@@ -611,21 +593,21 @@ class PipelineRunner:
             source_id = source["id"]
             has_segments = bool(self.db.list_ndr_segments_for_source(source_id))
             has_document_chapters = self.db.has_document_chapters_for_source(source_id)
-            has_deconstruct_skill_run = self.db.has_completed_skill_run_for_source(
+            has_deconstruct_stage_run = self.db.has_completed_stage_run_for_source(
                 source_id,
-                DocumentDeconstructorSkillExecutor.SKILL_ID,
+                DocumentDeconstructorStageExecutor.STAGE_ID,
             )
-            has_extract_skill_run = self.db.has_completed_skill_run_for_source(
+            has_extract_stage_run = self.db.has_completed_stage_run_for_source(
                 source_id,
-                ExtractChapterKnowledgeSkillExecutor.SKILL_ID,
+                ExtractChapterKnowledgeStageExecutor.STAGE_ID,
             )
 
             if source_intellex_complete(
                 source,
                 has_segments=has_segments,
                 has_document_chapters=has_document_chapters,
-                has_deconstruct_skill_run=has_deconstruct_skill_run,
-                has_extract_skill_run=has_extract_skill_run,
+                has_deconstruct_stage_run=has_deconstruct_stage_run,
+                has_extract_stage_run=has_extract_stage_run,
             ):
                 context.intellex_complete_source_ids.add(source_id)
 
@@ -676,7 +658,7 @@ class PipelineRunner:
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
             pipeline = self.run_generate_scenarios_step(context, pipeline)
-            cost_usd = self.db.sum_skill_run_costs(production_run_id)
+            cost_usd = self.db.sum_stage_run_costs(production_run_id)
             self.db.update_production_run(
                 production_run_id,
                 {
@@ -695,7 +677,7 @@ class PipelineRunner:
             }
         except Exception as exc:
             logger.exception("Production run %s failed", production_run_id)
-            cost_usd = self.db.sum_skill_run_costs(production_run_id)
+            cost_usd = self.db.sum_stage_run_costs(production_run_id)
             self.db.update_production_run(
                 production_run_id,
                 {

@@ -29,7 +29,7 @@ class WikiDisputeResponse(BaseModel):
     term_label: str
     existing_definition: str | None
     proposed_definition: str
-    skill_run_id: str | None
+    stage_run_id: str | None
     source_id: str | None
     status: str
     created_at: datetime

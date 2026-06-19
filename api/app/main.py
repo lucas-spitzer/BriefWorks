@@ -9,7 +9,7 @@ from app.dependencies.auth import require_approved_user
 from app.errors import register_exception_handlers
 from app.logging_config import configure_logging
 from app.models.auth import CurrentUser, CurrentUserResponse
-from app.routers import artifacts, assessments, production_runs, skills, sources, wiki, workspaces
+from app.routers import artifacts, assessments, production_runs, stages, sources, wiki, workspaces
 
 configure_logging()
 settings = get_settings()
@@ -53,7 +53,7 @@ app.add_middleware(
 )
 
 app.include_router(workspaces.router)
-app.include_router(skills.router)
+app.include_router(stages.router)
 app.include_router(sources.router)
 app.include_router(production_runs.router)
 app.include_router(wiki.router)

@@ -203,7 +203,7 @@ Button rules:
 - Strong heading.
 - Optional scarlet top rule for important cards.
 
-#### Registry card footers (workspace, source, skill, artifact)
+#### Registry card footers (workspace, source, stage, artifact)
 
 Console registry cards pin a metadata footer (`.bw-console__artifact-foot`) to the card bottom with a top border divider. Spacing above that divider must stay consistent—this has been a recurring layout issue.
 

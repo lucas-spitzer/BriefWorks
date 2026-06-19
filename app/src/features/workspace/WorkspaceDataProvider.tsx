@@ -8,7 +8,7 @@ import {
   listProductionRuns,
   listQuizzes,
   listScenarios,
-  listSkillRuns,
+  listStageRuns,
   listSources,
   listWikiEntries,
   uploadSource as uploadSourceRequest,
@@ -18,7 +18,7 @@ import {
   type ProductionRun,
   type Quiz,
   type Scenario,
-  type SkillRun,
+  type StageRun,
   type Source,
   type WikiEntry,
 } from '../../lib/workspaceApi'
@@ -38,7 +38,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
 
   const [sources, setSources] = useState<Source[]>([])
   const [productionRuns, setProductionRuns] = useState<ProductionRun[]>([])
-  const [skillRunsByRunId, setSkillRunsByRunId] = useState<Record<string, SkillRun[]>>({})
+  const [stageRunsByRunId, setStageRunsByRunId] = useState<Record<string, StageRun[]>>({})
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [wikiEntries, setWikiEntries] = useState<WikiEntry[]>([])
   const [assessmentSets, setAssessmentSets] = useState<AssessmentSetSummary[]>([])
@@ -80,13 +80,13 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
         listScenarios(workspaceId),
       ])
 
-      const skillRunEntries = await Promise.all(
-        nextRuns.map(async (run) => [run.id, await listSkillRuns(run.id)] as const),
+      const stageRunEntries = await Promise.all(
+        nextRuns.map(async (run) => [run.id, await listStageRuns(run.id)] as const),
       )
 
       setSources(nextSources)
       setProductionRuns(nextRuns)
-      setSkillRunsByRunId(Object.fromEntries(skillRunEntries))
+      setStageRunsByRunId(Object.fromEntries(stageRunEntries))
       setArtifacts(nextArtifacts)
       setWikiEntries(nextWikiEntries)
       setAssessmentSets(nextAssessmentSets)
@@ -105,7 +105,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
     if (!workspaceId) {
       setSources([])
       setProductionRuns([])
-      setSkillRunsByRunId({})
+      setStageRunsByRunId({})
       setArtifacts([])
       setWikiEntries([])
       setAssessmentSets([])
@@ -172,7 +172,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
     () => ({
       sources,
       productionRuns,
-      skillRunsByRunId,
+      stageRunsByRunId,
       artifacts,
       wikiEntries,
       assessmentSets,
@@ -189,7 +189,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
     [
       sources,
       productionRuns,
-      skillRunsByRunId,
+      stageRunsByRunId,
       artifacts,
       wikiEntries,
       assessmentSets,

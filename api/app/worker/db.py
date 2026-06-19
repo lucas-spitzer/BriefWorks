@@ -159,26 +159,26 @@ class WorkerDatabase:
             batch = segments[start : start + NDR_SEGMENT_BATCH_SIZE]
             self._request("POST", "ndr_segments", json_body=batch)
 
-    def create_skill_run(self, payload: dict[str, Any]) -> dict[str, Any]:
-        rows = self._request("POST", "skill_runs", json_body=payload)
+    def create_stage_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        rows = self._request("POST", "stage_runs", json_body=payload)
         return rows[0]
 
-    def update_skill_run(self, skill_run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def update_stage_run(self, stage_run_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         rows = self._request(
             "PATCH",
-            "skill_runs",
-            params={"id": f"eq.{skill_run_id}"},
+            "stage_runs",
+            params={"id": f"eq.{stage_run_id}"},
             json_body=payload,
         )
         return rows[0]
 
-    def get_skill(self, skill_id: str, version: str) -> dict[str, Any] | None:
+    def get_stage(self, stage_id: str, version: str) -> dict[str, Any] | None:
         rows = self._request(
             "GET",
-            "skills",
+            "stages",
             params={
                 "select": "*",
-                "skill_id": f"eq.{skill_id}",
+                "stage_id": f"eq.{stage_id}",
                 "version": f"eq.{version}",
                 "limit": "1",
             },
@@ -197,13 +197,13 @@ class WorkerDatabase:
         )
         return rows or []
 
-    def has_completed_skill_run_for_source(self, source_id: str, skill_id: str) -> bool:
+    def has_completed_stage_run_for_source(self, source_id: str, stage_id: str) -> bool:
         rows = self._request(
             "GET",
-            "skill_runs",
+            "stage_runs",
             params={
                 "select": "id",
-                "skill_id": f"eq.{skill_id}",
+                "stage_id": f"eq.{stage_id}",
                 "status": "eq.completed",
                 "inputs->>source_id": f"eq.{source_id}",
                 "limit": "1",
@@ -311,10 +311,10 @@ class WorkerDatabase:
 
         return created
 
-    def sum_skill_run_costs(self, production_run_id: str) -> float:
+    def sum_stage_run_costs(self, production_run_id: str) -> float:
         rows = self._request(
             "GET",
-            "skill_runs",
+            "stage_runs",
             params={
                 "select": "cost_usd",
                 "production_run_id": f"eq.{production_run_id}",
@@ -326,13 +326,13 @@ class WorkerDatabase:
             6,
         )
 
-    def list_skill_runs_for_production_run(
+    def list_stage_runs_for_production_run(
         self,
         production_run_id: str,
     ) -> list[dict[str, Any]]:
         rows = self._request(
             "GET",
-            "skill_runs",
+            "stage_runs",
             params={
                 "select": "*",
                 "production_run_id": f"eq.{production_run_id}",
@@ -341,13 +341,13 @@ class WorkerDatabase:
         )
         return rows or []
 
-    def list_skill_runs_for_workspace(
+    def list_stage_runs_for_workspace(
         self,
         workspace_id: str,
     ) -> list[dict[str, Any]]:
         rows = self._request(
             "GET",
-            "skill_runs",
+            "stage_runs",
             params={
                 "select": "*",
                 "workspace_id": f"eq.{workspace_id}",

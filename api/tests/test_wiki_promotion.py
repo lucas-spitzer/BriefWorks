@@ -1,5 +1,5 @@
-from app.intellex.skills.concept_models import DeconstructedConcept
-from app.intellex.skills.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
+from app.intellex.stages.concept_models import DeconstructedConcept
+from app.intellex.stages.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
 from app.intellex.wiki_slug import normalize_slug
 
 
@@ -20,9 +20,9 @@ def test_promote_concepts_creates_insert_for_new_term() -> None:
     inserts, updates, disputes = promote_concepts_to_wiki(
         workspace_id="ws-1",
         source_id="src-1",
-        skill_run_id="run-1",
-        skill_id="deconstruct-document",
-        skill_version="1.0.0",
+        stage_run_id="run-1",
+        stage_id="deconstruct-document",
+        stage_version="1.0.0",
         concepts=[concept],
         segment_index={
             "seg-1": {
@@ -53,9 +53,9 @@ def test_promote_concepts_logs_dispute_on_conflicting_definition() -> None:
     inserts, updates, disputes = promote_concepts_to_wiki(
         workspace_id="ws-1",
         source_id="src-1",
-        skill_run_id="run-1",
-        skill_id="deconstruct-document",
-        skill_version="1.0.0",
+        stage_run_id="run-1",
+        stage_id="deconstruct-document",
+        stage_version="1.0.0",
         concepts=[concept],
         segment_index={},
         existing_entries=[

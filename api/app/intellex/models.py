@@ -38,3 +38,4 @@ class ParsedDocument:
 class ParseResult:
     document: ParsedDocument
     raw_markdown: str
+    api_payload: dict[str, Any]

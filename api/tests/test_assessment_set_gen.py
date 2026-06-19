@@ -1,7 +1,7 @@
 from typing import Any
 
 from app.qngen.canonical_context import ConceptCard
-from app.qngen.skills.assessment_set_gen import AssessmentSetGenSkill
+from app.qngen.stages.assessment_set_gen import AssessmentSetGenStage
 from app.services.openai_client import OpenAICompletionResult
 
 
@@ -37,7 +37,7 @@ def _concept(wiki_id: str, label: str) -> ConceptCard:
 
 
 def test_assessment_set_gen_merges_batches_and_filters_types() -> None:
-    skill = AssessmentSetGenSkill(
+    stage = AssessmentSetGenStage(
         openai_client=FakeOpenAIClient(
             [
                 {
@@ -92,7 +92,7 @@ def test_assessment_set_gen_merges_batches_and_filters_types() -> None:
         ),
     )
 
-    output, execution = skill.run(
+    output, execution = stage.run(
         source_metadata={"research": {"title": "Doctrine"}},
         concept_batches=[[_concept("wiki-1", "Alpha")], [_concept("wiki-2", "Beta")]],
         assessment_types=["flashcards", "quizzes"],

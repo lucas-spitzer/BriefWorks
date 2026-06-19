@@ -1,13 +1,14 @@
+import { LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { signOut } from '../../features/auth/authService'
 import { useAuth } from '../../features/auth/authContext'
 import { ConsoleArtifacts } from './ConsoleArtifacts'
 import { ConsoleAssessments } from './ConsoleAssessments'
 import { ConsoleOps } from './ConsoleOps'
-import { ConsoleSkills } from './ConsoleSkills'
+import { ConsoleStages } from './ConsoleStages'
 import { ConsoleSources } from './ConsoleSources'
 import { ConsoleWorkspaces } from './ConsoleWorkspaces'
-import { railItems, type ConsolePage } from './types'
+import { railIconSize, railItems, type ConsolePage } from './types'
 
 export function ConsoleShell() {
   const [page, setPage] = useState<ConsolePage>('ops')
@@ -18,17 +19,20 @@ export function ConsoleShell() {
     <div className="bw-console">
       <nav className="bw-console__rail" aria-label="BriefWorks console navigation">
         <div className="bw-console__rail-mark">BW</div>
-        {railItems.map((item) => (
-          <button
-            key={item.id}
-            className={`bw-console__rail-btn${page === item.id ? ' is-active' : ''}`}
-            onClick={() => setPage(item.id)}
-            aria-current={page === item.id ? 'page' : undefined}
-          >
-            <span style={{ fontSize: '1rem' }}>{item.icon}</span>
-            {item.label}
-          </button>
-        ))}
+        {railItems.map((item) => {
+          const Icon = item.icon
+          return (
+            <button
+              key={item.id}
+              className={`bw-console__rail-btn${page === item.id ? ' is-active' : ''}`}
+              onClick={() => setPage(item.id)}
+              aria-current={page === item.id ? 'page' : undefined}
+            >
+              <Icon className="bw-console__rail-icon" size={railIconSize} strokeWidth={1.75} aria-hidden />
+              {item.label}
+            </button>
+          )
+        })}
 
         <div className="bw-console__rail-foot">
           <button
@@ -37,7 +41,7 @@ export function ConsoleShell() {
             onClick={() => void signOut()}
             title={`Sign out (${displayEmail})`}
           >
-            <span style={{ fontSize: '1rem' }}>↪</span>
+            <LogOut className="bw-console__rail-icon" size={railIconSize} strokeWidth={1.75} aria-hidden />
             OUT
           </button>
         </div>
@@ -46,7 +50,7 @@ export function ConsoleShell() {
       <div className="bw-console__main">
         {page === 'ops' ? <ConsoleOps onGoToSources={() => setPage('sources')} /> : null}
         {page === 'sources' ? <ConsoleSources /> : null}
-        {page === 'skills' ? <ConsoleSkills onGoToOps={() => setPage('ops')} /> : null}
+        {page === 'stages' ? <ConsoleStages onGoToOps={() => setPage('ops')} /> : null}
         {page === 'artifacts' ? <ConsoleArtifacts /> : null}
         {page === 'assessments' ? <ConsoleAssessments /> : null}
         {page === 'workspace' ? <ConsoleWorkspaces /> : null}

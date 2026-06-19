@@ -24,9 +24,9 @@ def test_promote_flashcards_maps_rows() -> None:
         workspace_id="ws-1",
         source_id="src-1",
         production_run_id="run-1",
-        skill_run_id="skill-1",
-        skill_id="generate-flashcards",
-        skill_version="1.0.0",
+        stage_run_id="stage-1",
+        stage_id="generate-flashcards",
+        stage_version="1.0.0",
         flashcards=[
             {
                 "front": "What is METT-T?",
@@ -41,7 +41,7 @@ def test_promote_flashcards_maps_rows() -> None:
 
     assert len(rows) == 1
     assert rows[0]["front"] == "What is METT-T?"
-    assert rows[0]["origin"]["skill_id"] == "generate-flashcards"
+    assert rows[0]["origin"]["stage_id"] == "generate-flashcards"
 
 
 def test_promote_quizzes_maps_rows() -> None:
@@ -49,9 +49,9 @@ def test_promote_quizzes_maps_rows() -> None:
         workspace_id="ws-1",
         source_id="src-1",
         production_run_id="run-1",
-        skill_run_id="skill-1",
-        skill_id="generate-questions",
-        skill_version="1.0.0",
+        stage_run_id="stage-1",
+        stage_id="generate-questions",
+        stage_version="1.0.0",
         questions=[
             {
                 "question": "Which factor is part of METT-T?",
@@ -71,9 +71,9 @@ def test_promote_scenarios_maps_rows() -> None:
         workspace_id="ws-1",
         source_id="src-1",
         production_run_id="run-1",
-        skill_run_id="skill-1",
-        skill_id="generate-scenarios",
-        skill_version="1.0.0",
+        stage_run_id="stage-1",
+        stage_id="generate-scenarios",
+        stage_version="1.0.0",
         scenarios=[
             {
                 "title": "Urban patrol decision",

@@ -30,9 +30,9 @@ def promote_flashcards(
     workspace_id: str,
     source_id: str,
     production_run_id: str,
-    skill_run_id: str,
-    skill_id: str,
-    skill_version: str,
+    stage_run_id: str,
+    stage_id: str,
+    stage_version: str,
     flashcards: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -43,7 +43,7 @@ def promote_flashcards(
                 "workspace_id": workspace_id,
                 "source_id": source_id,
                 "production_run_id": production_run_id,
-                "skill_run_id": skill_run_id,
+                "stage_run_id": stage_run_id,
                 "front": card["front"],
                 "back": card["back"],
                 "difficulty": card.get("difficulty") or "medium",
@@ -54,9 +54,9 @@ def promote_flashcards(
                     source_id=source_id,
                 ),
                 "origin": {
-                    "skill_run_id": skill_run_id,
-                    "skill_id": skill_id,
-                    "skill_version": skill_version,
+                    "stage_run_id": stage_run_id,
+                    "stage_id": stage_id,
+                    "stage_version": stage_version,
                 },
             },
         )
@@ -69,9 +69,9 @@ def promote_quizzes(
     workspace_id: str,
     source_id: str,
     production_run_id: str,
-    skill_run_id: str,
-    skill_id: str,
-    skill_version: str,
+    stage_run_id: str,
+    stage_id: str,
+    stage_version: str,
     questions: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -82,7 +82,7 @@ def promote_quizzes(
                 "workspace_id": workspace_id,
                 "source_id": source_id,
                 "production_run_id": production_run_id,
-                "skill_run_id": skill_run_id,
+                "stage_run_id": stage_run_id,
                 "question": question["question"],
                 "question_type": question.get("question_type") or "multiple_choice",
                 "options": question.get("options") or [],
@@ -95,9 +95,9 @@ def promote_quizzes(
                     source_id=source_id,
                 ),
                 "origin": {
-                    "skill_run_id": skill_run_id,
-                    "skill_id": skill_id,
-                    "skill_version": skill_version,
+                    "stage_run_id": stage_run_id,
+                    "stage_id": stage_id,
+                    "stage_version": stage_version,
                 },
             },
         )
@@ -110,9 +110,9 @@ def promote_scenarios(
     workspace_id: str,
     source_id: str,
     production_run_id: str,
-    skill_run_id: str,
-    skill_id: str,
-    skill_version: str,
+    stage_run_id: str,
+    stage_id: str,
+    stage_version: str,
     scenarios: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -123,7 +123,7 @@ def promote_scenarios(
                 "workspace_id": workspace_id,
                 "source_id": source_id,
                 "production_run_id": production_run_id,
-                "skill_run_id": skill_run_id,
+                "stage_run_id": stage_run_id,
                 "title": scenario["title"],
                 "prompt": scenario["prompt"],
                 "context": scenario.get("context"),
@@ -135,9 +135,9 @@ def promote_scenarios(
                     source_id=source_id,
                 ),
                 "origin": {
-                    "skill_run_id": skill_run_id,
-                    "skill_id": skill_id,
-                    "skill_version": skill_version,
+                    "stage_run_id": stage_run_id,
+                    "stage_id": stage_id,
+                    "stage_version": stage_version,
                 },
             },
         )

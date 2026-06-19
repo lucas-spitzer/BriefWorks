@@ -1,11 +1,10 @@
 import pytest
 
-from app.mathesys.skills.eleven_reader_script import ElevenReaderScriptSkill
-from app.mathesys.skills.elevenreader_epub import (
+from app.mathesys.stages.eleven_reader_script import ElevenReaderScriptStage
+from app.mathesys.stages.elevenreader_epub import (
     chapter_rows_to_hydrated_chapters,
     chapter_rows_to_audio_sections,
 )
-
 
 def _seg(seg_id: str, kind: str, text: str, page: int = 1) -> dict:
     return {"id": seg_id, "kind": kind, "text": text, "locator": {"page": page}}
@@ -56,7 +55,7 @@ def test_build_single_epub_produces_one_volume_with_chapter_spine_items() -> Non
         ),
     ]
 
-    volumes, execution = ElevenReaderScriptSkill().run(
+    volumes, execution = ElevenReaderScriptStage().run(
         source_metadata={"research": {"title": "FM 3-0"}},
         segments=segments,
         wiki_entries=[],
@@ -109,13 +108,26 @@ def test_chapter_rows_to_audio_sections_preserves_subsection_headings() -> None:
     assert sections[0].subsections[0].title == "1.1 Purpose"
 
 
-def test_elevenreader_skill_fails_without_chapter_rows() -> None:
-    segments = [_seg("p1", "paragraph", "Orphan body.", page=1)]
+def test_elevenreader_ignores_bad_chapter_rows_and_groups_segments() -> None:
+    segments = [
+        _seg("h1", "heading", "Chapter 1", page=1),
+        _seg("h2", "heading", "WAR DEFINED", page=1),
+        _seg("p1", "paragraph", "War is violent.", page=1),
+        _seg("h3", "heading", "Chapter 2", page=2),
+        _seg("p2", "paragraph", "Theory follows.", page=2),
+    ]
+    bad_rows = [
+        _chapter_row("bad-1", title="WAR DEFINED", sequence_index=0, segment_ids=["h2"]),
+        _chapter_row("bad-2", title="Chapter 2", sequence_index=1, segment_ids=["h3", "p2"]),
+    ]
 
-    with pytest.raises(RuntimeError, match="deconstruct-document"):
-        ElevenReaderScriptSkill().run(
-            source_metadata={"research": {"title": "FM 3-0"}},
-            segments=segments,
-            wiki_entries=[],
-            chapter_rows=None,
-        )
+    volumes, _ = ElevenReaderScriptStage().run(
+        source_metadata={"research": {"title": "Warfighting"}},
+        segments=segments,
+        wiki_entries=[],
+        chapter_rows=bad_rows,
+    )
+
+    assert volumes[0]["chapter_count"] == 2
+    assert "Chapter 1" in volumes[0]["chapter_titles"][0]
+    assert "<h2>WAR DEFINED</h2>" in volumes[0]["chapters"][0]["xhtml"]

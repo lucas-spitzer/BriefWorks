@@ -22,6 +22,11 @@ from app.intellex.content_filter import (
     _is_front_back_matter_heading,
     _normalized_line,
 )
+from app.intellex.heading_classification import (
+    is_chapter_boundary_heading,
+    is_toc_chapter_listing_heading,
+    is_toc_outline_line,
+)
 
 from app.intellex.models import ParsedDocument, ParsedLine
 
@@ -41,8 +46,6 @@ def _running_header_texts(lines: list[ParsedLine]) -> set[str]:
     pages_by_text: dict[str, set[int]] = defaultdict(set)
 
     for line in lines:
-        if _is_heading_line(line):
-            continue
         text = line.text.strip()
         if not text or len(text) > _RUNNING_HEADER_MAX_CHARS:
             continue
@@ -53,6 +56,40 @@ def _running_header_texts(lines: list[ParsedLine]) -> set[str]:
         for text, pages in pages_by_text.items()
         if len(pages) >= _RUNNING_HEADER_MIN_PAGES
     }
+
+
+def _toc_pages(lines: list[ParsedLine]) -> set[int]:
+    by_page: dict[int, dict[str, int]] = defaultdict(
+        lambda: {"boundary_headings": 0, "paragraphs": 0, "dot_leader": 0, "toc_outline": 0},
+    )
+
+    for line in lines:
+        page = line.page
+        text = line.text.strip()
+
+        if _DOT_LEADER_RE.search(text):
+            by_page[page]["dot_leader"] += 1
+
+        if is_toc_outline_line(text):
+            by_page[page]["toc_outline"] += 1
+
+        if _is_heading_line(line) or is_chapter_boundary_heading(text) or is_toc_chapter_listing_heading(text):
+            if is_chapter_boundary_heading(text) or is_toc_chapter_listing_heading(text):
+                by_page[page]["boundary_headings"] += 1
+        elif len(text) > 40 and not is_toc_outline_line(text):
+            by_page[page]["paragraphs"] += 1
+
+    toc_pages: set[int] = set()
+
+    for page, counts in by_page.items():
+        if counts["dot_leader"] > 0:
+            toc_pages.add(page)
+        elif counts["toc_outline"] >= 2:
+            toc_pages.add(page)
+        elif counts["boundary_headings"] >= 2 and counts["paragraphs"] == 0:
+            toc_pages.add(page)
+
+    return toc_pages
 
 
 def _clutter_reason(text: str, running_headers: set[str]) -> str | None:
@@ -74,6 +111,10 @@ def _clutter_reason(text: str, running_headers: set[str]) -> str | None:
         return "bare_url_or_doi"
     if _DISTRIBUTION_LINE_RE.match(stripped):
         return "distribution_statement"
+    if is_toc_chapter_listing_heading(stripped):
+        return "toc_chapter_listing"
+    if is_toc_outline_line(stripped):
+        return "toc_outline_line"
     if _normalized_line(stripped) in running_headers:
         return "running_header_footer"
 
@@ -95,6 +136,7 @@ def pre_filter_lines(
         }
 
     running_headers = _running_header_texts(document.lines)
+    toc_pages = _toc_pages(document.lines)
     kept: list[ParsedLine] = []
     excluded_line_ids: list[str] = []
     dropped_sections: list[str] = []
@@ -102,12 +144,21 @@ def pre_filter_lines(
     skipping_section = False
 
     for line in document.lines:
+        if line.page in toc_pages:
+            excluded_line_ids.append(line.line_id)
+            reasons["toc_page"] += 1
+            continue
+
         if _is_heading_line(line):
             if _is_forbidden_heading(line.text):
                 skipping_section = True
                 dropped_sections.append(line.text.strip())
                 excluded_line_ids.append(line.line_id)
                 reasons["front_back_matter_section"] += 1
+                continue
+            if _normalized_line(line.text.strip()) in running_headers:
+                excluded_line_ids.append(line.line_id)
+                reasons["running_header_footer"] += 1
                 continue
             skipping_section = False
             kept.append(line)
@@ -148,6 +199,10 @@ def validate_prepared_document(document: ParsedDocument) -> dict[str, Any]:
             if _is_forbidden_heading(line.text):
                 skipping_section = True
                 violations["forbidden_section_heading"] += 1
+                violation_line_ids.append(line.line_id)
+                continue
+            if _normalized_line(line.text.strip()) in running_headers:
+                violations["running_header_footer"] += 1
                 violation_line_ids.append(line.line_id)
                 continue
             skipping_section = False

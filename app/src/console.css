@@ -72,6 +72,9 @@
   display: grid; place-items: center; font-size: 0.66rem; font-weight: 600;
   letter-spacing: 0.04em; gap: 2px;
 }
+.bw-console__rail-icon {
+  flex: none;
+}
 .bw-console__rail-btn:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
 .bw-console__rail-btn.is-active { background: rgba(148, 0, 0, 0.22); color: #fff; box-shadow: inset 2px 0 0 var(--color-scarlet); }
 
@@ -206,7 +209,8 @@
 .bw-state--completed,
 .bw-state--ready { background: rgba(62,161,90,0.18); color: #6fd08c; }
 .bw-state--running,
-.bw-state--processing { background: rgba(132,117,78,0.28); color: #d8c48a; }
+.bw-state--processing,
+.bw-state--download { background: rgba(132,117,78,0.28); color: #d8c48a; }
 .bw-state--failed { background: rgba(148,0,0,0.3); color: #ff8b8b; }
 .bw-state--queued { background: rgba(255,255,255,0.08); color: #9fb2bb; }
 .bw-state--cancelled { background: rgba(255,255,255,0.06); color: #7d8f98; }
@@ -386,7 +390,7 @@
   margin-bottom: var(--space-3);
 }
 
-.bw-console__skill-card .stats {
+.bw-console__stage-card .stats {
   font-family: var(--bw-mono);
   font-size: 0.7rem;
   color: #8aa1ab;
@@ -396,13 +400,31 @@
   flex-wrap: wrap;
 }
 
+.bw-console__card-desc {
+  font-size: 0.84rem;
+  color: #b6c4cb;
+  margin-top: var(--space-3);
+  line-height: 1.5;
+}
+
+.bw-console__artifact-foot .bw-console__statepill {
+  border: 0;
+  cursor: pointer;
+  appearance: none;
+}
+
+.bw-console__artifact-foot .bw-console__statepill:hover {
+  background: rgba(132, 117, 78, 0.4);
+  color: #f0e2b4;
+}
+
 .bw-console__card-fill {
   flex: 1 1 auto;
   min-height: 0;
 }
 
 .bw-console__artifact-card .bw-console__artifact-foot,
-.bw-console__skill-card .bw-console__artifact-foot,
+.bw-console__stage-card .bw-console__artifact-foot,
 .bw-console__source-card .bw-console__artifact-foot,
 .bw-console__ws-card .bw-console__artifact-foot {
   margin-top: 0;

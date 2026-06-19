@@ -43,3 +43,24 @@ def test_build_ndr_segments_merges_paragraph_lines_and_keeps_headings() -> None:
     assert segments[2]["text"] == "1.1 Purpose"
     assert segments[3]["kind"] == "paragraph"
     assert segments[3]["locator"]["page"] == 2
+
+
+def test_build_ndr_segments_splits_doctrinal_subsection_heading_from_paragraph() -> None:
+    document = ParsedDocument(
+        page_count=1,
+        lines=[
+            ParsedLine(
+                text="Tm EVOLUTION OF WAR\nWar is both timeless and ever changing.",
+                page=26,
+                kind="paragraph",
+            ),
+        ],
+    )
+
+    segments = build_ndr_segments(document)
+
+    assert len(segments) == 2
+    assert segments[0]["kind"] == "heading"
+    assert segments[0]["text"] == "Tm EVOLUTION OF WAR"
+    assert segments[1]["kind"] == "paragraph"
+    assert "War is both timeless" in segments[1]["text"]

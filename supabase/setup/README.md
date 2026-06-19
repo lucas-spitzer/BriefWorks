@@ -1,6 +1,6 @@
 # BriefWorks Supabase Setup
 
-Use these scripts to bootstrap a **fresh** Supabase project. They contain the full current schema and skill seeds — no incremental refactors or renames.
+Use these scripts to bootstrap a **fresh** Supabase project. They contain the full current schema and stage seeds — no incremental refactors or renames.
 
 For existing databases that were built from `supabase/migrations/`, keep using those migration files instead.
 
@@ -16,7 +16,7 @@ Run the SQL files **in order** in the Supabase SQL editor (or pipe them through 
 ```text
 supabase/setup/01-auth-and-extensions.sql
 supabase/setup/02-schema.sql
-supabase/setup/03-seed-skills.sql
+supabase/setup/03-seed-stages.sql
 supabase/setup/04-storage-and-rls.sql
 ```
 
@@ -40,8 +40,8 @@ After running setup, replace the placeholder owner email in `approved_users` wit
 
 ### Core tables
 
-- `workspaces`, `sources`, `production_runs`, `skill_runs`, `skills`
-- API cost tracking columns on `skill_runs` and `production_runs`
+- `workspaces`, `sources`, `production_runs`, `stage_runs`, `stages`
+- API cost tracking columns on `stage_runs` and `production_runs`
 
 ### Intellex content
 
@@ -60,10 +60,11 @@ After running setup, replace the placeholder owner email in `approved_users` wit
 - `assessment_sets` — canonical linked assessment JSON
 - `flashcards`, `quizzes`, `scenarios` — denormalized promoted items
 
-### Seeded skills
+### Seeded stages
 
-| Module | Skill ID | Version |
+| Module | Stage ID | Version |
 |--------|----------|---------|
+| intellex | `parse` | 1.0.0 |
 | intellex | `source-research` | 1.0.0 |
 | intellex | `prepare-document` | 1.0.0, 2.0.0 |
 | intellex | `deconstruct-document` | 1.0.0, 2.0.0 |
@@ -75,7 +76,7 @@ After running setup, replace the placeholder owner email in `approved_users` wit
 | qngen | `generate-questions` | 1.0.0 |
 | qngen | `generate-scenarios` | 1.0.0 |
 
-The active pipeline uses `prepare-document` 2.0.0, `deconstruct-document` 2.0.0, `extract-knowledge` 1.0.0, and `elevenreader-ebook` 2.0.0. Older skill versions are kept for foreign-key compatibility.
+The active pipeline uses `prepare-document` 2.0.0, `deconstruct-document` 2.0.0, `extract-knowledge` 1.0.0, and `elevenreader-ebook` 2.0.0. Older stage versions are kept for foreign-key compatibility.
 
 ## Migrations vs setup
 

@@ -3,43 +3,40 @@ import { useLiveTick } from '../../hooks/useLiveTick'
 import {
   artifactFormatLabel,
   artifactKindLabel,
-  formatBytes,
   formatCostUsd,
   formatDuration,
   statusLabel,
 } from '../../lib/consoleFormat'
 import {
+  artifactCardTitle,
+  pipelineStepDetail,
+  pipelineStepDisplayStatus,
   pipelineStepLabel,
   productionRunCostUsd,
   productionRunDurationSec,
   productionRunLabel,
   productionRunProgress,
-  skillRunCostUsd,
-  skillRunDisplayName,
-  skillRunDurationSec,
-  skillRunElevenLabsTokens,
-  skillRunSummary,
-  skillRunTokens,
 } from '../../lib/consoleMappers'
 import type { ProductionRun } from '../../lib/workspaceApi'
-import { moduleLabel, pipelineStepModuleLabel } from './moduleLabel'
+import { pipelineStepModuleLabel } from './moduleLabel'
 
 interface ConsoleDetailProps {
   run: ProductionRun
 }
 
 export function ConsoleDetail({ run }: ConsoleDetailProps) {
-  const { sources, skillRunsByRunId, artifacts, wikiEntries, downloadArtifact } = useWorkspaceData()
-  const skillRuns = skillRunsByRunId[run.id] ?? []
+  const { sources, stageRunsByRunId, artifacts, wikiEntries, downloadArtifact } = useWorkspaceData()
+  const stageRuns = stageRunsByRunId[run.id] ?? []
   const runArtifacts = artifacts.filter((artifact) => artifact.production_run_id === run.id)
+  const sourceById = new Map(sources.map((source) => [source.id, source]))
   const hasLiveDuration =
     run.status === 'queued' ||
     run.status === 'running' ||
-    skillRuns.some((skill) => skill.status === 'queued' || skill.status === 'running')
+    stageRuns.some((stageRun) => stageRun.status === 'queued' || stageRun.status === 'running')
   useLiveTick(hasLiveDuration)
   const progress = productionRunProgress(run)
   const durationSec = productionRunDurationSec(run)
-  const runCost = productionRunCostUsd(run, skillRuns)
+  const runCost = productionRunCostUsd(run, stageRuns)
 
   return (
     <section className="bw-console__panel">
@@ -54,7 +51,7 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
           {runCost > 0 ? ` · ${formatCostUsd(runCost)}` : ''}
           {run.target_artifacts.length
             ? ` · target ${run.target_artifacts.map((kind) => artifactKindLabel(kind)).join(', ')}`
-            : ' · ingest only'}
+            : ' · Upload'}
         </div>
 
         {run.error ? (
@@ -73,66 +70,37 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
 
         <div style={{ height: 18 }} />
 
-        {run.pipeline.map((step) => (
-          <div className="bw-console__step" key={step.step}>
-            <span className={`bw-console__step-dot bw-console__step-dot--${step.status}`}>
-              {step.status === 'completed' ? '✓' : step.status === 'failed' ? '✕' : '•'}
-            </span>
-            <div className="bw-console__step-body">
-              <div className="name">
-                {pipelineStepLabel(step)}{' '}
-                {step.module ? (
-                  <span className="bw-console__module-tag">{pipelineStepModuleLabel(step)}</span>
-                ) : null}
-              </div>
-              <div className="desc">{step.detail ?? statusLabel(step.status)}</div>
-            </div>
-          </div>
-        ))}
-
-        {skillRuns.length > 0 ? (
-          <>
-            <div className="bw-console__panel-head" style={{ padding: '14px 0 4px', borderBottom: 0 }}>
-              <h3 style={{ fontSize: '0.86rem' }}>Skill runs</h3>
-            </div>
-            {skillRuns.map((skill) => {
-              const tokens = skillRunTokens(skill)
-              const elevenlabsTokens = skillRunElevenLabsTokens(skill)
-              const costUsd = skillRunCostUsd(skill)
-              return (
-                <div className="bw-console__step" key={skill.id}>
-                  <span className={`bw-console__step-dot bw-console__step-dot--${skill.status}`}>
-                    {skill.status === 'completed' ? '✓' : skill.status === 'failed' ? '✕' : '•'}
-                  </span>
-                  <div className="bw-console__step-body">
-                    <div className="name">
-                      {skillRunDisplayName(skill)}{' '}
-                      <span className="bw-console__module-tag">{moduleLabel(skill.module)}</span>
-                    </div>
-                    <div className="desc">{skillRunSummary(skill)}</div>
-                    <div className="stats">
-                      {skill.model ? <span>{skill.model}</span> : null}
-                      <span>{formatDuration(skillRunDurationSec(skill))}</span>
-                      {tokens.in + tokens.out > 0 ? (
-                        <span>{((tokens.in + tokens.out) / 1000).toFixed(1)}K tok</span>
-                      ) : elevenlabsTokens > 0 ? (
-                        <span>{(elevenlabsTokens / 1000).toFixed(1)}K EL tok</span>
-                      ) : null}
-                      {costUsd > 0 ? <span>{formatCostUsd(costUsd)}</span> : null}
-                    </div>
-                  </div>
+        {run.pipeline.map((step) => {
+          const displayStatus = pipelineStepDisplayStatus(step, run.pipeline, stageRuns, run.status)
+          return (
+            <div className="bw-console__step" key={step.step}>
+              <span className={`bw-console__step-dot bw-console__step-dot--${displayStatus}`}>
+                {displayStatus === 'completed' ? '✓' : displayStatus === 'failed' ? '✕' : '•'}
+              </span>
+              <div className="bw-console__step-body">
+                <div className="name">
+                  {pipelineStepLabel(step)}{' '}
+                  {step.module ? (
+                    <span className="bw-console__module-tag">{pipelineStepModuleLabel(step)}</span>
+                  ) : null}
                 </div>
-              )
-            })}
-          </>
-        ) : null}
+                <div className="desc">
+                  {pipelineStepDetail(step, run.pipeline, stageRuns, run.status)}
+                </div>
+              </div>
+            </div>
+          )
+        })}
 
         {runArtifacts.length > 0 ? (
           <>
             <div className="bw-console__panel-head" style={{ padding: '4px 0', borderBottom: 0 }}>
               <h3 style={{ fontSize: '0.86rem' }}>Artifacts</h3>
             </div>
-            {runArtifacts.map((artifact) => (
+            {runArtifacts.map((artifact) => {
+              const source = artifact.source_id ? sourceById.get(artifact.source_id) : undefined
+
+              return (
               <button
                 type="button"
                 className="bw-console__artifact"
@@ -141,13 +109,12 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
               >
                 <span className="ic">{artifactFormatLabel(artifact.format)}</span>
                 <span>
-                  <div className="t">{artifact.filename}</div>
-                  <div className="s">
-                    {artifactKindLabel(artifact.artifact_type)} · {formatBytes(artifact.file_size_bytes)}
-                  </div>
+                  <div className="t">{artifactCardTitle(artifact, source)}</div>
+                  <div className="s">{artifact.filename}</div>
                 </span>
               </button>
-            ))}
+              )
+            })}
           </>
         ) : null}
 

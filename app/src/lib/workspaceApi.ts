@@ -108,8 +108,8 @@ export interface PipelineStep {
   type: string
   status: string
   module?: string
-  skill_id?: string
-  skill_run_id?: string
+  stage_id?: string
+  stage_run_id?: string
   detail?: string
 }
 
@@ -127,12 +127,12 @@ export interface ProductionRun {
   cost_usd: number
 }
 
-export interface SkillRun {
+export interface StageRun {
   id: string
   production_run_id: string
   workspace_id: string
-  skill_id: string
-  skill_version: string
+  stage_id: string
+  stage_version: string
   module: string
   status: string
   inputs: Record<string, unknown>
@@ -265,6 +265,6 @@ export async function createProductionRun(
   })
 }
 
-export async function listSkillRuns(runId: string): Promise<SkillRun[]> {
-  return apiRequest<SkillRun[]>(`/production-runs/${runId}/skill-runs`)
+export async function listStageRuns(runId: string): Promise<StageRun[]> {
+  return apiRequest<StageRun[]>(`/production-runs/${runId}/stage-runs`)
 }

@@ -24,12 +24,12 @@ for each row
 execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- Skills (versioned definitions)
+-- Stages (versioned pipeline step definitions)
 -- ---------------------------------------------------------------------------
 
-create table public.skills (
+create table public.stages (
   id uuid primary key default gen_random_uuid(),
-  skill_id text not null,
+  stage_id text not null,
   version text not null,
   module text not null,
   name text not null,
@@ -40,14 +40,14 @@ create table public.skills (
   prompts jsonb not null default '{}',
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
-  constraint skills_module_check
+  constraint stages_module_check
     check (module in ('intellex', 'mathesys', 'qngen')),
-  constraint skills_skill_id_version_key
-    unique (skill_id, version)
+  constraint stages_stage_id_version_key
+    unique (stage_id, version)
 );
 
-create index skills_module_active_idx
-on public.skills (module)
+create index stages_module_active_idx
+on public.stages (module)
 where is_active = true;
 
 -- ---------------------------------------------------------------------------
@@ -112,15 +112,15 @@ for each row
 execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
--- Skill runs (execution + immutable output)
+-- Stage runs (execution + immutable output)
 -- ---------------------------------------------------------------------------
 
-create table public.skill_runs (
+create table public.stage_runs (
   id uuid primary key default gen_random_uuid(),
   production_run_id uuid references public.production_runs (id) on delete set null,
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
-  skill_id text not null,
-  skill_version text not null,
+  stage_id text not null,
+  stage_version text not null,
   module text not null,
   status text not null default 'queued',
   inputs jsonb not null default '{}',
@@ -134,19 +134,19 @@ create table public.skill_runs (
   created_at timestamptz not null default now(),
   started_at timestamptz,
   completed_at timestamptz,
-  constraint skill_runs_module_check
+  constraint stage_runs_module_check
     check (module in ('intellex', 'mathesys', 'qngen')),
-  constraint skill_runs_status_check
+  constraint stage_runs_status_check
     check (status in ('queued', 'running', 'completed', 'failed', 'cancelled')),
-  constraint skill_runs_skill_fk
-    foreign key (skill_id, skill_version)
-    references public.skills (skill_id, version)
+  constraint stage_runs_stage_fk
+    foreign key (stage_id, stage_version)
+    references public.stages (stage_id, version)
 );
 
-create index skill_runs_production_run_id_idx on public.skill_runs (production_run_id);
-create index skill_runs_workspace_id_idx on public.skill_runs (workspace_id);
-create index skill_runs_status_idx on public.skill_runs (status);
-create index skill_runs_cost_usd_idx on public.skill_runs (cost_usd);
+create index stage_runs_production_run_id_idx on public.stage_runs (production_run_id);
+create index stage_runs_workspace_id_idx on public.stage_runs (workspace_id);
+create index stage_runs_status_idx on public.stage_runs (status);
+create index stage_runs_cost_usd_idx on public.stage_runs (cost_usd);
 
 -- ---------------------------------------------------------------------------
 -- NDR segments (parsed and chunked source content)
@@ -237,7 +237,7 @@ create table public.wiki_disputes (
   term_label text not null,
   existing_definition text,
   proposed_definition text not null,
-  skill_run_id uuid references public.skill_runs (id) on delete set null,
+  stage_run_id uuid references public.stage_runs (id) on delete set null,
   source_id uuid references public.sources (id) on delete set null,
   status text not null default 'open',
   created_at timestamptz not null default now(),
@@ -289,7 +289,7 @@ create table public.assessment_sets (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   source_id uuid references public.sources (id) on delete set null,
   production_run_id uuid references public.production_runs (id) on delete set null,
-  skill_run_id uuid references public.skill_runs (id) on delete set null,
+  stage_run_id uuid references public.stage_runs (id) on delete set null,
   title text not null,
   learning_goal text,
   assessment_types text[] not null default '{}',
@@ -307,7 +307,7 @@ create table public.flashcards (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   source_id uuid references public.sources (id) on delete set null,
   production_run_id uuid references public.production_runs (id) on delete set null,
-  skill_run_id uuid references public.skill_runs (id) on delete set null,
+  stage_run_id uuid references public.stage_runs (id) on delete set null,
   assessment_set_id uuid references public.assessment_sets (id) on delete set null,
   item_id uuid,
   subtype text not null default 'basic',
@@ -331,7 +331,7 @@ create table public.quizzes (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   source_id uuid references public.sources (id) on delete set null,
   production_run_id uuid references public.production_runs (id) on delete set null,
-  skill_run_id uuid references public.skill_runs (id) on delete set null,
+  stage_run_id uuid references public.stage_runs (id) on delete set null,
   assessment_set_id uuid references public.assessment_sets (id) on delete set null,
   item_id uuid,
   subtype text,
@@ -371,7 +371,7 @@ create table public.scenarios (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   source_id uuid references public.sources (id) on delete set null,
   production_run_id uuid references public.production_runs (id) on delete set null,
-  skill_run_id uuid references public.skill_runs (id) on delete set null,
+  stage_run_id uuid references public.stage_runs (id) on delete set null,
   assessment_set_id uuid references public.assessment_sets (id) on delete set null,
   item_id uuid,
   subtype text not null default 'decision_prompt',

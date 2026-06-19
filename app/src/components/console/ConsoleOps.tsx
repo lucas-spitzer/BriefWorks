@@ -6,7 +6,7 @@ import {
   productionRunDurationSec,
   productionRunLabel,
   productionRunProgress,
-  skillRunTokens,
+  stageRunTokens,
   sumWorkspaceCostUsd,
 } from '../../lib/consoleMappers'
 import { ConsoleDetail } from './ConsoleDetail'
@@ -21,7 +21,7 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
   const {
     sources,
     productionRuns,
-    skillRunsByRunId,
+    stageRunsByRunId,
     activeRunCount,
     isLoading,
     error,
@@ -62,14 +62,14 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
         : '—'
 
     let totalTokens = 0
-    for (const runs of Object.values(skillRunsByRunId)) {
-      for (const skill of runs) {
-        const tokens = skillRunTokens(skill)
+    for (const runs of Object.values(stageRunsByRunId)) {
+      for (const stageRun of runs) {
+        const tokens = stageRunTokens(stageRun)
         totalTokens += tokens.in + tokens.out
       }
     }
 
-    const totalCost = sumWorkspaceCostUsd(productionRuns, skillRunsByRunId)
+    const totalCost = sumWorkspaceCostUsd(productionRuns, stageRunsByRunId)
 
     return [
       { label: 'Active runs', value: String(activeRunCount), delta: '', trend: 'flat' as const },
@@ -89,7 +89,7 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
       },
       { label: 'Avg run time', value: avgDuration, delta: '', trend: 'flat' as const },
     ]
-  }, [productionRuns, activeRunCount, skillRunsByRunId])
+  }, [productionRuns, activeRunCount, stageRunsByRunId])
 
   return (
     <>
@@ -152,8 +152,8 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
               </div>
               {sortedRuns.map((run) => {
                 const progress = productionRunProgress(run)
-                const skillCount = skillRunsByRunId[run.id]?.length ?? 0
-                const runCost = productionRunCostUsd(run, skillRunsByRunId[run.id] ?? [])
+                const stageCount = stageRunsByRunId[run.id]?.length ?? 0
+                const runCost = productionRunCostUsd(run, stageRunsByRunId[run.id] ?? [])
                 return (
                   <button
                     key={run.id}
@@ -164,7 +164,7 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
                     <span>
                       <div className="title">{productionRunLabel(run, sources)}</div>
                       <div className="sub">
-                        {run.id.slice(0, 8).toUpperCase()} · {skillCount} skill runs
+                        {run.id.slice(0, 8).toUpperCase()} · {stageCount} stage runs
                         {runCost > 0 ? ` · ${formatCostUsd(runCost)}` : ''} ·{' '}
                         {formatDateTime(run.created_at)}
                       </div>

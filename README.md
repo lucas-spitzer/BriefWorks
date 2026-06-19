@@ -21,7 +21,7 @@ flowchart TD
 
     subgraph api["FastAPI Backend"]
         AUTH[Auth dependency<br/>require_approved_user]
-        ROUTERS[Routers<br/>workspaces · sources · skills<br/>production-runs · wiki<br/>artifacts · assessments]
+        ROUTERS[Routers<br/>workspaces · sources · stages<br/>production-runs · wiki<br/>artifacts · assessments]
         SVC[Services<br/>source_upload · queue<br/>production_runs]
     end
 
@@ -32,7 +32,7 @@ flowchart TD
 
     subgraph worker["Python Worker"]
         RUNNER[PipelineRunner]
-        EXEC[Skill Executors]
+        EXEC[Stage Executors]
     end
 
     subgraph data["Supabase"]
@@ -127,7 +127,7 @@ A **production run** is the unit of work that turns selected sources into artifa
 
 ### Pipeline composition
 
-The pipeline always runs the **Intellex base steps**, then appends only the **optional skill steps** matching the requested `target_artifacts`. An empty `target_artifacts` list runs ingest only. When a source was already fully ingested in a prior run, those Intellex steps are skipped and the run proceeds directly to the requested artifact skills.
+The pipeline always runs the **Intellex base steps**, then appends only the **optional stage steps** matching the requested `target_artifacts`. An empty `target_artifacts` list runs ingest only. When a source was already fully ingested in a prior run, those Intellex steps are skipped and the run proceeds directly to the requested artifact stages.
 
 ```mermaid
 flowchart LR
@@ -197,7 +197,7 @@ flowchart TD
     DONE -.failure at any step.-> FAILED([status = failed<br/>error recorded])
 ```
 
-Each skill step runs once per selected source, recording an immutable `skill_run` row (inputs, output, model, token usage). Intellex `prepare-document` strips non-learning content; `deconstruct-document` persists chapter/section groupings in `document_chapters`; `extract-knowledge` promotes terms, concepts, and insights into `wiki_entries`. Mathesys `elevenreader-ebook` builds one simple EPUB per source from `document_chapters` (chapter titles, subsection headings, body text) for manual ElevenReader upload. Other Mathesys skills emit `artifacts` (EPUB files land in Storage; a signed URL is served on download). QnGen skills promote `flashcards`, `quizzes`, and `scenarios`. If any step raises, the run is marked `failed`, the error is recorded, and in-flight sources are reset.
+Each stage step runs once per selected source, recording an immutable `stage_run` row (inputs, output, model, token usage). Intellex `prepare-document` strips non-learning content; `deconstruct-document` persists chapter/section groupings in `document_chapters`; `extract-knowledge` promotes terms, concepts, and insights into `wiki_entries`. Mathesys `elevenreader-ebook` builds one simple EPUB per source from `document_chapters` (chapter titles, subsection headings, body text) for manual ElevenReader upload. Other Mathesys stages emit `artifacts` (EPUB files land in Storage; a signed URL is served on download). QnGen stages promote `flashcards`, `quizzes`, and `scenarios`. If any step raises, the run is marked `failed`, the error is recorded, and in-flight sources are reset.
 
 ---
 
@@ -212,10 +212,10 @@ erDiagram
     workspaces ||--o{ flashcards : has
     workspaces ||--o{ quizzes : has
     workspaces ||--o{ scenarios : has
-    production_runs ||--o{ skill_runs : spawns
+    production_runs ||--o{ stage_runs : spawns
     production_runs }o--o{ sources : references
     sources ||--o{ ndr_segments : "chunked into"
-    skills ||--o{ skill_runs : "executed as"
+    stages ||--o{ stage_runs : "executed as"
 
     workspaces {
         uuid id
@@ -236,16 +236,16 @@ erDiagram
         jsonb pipeline
         text status
     }
-    skill_runs {
+    stage_runs {
         uuid id
-        text skill_id
+        text stage_id
         text module
         jsonb output
         jsonb token_usage
     }
 ```
 
-Skills are **versioned definitions** (`skill_id` + `version`) seeded in Postgres; each execution creates a `skill_run` capturing the exact inputs, output, model, and token usage. Postgres has `pgvector` enabled for embedding-based search over NDR segments and wiki entries.
+Stages are **versioned definitions** (`stage_id` + `version`) seeded in Postgres; each execution creates a `stage_run` capturing the exact inputs, output, model, and token usage. Postgres has `pgvector` enabled for embedding-based search over NDR segments and wiki entries.
 
 ---
 
@@ -257,7 +257,7 @@ Skills are **versioned definitions** (`skill_id` + `version`) seeded in Postgres
 | Auth | Supabase Auth (`supabase-js`) |
 | Backend API | FastAPI (Python) |
 | Job queue | RQ + Redis |
-| Workers | Python (`PipelineRunner` + skill executors) |
+| Workers | Python (`PipelineRunner` + stage executors) |
 | Database | Supabase Postgres + pgvector |
 | File storage | Supabase Storage (`sources`, `artifacts` buckets) |
 | LLM / embeddings | OpenAI |
@@ -275,10 +275,10 @@ BriefWorks/
 │       ├── routers/          HTTP endpoints
 │       ├── services/         upload, queue, supabase, openai, web_research
 │       ├── repositories/     Postgres data access
-│       ├── intellex/         ingest, parsing, chunking, deconstruction skills
-│       ├── mathesys/         narration / EPUB / SSML skills
-│       ├── qngen/            flashcard / quiz / scenario skills
-│       ├── worker/           PipelineRunner, skill executors, RQ jobs
+│       ├── intellex/         ingest, parsing, chunking, deconstruction stages
+│       ├── mathesys/         narration / EPUB / SSML stages
+│       ├── qngen/            flashcard / quiz / scenario stages
+│       ├── worker/           PipelineRunner, stage executors, RQ jobs
 │       └── pipeline.py       pipeline composition (base + optional steps)
 ├── app/                      React + Vite frontend
 │   └── src/

@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from app.intellex.heading_classification import is_doctrinal_subsection_heading
 from app.intellex.models import ParsedDocument, ParsedLine
 from app.intellex.pdf_parser import classify_lines
 
@@ -69,6 +70,47 @@ def _classify_line(document: ParsedDocument, line: ParsedLine) -> str:
     return "paragraph"
 
 
+def _expand_subsection_headings_in_segments(
+    segments: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Promote ALL-CAPS subsection titles that were merged into paragraph blocks."""
+    expanded: list[dict[str, Any]] = []
+
+    for segment in segments:
+        text = str(segment.get("text") or "")
+
+        if segment.get("kind") != "paragraph" or "\n" not in text:
+            expanded.append(segment)
+            continue
+
+        first_line = text.split("\n", 1)[0].strip()
+
+        if not is_doctrinal_subsection_heading(first_line):
+            expanded.append(segment)
+            continue
+
+        remainder = text.split("\n", 1)[1].strip()
+        expanded.append(
+            {
+                **segment,
+                "kind": "heading",
+                "text": first_line,
+            },
+        )
+
+        if remainder:
+            expanded.append(
+                {
+                    **segment,
+                    "id": str(uuid.uuid4()),
+                    "kind": "paragraph",
+                    "text": remainder,
+                },
+            )
+
+    return expanded
+
+
 def build_ndr_segments(document: ParsedDocument) -> list[dict[str, Any]]:
     segments: list[dict[str, Any]] = []
     paragraph_parts: list[ParsedLine] = []
@@ -113,4 +155,4 @@ def build_ndr_segments(document: ParsedDocument) -> list[dict[str, Any]]:
         sequence_index=sequence_index,
     )
 
-    return segments
+    return _expand_subsection_headings_in_segments(segments)

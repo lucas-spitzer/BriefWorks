@@ -9,11 +9,12 @@ from app.mathesys.audio.models import (
     ChapterBuildResult,
     PronunciationEntry,
 )
+from app.mathesys.audio.segment_text import sanitize_segment_text
 
 
 def _segment_text(segment: dict[str, Any]) -> str:
-    """Return segment text exactly as stored — only strip outer whitespace."""
-    return str(segment.get("text") or "").strip()
+    """Return segment text with inline markup removed."""
+    return sanitize_segment_text(str(segment.get("text") or ""))
 
 
 def chapter_to_audio_section(chapter: dict[str, Any]) -> ChapterBuildResult:

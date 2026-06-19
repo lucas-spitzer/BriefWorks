@@ -95,8 +95,6 @@ def _running_header_texts(segments: list[dict[str, Any]]) -> set[str]:
     pages_by_text: dict[str, set[Any]] = defaultdict(set)
 
     for segment in segments:
-        if segment.get("kind") == "heading":
-            continue
         text = str(segment.get("text") or "").strip()
         if not text or len(text) > _RUNNING_HEADER_MAX_CHARS:
             continue
@@ -163,6 +161,9 @@ def filter_segments_for_audio(
                 skipping_chapter = True
                 dropped_chapters.append(text.strip())
                 reasons["front_back_matter_chapter"] += 1
+                continue
+            if _normalized_line(text.strip()) in running_headers:
+                reasons["running_header_footer"] += 1
                 continue
             skipping_chapter = False
             kept.append(segment)

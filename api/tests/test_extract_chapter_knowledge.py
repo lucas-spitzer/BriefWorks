@@ -1,11 +1,11 @@
 import pytest
 
-from app.intellex.skills.concept_models import DeconstructedConcept
-from app.intellex.skills.extract_chapter_knowledge import (
-    ExtractChapterKnowledgeSkill,
+from app.intellex.stages.concept_models import DeconstructedConcept
+from app.intellex.stages.extract_chapter_knowledge import (
+    ExtractChapterKnowledgeStage,
     merge_knowledge_items,
 )
-from app.intellex.skills.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
+from app.intellex.stages.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
 from app.services.openai_client import OpenAICompletionResult
 
 
@@ -83,7 +83,7 @@ def test_merge_knowledge_items_keeps_different_entry_kinds_separate() -> None:
     assert kinds == {"concept", "insight"}
 
 
-def test_extract_skill_calls_openai_once_per_chapter() -> None:
+def test_extract_stage_calls_openai_once_per_chapter() -> None:
     segments = [
         _seg("h1", "heading", "Chapter 1", page=1),
         _seg("p1", "paragraph", "Doctrine explains intent.", page=1),
@@ -141,8 +141,8 @@ def test_extract_skill_calls_openai_once_per_chapter() -> None:
         ],
     )
 
-    skill = ExtractChapterKnowledgeSkill(openai_client=client)
-    output, execution = skill.run(
+    stage = ExtractChapterKnowledgeStage(openai_client=client)
+    output, execution = stage.run(
         source_metadata={},
         chapter_rows=chapter_rows,
         segments=segments,
@@ -177,9 +177,9 @@ def test_promote_concepts_to_wiki_sets_entry_kind() -> None:
     inserts, updates, disputes = promote_concepts_to_wiki(
         workspace_id="ws-1",
         source_id="src-1",
-        skill_run_id="run-1",
-        skill_id="extract-knowledge",
-        skill_version="1.0.0",
+        stage_run_id="run-1",
+        stage_id="extract-knowledge",
+        stage_version="1.0.0",
         concepts=[concept],
         segment_index=segment_index,
         existing_entries=[],
@@ -196,5 +196,85 @@ def test_format_chapter_segments_for_llm_raises_over_budget() -> None:
 
     huge_segment = _seg("h1", "heading", "x" * 100_000, page=1)
 
-    with pytest.raises(RuntimeError, match="Chapter exceeds extract budget"):
+    with pytest.raises(RuntimeError, match="Segment exceeds extract budget"):
         format_chapter_segments_for_llm([huge_segment], max_chars=1000)
+
+
+def test_batch_chapter_segments_for_llm_splits_large_chapters() -> None:
+    from app.intellex.chapter_formatting import batch_chapter_segments_for_llm
+
+    segments = [
+        _seg("p1", "paragraph", "a" * 600, page=1),
+        _seg("p2", "paragraph", "b" * 600, page=1),
+    ]
+
+    batches = batch_chapter_segments_for_llm(segments, max_chars=1000)
+
+    assert len(batches) == 2
+    assert '"segment_id": "p1"' in batches[0][0]
+    assert '"segment_id": "p2"' in batches[1][0]
+
+
+def test_extract_stage_batches_oversized_chapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("EXTRACT_CHAPTER_MAX_CHARS", "1000")
+
+    segments = [
+        _seg("p1", "paragraph", "a" * 600, page=1),
+        _seg("p2", "paragraph", "b" * 600, page=2),
+    ]
+    chapter_rows = [
+        {
+            "id": "ch-1",
+            "title": "Chapter 1",
+            "sequence_index": 0,
+            "level": 1,
+            "segment_ids": ["p1", "p2"],
+        },
+    ]
+
+    client = FakeOpenAIClient(
+        [
+            {
+                "items": [
+                    {
+                        "entry_kind": "concept",
+                        "term_label": "Alpha",
+                        "definition": "First batch concept.",
+                        "aliases": [],
+                        "prerequisite_labels": [],
+                        "pronunciation": None,
+                        "importance": "essential",
+                        "evidence_segment_ids": ["p1"],
+                        "confidence": 0.9,
+                    },
+                ],
+            },
+            {
+                "items": [
+                    {
+                        "entry_kind": "concept",
+                        "term_label": "Beta",
+                        "definition": "Second batch concept.",
+                        "aliases": [],
+                        "prerequisite_labels": [],
+                        "pronunciation": None,
+                        "importance": "supporting",
+                        "evidence_segment_ids": ["p2"],
+                        "confidence": 0.8,
+                    },
+                ],
+            },
+        ],
+    )
+
+    stage = ExtractChapterKnowledgeStage(openai_client=client)
+    output, execution = stage.run(
+        source_metadata={"research": {"title": "Doctrine"}},
+        chapter_rows=chapter_rows,
+        segments=segments,
+    )
+
+    assert client.calls == 2
+    assert len(output.items) == 2
+    assert {item.term_label for item in output.items} == {"Alpha", "Beta"}
+    assert execution["token_usage"]["total_tokens"] == 240

@@ -35,26 +35,26 @@ def source_deconstruct_complete(
     source: dict[str, Any],
     *,
     has_document_chapters: bool,
-    has_completed_skill_run: bool,
+    has_completed_stage_run: bool,
 ) -> bool:
     deconstruct = _source_metadata(source).get("deconstruct")
     if isinstance(deconstruct, dict):
         if deconstruct.get("deconstructed_at") and deconstruct.get("chapter_count", 0) > 0:
             return True
 
-    return has_document_chapters or has_completed_skill_run
+    return has_document_chapters or has_completed_stage_run
 
 
 def source_extract_complete(
     source: dict[str, Any],
     *,
-    has_completed_skill_run: bool,
+    has_completed_stage_run: bool,
 ) -> bool:
     extract = _source_metadata(source).get("extract")
     if isinstance(extract, dict) and extract.get("extracted_at"):
         return True
 
-    return has_completed_skill_run
+    return has_completed_stage_run
 
 
 def source_intellex_complete(
@@ -62,8 +62,8 @@ def source_intellex_complete(
     *,
     has_segments: bool,
     has_document_chapters: bool,
-    has_deconstruct_skill_run: bool,
-    has_extract_skill_run: bool,
+    has_deconstruct_stage_run: bool,
+    has_extract_stage_run: bool,
 ) -> bool:
     return (
         bool(source.get("storage_path"))
@@ -74,10 +74,10 @@ def source_intellex_complete(
         and source_deconstruct_complete(
             source,
             has_document_chapters=has_document_chapters,
-            has_completed_skill_run=has_deconstruct_skill_run,
+            has_completed_stage_run=has_deconstruct_stage_run,
         )
         and source_extract_complete(
             source,
-            has_completed_skill_run=has_extract_skill_run,
+            has_completed_stage_run=has_extract_stage_run,
         )
     )

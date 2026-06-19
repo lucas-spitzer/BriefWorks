@@ -1,7 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
-import { artifactFormatLabel, artifactKindLabel, formatBytes, formatDate } from '../../lib/consoleFormat'
-import { artifactModule, sourceTitle } from '../../lib/consoleMappers'
+import { artifactFormatLabel, artifactKindShortLabel, formatBytes } from '../../lib/consoleFormat'
+import {
+  artifactCardTitle,
+  artifactModule,
+  sourceResearchTitle,
+  sourceTitle,
+} from '../../lib/consoleMappers'
 import { ConsoleViewToggle } from './ConsoleViewToggle'
 import { ErrorBanner } from './ErrorBanner'
 import { moduleLabel } from './moduleLabel'
@@ -19,11 +24,12 @@ export function ConsoleArtifacts() {
     const q = query.toLowerCase()
     return artifacts.filter((artifact) => {
       const source = artifact.source_id ? sourceById.get(artifact.source_id) : undefined
-      const sourceName = source ? sourceTitle(source) : ''
+      const sourceName = source ? sourceResearchTitle(source) : ''
       return (
         artifact.filename.toLowerCase().includes(q) ||
+        artifactCardTitle(artifact, source).toLowerCase().includes(q) ||
         sourceName.toLowerCase().includes(q) ||
-        artifactKindLabel(artifact.artifact_type).toLowerCase().includes(q) ||
+        artifactKindShortLabel(artifact.artifact_type).toLowerCase().includes(q) ||
         moduleLabel(artifactModule(artifact)).toLowerCase().includes(q)
       )
     })
@@ -91,12 +97,12 @@ export function ConsoleArtifacts() {
                         onClick={() => void handleDownload(artifact.id)}
                       >
                         <span>
-                          <div className="t">{artifact.filename}</div>
-                          <div className="s">{formatDate(artifact.created_at)}</div>
+                          <div className="t">{artifactCardTitle(artifact, source)}</div>
+                          <div className="s">{artifact.filename}</div>
                         </span>
                       </button>
                     </td>
-                    <td>{artifactKindLabel(artifact.artifact_type)}</td>
+                    <td>{artifactKindShortLabel(artifact.artifact_type)}</td>
                     <td>{moduleLabel(artifactModule(artifact))}</td>
                     <td className="num">{artifactFormatLabel(artifact.format)}</td>
                     <td className="num">{formatBytes(artifact.file_size_bytes)}</td>
@@ -109,40 +115,38 @@ export function ConsoleArtifacts() {
           </section>
         ) : (
           <div className="bw-console__sources">
-            {filtered.map((artifact) => (
-              <button
-                type="button"
-                className="bw-console__panel bw-console__artifact-card"
-                key={artifact.id}
-                style={{ padding: 18, textAlign: 'left', width: '100%' }}
-                onClick={() => void handleDownload(artifact.id)}
-              >
-                <div>
-                  <div style={{ fontFamily: 'var(--bw-grotesk)', fontWeight: 600, color: '#fff' }}>
-                    {artifactKindLabel(artifact.artifact_type)}
+            {filtered.map((artifact) => {
+              const source = artifact.source_id ? sourceById.get(artifact.source_id) : undefined
+
+              return (
+                <div
+                  className="bw-console__panel bw-console__artifact-card"
+                  key={artifact.id}
+                  style={{ padding: 18 }}
+                >
+                  <div>
+                    <div style={{ fontFamily: 'var(--bw-grotesk)', fontWeight: 600, color: '#fff' }}>
+                      {artifactCardTitle(artifact, source)}
+                    </div>
                   </div>
-                  <div
-                    style={{
-                      fontFamily: 'var(--bw-mono)',
-                      fontSize: '0.7rem',
-                      color: '#8aa1ab',
-                      marginTop: 3,
-                    }}
-                  >
-                    {moduleLabel(artifactModule(artifact))}
+                  <p className="bw-console__card-desc">{artifact.filename}</p>
+                  <div className="bw-console__card-fill" aria-hidden="true" />
+                  <div className="bw-console__artifact-foot">
+                    <span className="seg">{formatBytes(artifact.file_size_bytes)}</span>
+                    <span className="seg">{artifactFormatLabel(artifact.format)}</span>
+                    <span className="seg">
+                      <button
+                        type="button"
+                        className="bw-console__statepill bw-state--download"
+                        onClick={() => void handleDownload(artifact.id)}
+                      >
+                        Download
+                      </button>
+                    </span>
                   </div>
                 </div>
-                <p style={{ fontSize: '0.84rem', color: '#b6c4cb', marginTop: 12, lineHeight: 1.5 }}>
-                  {artifact.filename}
-                </p>
-                <div className="bw-console__card-fill" aria-hidden="true" />
-                <div className="bw-console__artifact-foot">
-                  <span className="seg">{formatBytes(artifact.file_size_bytes)}</span>
-                  <span className="seg">{artifactFormatLabel(artifact.format)}</span>
-                  <span className="seg">Download</span>
-                </div>
-              </button>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

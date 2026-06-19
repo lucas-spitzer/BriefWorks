@@ -9,7 +9,7 @@ class FlashcardResponse(BaseModel):
     workspace_id: str
     source_id: str | None
     production_run_id: str | None
-    skill_run_id: str | None
+    stage_run_id: str | None
     assessment_set_id: str | None = None
     item_id: str | None = None
     subtype: str | None = None
@@ -27,7 +27,7 @@ class QuizResponse(BaseModel):
     workspace_id: str
     source_id: str | None
     production_run_id: str | None
-    skill_run_id: str | None
+    stage_run_id: str | None
     assessment_set_id: str | None = None
     item_id: str | None = None
     subtype: str | None = None
@@ -47,7 +47,7 @@ class ScenarioResponse(BaseModel):
     workspace_id: str
     source_id: str | None
     production_run_id: str | None
-    skill_run_id: str | None
+    stage_run_id: str | None
     assessment_set_id: str | None = None
     item_id: str | None = None
     subtype: str | None = None
@@ -67,7 +67,7 @@ class AssessmentSetSummaryResponse(BaseModel):
     workspace_id: str
     source_id: str | None
     production_run_id: str | None
-    skill_run_id: str | None
+    stage_run_id: str | None
     title: str
     learning_goal: str | None
     assessment_types: list[str]
@@ -80,7 +80,7 @@ class AssessmentSetResponse(BaseModel):
     workspace_id: str
     source_id: str | None
     production_run_id: str | None
-    skill_run_id: str | None
+    stage_run_id: str | None
     title: str
     learning_goal: str | None
     assessment_types: list[str]

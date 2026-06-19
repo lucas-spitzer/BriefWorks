@@ -39,18 +39,18 @@ def test_source_intellex_complete_when_all_metadata_present() -> None:
         _ready_source(),
         has_segments=True,
         has_document_chapters=False,
-        has_deconstruct_skill_run=False,
-        has_extract_skill_run=False,
+        has_deconstruct_stage_run=False,
+        has_extract_stage_run=False,
     )
 
 
-def test_source_intellex_complete_without_extract_metadata_uses_skill_run() -> None:
+def test_source_intellex_complete_without_extract_metadata_uses_stage_run() -> None:
     assert source_intellex_complete(
         _ready_source(with_extract_metadata=False),
         has_segments=True,
         has_document_chapters=True,
-        has_deconstruct_skill_run=True,
-        has_extract_skill_run=True,
+        has_deconstruct_stage_run=True,
+        has_extract_stage_run=True,
     )
 
 
@@ -59,8 +59,8 @@ def test_source_intellex_complete_requires_extract() -> None:
         _ready_source(with_extract_metadata=False),
         has_segments=True,
         has_document_chapters=True,
-        has_deconstruct_skill_run=True,
-        has_extract_skill_run=False,
+        has_deconstruct_stage_run=True,
+        has_extract_stage_run=False,
     )
 
 
@@ -69,8 +69,8 @@ def test_source_intellex_complete_requires_segments() -> None:
         _ready_source(),
         has_segments=False,
         has_document_chapters=True,
-        has_deconstruct_skill_run=True,
-        has_extract_skill_run=True,
+        has_deconstruct_stage_run=True,
+        has_extract_stage_run=True,
     )
 
 
@@ -82,8 +82,8 @@ def test_source_intellex_complete_requires_research() -> None:
         source,
         has_segments=True,
         has_document_chapters=True,
-        has_deconstruct_skill_run=True,
-        has_extract_skill_run=True,
+        has_deconstruct_stage_run=True,
+        has_extract_stage_run=True,
     )
 
 
@@ -95,6 +95,6 @@ def test_source_intellex_complete_requires_prepare() -> None:
         source,
         has_segments=True,
         has_document_chapters=True,
-        has_deconstruct_skill_run=True,
-        has_extract_skill_run=True,
+        has_deconstruct_stage_run=True,
+        has_extract_stage_run=True,
     )

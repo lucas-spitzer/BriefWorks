@@ -1,8 +1,8 @@
 from app.intellex.metadata_slice import build_metadata_slice
 from app.intellex.models import ParsedDocument, ParsedLine
-from app.intellex.skills.models import SourceResearchOutput
-from app.intellex.skills.promotion import merge_research_into_source_metadata
-from app.intellex.skills.source_research import SourceResearchSkill
+from app.intellex.stages.models import SourceResearchOutput
+from app.intellex.stages.promotion import merge_research_into_source_metadata
+from app.intellex.stages.source_research import SourceResearchStage
 from app.services.openai_client import OpenAICompletionResult
 
 
@@ -79,12 +79,12 @@ def test_merge_research_into_source_metadata_preserves_parse_block() -> None:
     assert merged["research"]["distribution_line"].startswith("Approved")
 
 
-def test_source_research_skill_extracts_metadata_slice_fields() -> None:
+def test_source_research_stage_extracts_metadata_slice_fields() -> None:
     document = ParsedDocument(
         page_count=1,
         lines=[ParsedLine(text="MCDP 1 Warfighting", page=1, font_size=12.0)],
     )
-    skill = SourceResearchSkill(
+    stage = SourceResearchStage(
         openai_client=FakeOpenAIClient(
             {
                 "document_type": "military_doctrine",
@@ -96,7 +96,7 @@ def test_source_research_skill_extracts_metadata_slice_fields() -> None:
                 "publication_date_in_document": "1997-06-20",
                 "publication_date_public": None,
                 "source_url": None,
-                "abstract": None,
+                "abstract": "Foundational Marine Corps doctrine on the theory and practice of warfighting.",
                 "distribution_line": "Approved for public release; distribution is unlimited.",
                 "confidence": {"title": 0.98},
                 "provenance": {"title": "document"},
@@ -105,12 +105,13 @@ def test_source_research_skill_extracts_metadata_slice_fields() -> None:
         web_client=DisabledWebClient(),
     )
 
-    output, execution = skill.run(
+    output, execution = stage.run(
         filename="mcdp1.pdf",
         mime_type="application/pdf",
         parsed_document=document,
     )
 
     assert output.title == "Warfighting"
+    assert output.abstract == "Foundational Marine Corps doctrine on the theory and practice of warfighting."
     assert output.distribution_line.startswith("Approved")
     assert execution["token_usage"]["total_tokens"] == 150

@@ -42,32 +42,70 @@ def _split_markdown_blocks(markdown: str) -> list[str]:
     return [block for block in blocks if block]
 
 
-def normalize_llamaparse_result(result: LlamaParseResult) -> ParsedDocument:
-    lines: list[ParsedLine] = []
+def _lines_from_block(
+    block: str,
+    *,
+    page: int,
+    line_index: int,
+) -> tuple[list[ParsedLine], int]:
+    block_lines = block.splitlines()
+    first_line = block_lines[0].strip()
+    heading_text, inferred_kind = _strip_heading_markers(first_line)
 
-    for page in result.pages:
-        for block_index, block in enumerate(_split_markdown_blocks(page.markdown)):
-            first_line = block.splitlines()[0].strip()
-            text, inferred_kind = _strip_heading_markers(first_line)
+    if inferred_kind == "heading":
+        lines: list[ParsedLine] = [
+            ParsedLine(
+                line_id=f"p{page}-l{line_index}",
+                text=heading_text,
+                page=page,
+                kind="heading",
+            ),
+        ]
+        line_index += 1
 
-            if inferred_kind == "heading":
-                line_text = text
-                kind: LineKind | None = "heading"
-            else:
-                line_text = block
-                kind = "paragraph"
+        remainder = "\n".join(block_lines[1:]).strip()
 
-            if not line_text:
+        for part in _split_markdown_blocks(remainder):
+            cleaned = part.strip()
+
+            if not cleaned:
                 continue
 
             lines.append(
                 ParsedLine(
-                    line_id=f"p{page.page}-l{block_index}",
-                    text=line_text,
-                    page=page.page,
-                    kind=kind,
+                    line_id=f"p{page}-l{line_index}",
+                    text=cleaned,
+                    page=page,
+                    kind="paragraph",
                 ),
             )
+            line_index += 1
+
+        return lines, line_index
+
+    return [
+        ParsedLine(
+            line_id=f"p{page}-l{line_index}",
+            text=block.strip(),
+            page=page,
+            kind="paragraph",
+        ),
+    ], line_index + 1
+
+
+def normalize_llamaparse_result(result: LlamaParseResult) -> ParsedDocument:
+    lines: list[ParsedLine] = []
+
+    for page in result.pages:
+        line_index = 0
+
+        for block in _split_markdown_blocks(page.markdown):
+            block_lines, line_index = _lines_from_block(
+                block,
+                page=page.page,
+                line_index=line_index,
+            )
+            lines.extend(block_lines)
 
     page_count = max((line.page for line in lines), default=len(result.pages) or 0)
 

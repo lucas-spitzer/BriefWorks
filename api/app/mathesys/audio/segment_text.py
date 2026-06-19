@@ -1,13 +1,27 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_INLINE_HTML_TAG_RE = re.compile(
+    r"</?(?:sup|sub|em|strong|i|b|span|a|mark)[^>]*>",
+    re.IGNORECASE,
+)
+_DANGLING_QUOTE_FOOTNOTE_RE = re.compile(r'(?<=[\"\'\u201c\u201d])\d+\b')
+
+
+def sanitize_segment_text(text: str) -> str:
+    """Remove inline HTML tags from extracted segment text."""
+    cleaned = _INLINE_HTML_TAG_RE.sub("", text)
+    cleaned = _DANGLING_QUOTE_FOOTNOTE_RE.sub("", cleaned)
+    return cleaned.strip()
 
 
 def segments_to_extracted_text(segments: list[dict[str, Any]]) -> str:
     blocks: list[str] = []
 
     for segment in segments:
-        text = str(segment.get("text") or "").strip()
+        text = sanitize_segment_text(str(segment.get("text") or ""))
 
         if not text:
             continue

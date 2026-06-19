@@ -90,7 +90,7 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
             </div>
 
             <p className="bw-console__field-label">Narration output</p>
-            <p className="bw-console__field-hint">Choose one. Leave unselected to run ingest only.</p>
+            <p className="bw-console__field-hint">Choose one. Leave unselected to upload only.</p>
             <div className="bw-console__chips" style={{ marginBottom: 20 }}>
               {NARRATION_ARTIFACT_OPTIONS.map((option) => (
                 <button

@@ -8,8 +8,8 @@ from app.repositories.assessments import AssessmentRepository
 from app.repositories.ndr_segments import NdrSegmentRepository
 from app.repositories.wiki_entries import WikiEntryRepository
 from app.repositories.production_runs import ProductionRunRepository
-from app.repositories.skill_runs import SkillRunRepository
-from app.repositories.skills import SkillRepository
+from app.repositories.stage_runs import StageRunRepository
+from app.repositories.stages import StageRepository
 from app.repositories.sources import SourceRepository
 from app.repositories.workspaces import WorkspaceRepository
 from app.services.supabase_rest import SupabaseRestClient
@@ -34,10 +34,10 @@ def get_workspace_repository(
     return WorkspaceRepository(db)
 
 
-def get_skill_repository(
+def get_stage_repository(
     db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
-) -> SkillRepository:
-    return SkillRepository(db)
+) -> StageRepository:
+    return StageRepository(db)
 
 
 def get_source_repository(
@@ -52,10 +52,10 @@ def get_production_run_repository(
     return ProductionRunRepository(db)
 
 
-def get_skill_run_repository(
+def get_stage_run_repository(
     db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
-) -> SkillRunRepository:
-    return SkillRunRepository(db)
+) -> StageRunRepository:
+    return StageRunRepository(db)
 
 
 def get_ndr_segment_repository(

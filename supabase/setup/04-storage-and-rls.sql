@@ -7,10 +7,10 @@ values
 on conflict (id) do nothing;
 
 alter table public.workspaces enable row level security;
-alter table public.skills enable row level security;
+alter table public.stages enable row level security;
 alter table public.sources enable row level security;
 alter table public.production_runs enable row level security;
-alter table public.skill_runs enable row level security;
+alter table public.stage_runs enable row level security;
 alter table public.ndr_segments enable row level security;
 alter table public.document_chapters enable row level security;
 alter table public.wiki_entries enable row level security;
@@ -22,10 +22,10 @@ alter table public.quizzes enable row level security;
 alter table public.scenarios enable row level security;
 
 revoke all on table public.workspaces from anon, authenticated;
-revoke all on table public.skills from anon, authenticated;
+revoke all on table public.stages from anon, authenticated;
 revoke all on table public.sources from anon, authenticated;
 revoke all on table public.production_runs from anon, authenticated;
-revoke all on table public.skill_runs from anon, authenticated;
+revoke all on table public.stage_runs from anon, authenticated;
 revoke all on table public.ndr_segments from anon, authenticated;
 revoke all on table public.document_chapters from anon, authenticated;
 revoke all on table public.wiki_entries from anon, authenticated;

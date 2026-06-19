@@ -1,3 +1,4 @@
+import { Boxes } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useWorkspace } from '../../features/workspace/workspaceContext'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
@@ -109,7 +110,7 @@ export function ConsoleWorkspaces() {
                 >
                   <div className="bw-console__ws-card-head">
                     <span className="bw-console__ws-icon" aria-hidden="true">
-                      ◇
+                      <Boxes size={16} strokeWidth={1.75} />
                     </span>
                     <span className="bw-console__ws-title">{workspace.name}</span>
                     {isActive ? <span className="bw-console__ws-badge">Active</span> : null}

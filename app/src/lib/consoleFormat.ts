@@ -36,8 +36,25 @@ export const artifactKindLabels: Record<string, string> = {
   scenarios: 'Scenarios',
 }
 
+export const artifactKindShortLabels: Record<string, string> = {
+  eleven_reader_script: 'EBook',
+  speechify_script: 'Script',
+  speechify_audio: 'Audio',
+  elevenlabs_audio: 'Audio',
+  lesson: 'Lesson',
+  assessment: 'Assessment',
+  concept_map: 'Concept Map',
+  flashcards: 'Flashcards',
+  quizzes: 'Quizzes',
+  scenarios: 'Scenarios',
+}
+
 export function artifactKindLabel(kind: string): string {
   return artifactKindLabels[kind] ?? kind.replace(/_/g, ' ')
+}
+
+export function artifactKindShortLabel(kind: string): string {
+  return artifactKindShortLabels[kind] ?? artifactKindLabel(kind)
 }
 
 export function formatDate(iso: string): string {

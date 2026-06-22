@@ -10,7 +10,7 @@ export const railIconSize = 18
 export const railItems: { id: ConsolePage; label: string; icon: LucideIcon }[] = [
   { id: 'ops', label: 'OPS', icon: CircleGauge },
   { id: 'sources', label: 'SRC', icon: BookText },
-  { id: 'stages', label: 'STG', icon: Layers },
+  { id: 'stages', label: 'API', icon: Layers },
   { id: 'artifacts', label: 'ART', icon: Package },
   { id: 'assessments', label: 'ASM', icon: Brain },
   { id: 'workspace', label: 'WRK', icon: Boxes },

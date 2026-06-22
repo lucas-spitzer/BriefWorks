@@ -25,6 +25,12 @@ def parse_artifact_path(storage_path: str) -> str:
     return f"{parent}/parse/raw.md"
 
 
+def structured_pages_artifact_path(storage_path: str) -> str:
+    """Where the parse step persists the structured layout the structuring stages consume."""
+    parent = storage_path.rsplit("/", 1)[0]
+    return f"{parent}/parse/structured.json"
+
+
 def parse_source_content(
     *,
     mime_type: str,
@@ -48,6 +54,7 @@ def parse_source_content(
         document=document,
         raw_markdown=parse_result.raw_markdown,
         api_payload=parse_result.api_payload,
+        structured_pages=parse_result.structured_pages,
     )
 
 
@@ -57,6 +64,11 @@ def chunk_parsed_document(
     source_id: str,
     workspace_id: str,
 ) -> list[dict[str, Any]]:
+    """Legacy line-based chunker, retained for any non-structured callers/tests.
+
+    The structure-based pipeline chunks from the Book model instead; see
+    app.intellex.structuring.chunk.build_segments_and_chapters.
+    """
     segments = build_ndr_segments(parsed_document)
 
     return [

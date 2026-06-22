@@ -537,6 +537,10 @@
   color: var(--bwg-text-dim);
 }
 
+.bw-gate__status .bw-gate__cta {
+  margin-top: var(--space-4);
+}
+
 .bw-gate__scanner {
   position: relative;
   height: 3px;

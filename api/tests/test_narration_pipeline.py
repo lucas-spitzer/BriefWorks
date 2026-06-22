@@ -25,7 +25,7 @@ def test_build_pipeline_appends_narration_steps() -> None:
     step_names = [step["step"] for step in pipeline]
 
     assert step_names[-3:] == [
-        "elevenreader-ebook",
+        "create-ebook",
         "speechify-audio",
         "elevenlabs-audio",
     ]

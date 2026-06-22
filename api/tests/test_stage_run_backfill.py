@@ -5,6 +5,22 @@ from app.services.stage_run_backfill import (
 )
 
 
+def test_enrich_stage_run_row_backfills_parse_cost() -> None:
+    enriched = enrich_stage_run_row(
+        {
+            "stage_id": "parse",
+            "model": "llamaparse",
+            "cost_usd": 0,
+            "token_usage": {},
+            "output": {"page_count": 10},
+            "api_usage": {},
+        },
+    )
+
+    assert enriched["cost_usd"] > 0
+    assert enriched["api_usage"]["totals"]["credit_count"] == 10
+
+
 def test_enrich_stage_run_row_fills_missing_cost() -> None:
     enriched = enrich_stage_run_row(
         {
@@ -31,6 +47,19 @@ def test_execution_from_source_research_infers_tavily() -> None:
     )
 
     assert execution["web_search_count"] == 1
+
+
+def test_execution_from_parse_infers_page_credits() -> None:
+    execution = execution_from_stage_run(
+        {
+            "stage_id": "parse",
+            "model": "llamaparse",
+            "token_usage": {},
+            "output": {"page_count": 24},
+        },
+    )
+
+    assert execution["page_count"] == 24
 
 
 def test_backfill_fields_from_existing_token_usage() -> None:

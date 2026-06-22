@@ -1,5 +1,6 @@
 from app.services.api_pricing import (
     cost_elevenlabs_usage,
+    cost_llamaparse_usage,
     cost_openai_usage,
     cost_speechify_usage,
     cost_tavily_usage,
@@ -87,4 +88,27 @@ def test_tavily_cost() -> None:
     call = cost_tavily_usage(search_count=3)
 
     assert call["search_count"] == 3
-    assert call["cost_usd"] == 0.03
+    assert call["credit_count"] == 3
+    assert call["cost_usd"] == 0.024
+
+
+def test_llamaparse_cost() -> None:
+    call = cost_llamaparse_usage(credit_count=80)
+
+    assert call["credit_count"] == 80
+    assert call["cost_usd"] == 0.1
+
+
+def test_build_api_usage_includes_llamaparse_credits() -> None:
+    usage = build_api_usage(
+        {
+            "model": "llamaparse",
+            "token_usage": {},
+            "page_count": 42,
+        },
+    )
+
+    assert len(usage["calls"]) == 1
+    assert usage["calls"][0]["provider"] == "llamaparse"
+    assert usage["totals"]["credit_count"] == 42
+    assert usage["totals"]["cost_usd"] == round(42 * 0.00125, 6)

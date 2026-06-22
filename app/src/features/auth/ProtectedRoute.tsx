@@ -1,14 +1,16 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { signOut } from './authService'
 import { useAuth } from './authContext'
+import '../../gate.css'
 
-function FullScreenStatus({ message }: { message: string }) {
+function SecurityCheckStatus({ message }: { message: string }) {
   return (
-    <main className="status-page" aria-live="polite">
-      <section className="status-card">
-        <p className="eyebrow">BriefWorks</p>
-        <h1>Checking Access</h1>
-        <p>{message}</p>
+    <main className="bw-gate" aria-live="polite">
+      <section className="bw-gate__status">
+        <div className="bw-gate__mark">BW</div>
+        <p className="bw-gate__eyebrow">Security Check</p>
+        <p className="bw-gate__status-msg">{message}</p>
+        <div className="bw-gate__scanner" aria-hidden="true" />
       </section>
     </main>
   )
@@ -20,12 +22,19 @@ function AccessNotice({ title, message }: { title: string; message: string }) {
   }
 
   return (
-    <main className="status-page">
-      <section className="status-card status-card--alert" aria-labelledby="access-notice-title">
-        <p className="eyebrow">Access Restricted</p>
-        <h1 id="access-notice-title">{title}</h1>
-        <p>{message}</p>
-        <button type="button" className="button-secondary" onClick={handleSignOut}>
+    <main className="bw-gate">
+      <section
+        className="bw-gate__status bw-gate__status--alert"
+        role="alert"
+        aria-labelledby="access-notice-title"
+      >
+        <div className="bw-gate__mark">BW</div>
+        <p className="bw-gate__eyebrow">Access Restricted</p>
+        <p className="bw-gate__status-msg" id="access-notice-title">
+          {title}
+        </p>
+        <p className="bw-gate__copy">{message}</p>
+        <button type="button" className="bw-gate__cta" onClick={() => void handleSignOut()}>
           Sign Out
         </button>
       </section>
@@ -38,7 +47,7 @@ export function ProtectedRoute() {
   const location = useLocation()
 
   if (isLoading) {
-    return <FullScreenStatus message="Verifying your BriefWorks session." />
+    return <SecurityCheckStatus message="Verifying your BriefWorks session." />
   }
 
   if (!isAuthenticated) {
@@ -64,7 +73,7 @@ export function ProtectedRoute() {
   }
 
   if (approvalStatus !== 'approved') {
-    return <FullScreenStatus message="Preparing the protected workspace." />
+    return <SecurityCheckStatus message="Preparing the protected workspace." />
   }
 
   return <Outlet />

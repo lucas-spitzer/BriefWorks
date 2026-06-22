@@ -4,6 +4,7 @@ from typing import Any
 
 from app.services.api_pricing import (
     cost_elevenlabs_usage,
+    cost_llamaparse_usage,
     cost_openai_usage,
     cost_speechify_usage,
     cost_tavily_usage,
@@ -55,6 +56,14 @@ def build_api_usage(
     if isinstance(search_count, int) and search_count > 0:
         calls.append(cost_tavily_usage(search_count=search_count))
 
+    llamaparse_credits = execution.get("llamaparse_credit_count")
+    if not isinstance(llamaparse_credits, int) or llamaparse_credits <= 0:
+        llamaparse_credits = execution.get("page_count")
+
+    model_name = str(execution.get("model") or "").strip().lower()
+    if model_name == "llamaparse" and isinstance(llamaparse_credits, int) and llamaparse_credits > 0:
+        calls.append(cost_llamaparse_usage(credit_count=llamaparse_credits))
+
     if extra_calls:
         calls.extend(extra_calls)
 
@@ -68,6 +77,7 @@ def build_api_usage(
             if call.get("provider") == "elevenlabs"
         ),
         "search_count": sum(int(call.get("search_count") or 0) for call in calls),
+        "credit_count": sum(int(call.get("credit_count") or 0) for call in calls),
         "cost_usd": _sum_call_costs(calls),
     }
 

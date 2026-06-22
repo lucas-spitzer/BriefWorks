@@ -1,10 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { useLiveTick } from '../../hooks/useLiveTick'
-import { formatDate, formatDateTime, formatDuration, formatCostUsd, statusLabel } from '../../lib/consoleFormat'
 import {
-  flattenStageRuns,
+  formatCostUsd,
+  formatCredits,
+  formatDate,
+  formatDateTime,
+  formatDuration,
+  statusLabel,
+} from '../../lib/consoleFormat'
+import {
+  flattenApiRequests,
+  stageRunApiToolLabel,
   stageRunCostUsd,
+  stageRunCredits,
   stageRunDisplayName,
   stageRunDurationSec,
   stageRunElevenLabsTokens,
@@ -21,36 +30,48 @@ interface ConsoleStagesProps {
   onGoToOps: () => void
 }
 
+function formatTokenUsage(stageRun: Parameters<typeof stageRunTokens>[0]): string {
+  const tokens = stageRunTokens(stageRun)
+  const total = tokens.in + tokens.out
+  if (total > 0) return `${(total / 1000).toFixed(1)}K`
+
+  const elevenlabsTokens = stageRunElevenLabsTokens(stageRun)
+  if (elevenlabsTokens > 0) return `${(elevenlabsTokens / 1000).toFixed(1)}K EL`
+
+  return '—'
+}
+
 export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
   const { productionRuns, stageRunsByRunId, sources, isLoading, error } = useWorkspaceData()
   const [query, setQuery] = useState('')
   const [view, setView] = useState<ConsoleView>('grid')
   const [errorStageId, setErrorStageId] = useState<string | null>(null)
 
-  const stageRuns = useMemo(
-    () => flattenStageRuns(productionRuns, stageRunsByRunId, sources),
+  const apiRequests = useMemo(
+    () => flattenApiRequests(productionRuns, stageRunsByRunId, sources),
     [productionRuns, stageRunsByRunId, sources],
   )
 
-  const hasLiveDuration = stageRuns.some(
+  const hasLiveDuration = apiRequests.some(
     (stageRun) => stageRun.status === 'queued' || stageRun.status === 'running',
   )
   useLiveTick(hasLiveDuration)
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
-    return stageRuns.filter(
+    return apiRequests.filter(
       (stageRun) =>
         stageRunDisplayName(stageRun).toLowerCase().includes(q) ||
+        stageRunApiToolLabel(stageRun).toLowerCase().includes(q) ||
         stageRun.stage_id.includes(q) ||
         stageRun.runLabel.toLowerCase().includes(q) ||
         moduleLabel(stageRun.module).toLowerCase().includes(q),
     )
-  }, [stageRuns, query])
+  }, [apiRequests, query])
 
   const errorStage = useMemo(
-    () => (errorStageId ? stageRuns.find((stageRun) => stageRun.id === errorStageId) : undefined),
-    [errorStageId, stageRuns],
+    () => (errorStageId ? apiRequests.find((stageRun) => stageRun.id === errorStageId) : undefined),
+    [errorStageId, apiRequests],
   )
 
   return (
@@ -58,7 +79,7 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
       <header className="bw-console__header">
         <div>
           <div className="bw-console__eyebrow">Execution Log</div>
-          <h2>Stage Runs</h2>
+          <h2>API Requests</h2>
         </div>
         <ConsoleViewToggle view={view} onChange={setView} />
         <button className="bw-console__cta" onClick={onGoToOps}>
@@ -70,36 +91,34 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
         <div className="bw-console__searchbar">
           <span style={{ color: '#6f828b' }}>⌕</span>
           <input
-            placeholder="Search stage runs by name, module, or production run…"
+            placeholder="Search API requests by stage, tool, module, or production run…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <span className="bw-count">{filtered.length} runs</span>
+          <span className="bw-count">{filtered.length} requests</span>
         </div>
         {isLoading && filtered.length === 0 ? (
-          <div className="bw-console__empty">Loading stage runs…</div>
+          <div className="bw-console__empty">Loading API requests…</div>
         ) : filtered.length === 0 ? (
-          <div className="bw-console__empty">No stage runs yet. Start a production run from OPS.</div>
+          <div className="bw-console__empty">No API requests yet. Start a production run from OPS.</div>
         ) : view === 'list' ? (
           <section className="bw-console__panel">
             <table className="bw-console__table">
               <thead>
                 <tr>
                   <th>Stage</th>
+                  <th>Tool</th>
                   <th>Module</th>
-                  <th>Version</th>
-                  <th>Model</th>
                   <th>Status</th>
-                  <th>Duration</th>
+                  <th>Runtime</th>
                   <th>Tokens</th>
+                  <th>Credits</th>
                   <th>Cost</th>
                   <th>Run</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((stageRun) => {
-                  const tokens = stageRunTokens(stageRun)
-                  const elevenlabsTokens = stageRunElevenLabsTokens(stageRun)
                   const costUsd = stageRunCostUsd(stageRun)
                   return (
                     <tr key={stageRun.id}>
@@ -113,22 +132,16 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
                           </span>
                         </div>
                       </td>
+                      <td>{stageRunApiToolLabel(stageRun)}</td>
                       <td>{moduleLabel(stageRun.module)}</td>
-                      <td className="num">{stageRun.stage_version}</td>
-                      <td className="num">{stageRun.model ?? '—'}</td>
                       <td>
                         <span className={`bw-console__statepill bw-state--${stageRun.status}`}>
                           {statusLabel(stageRun.status)}
                         </span>
                       </td>
                       <td className="num">{formatDuration(stageRunDurationSec(stageRun))}</td>
-                      <td className="num">
-                        {tokens.in + tokens.out > 0
-                          ? `${((tokens.in + tokens.out) / 1000).toFixed(1)}K`
-                          : elevenlabsTokens > 0
-                            ? `${(elevenlabsTokens / 1000).toFixed(1)}K EL`
-                            : '—'}
-                      </td>
+                      <td className="num">{formatTokenUsage(stageRun)}</td>
+                      <td className="num">{formatCredits(stageRunCredits(stageRun))}</td>
                       <td className="num">{formatCostUsd(costUsd)}</td>
                       <td>{stageRun.runId.slice(0, 8).toUpperCase()}</td>
                     </tr>
@@ -141,8 +154,8 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
           <div className="bw-console__sources">
             {filtered.map((stageRun) => {
               const tokens = stageRunTokens(stageRun)
-              const elevenlabsTokens = stageRunElevenLabsTokens(stageRun)
               const costUsd = stageRunCostUsd(stageRun)
+              const credits = stageRunCredits(stageRun)
               return (
                 <div
                   className="bw-console__panel bw-console__artifact-card bw-console__stage-card"
@@ -162,20 +175,20 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
                         marginTop: 3,
                       }}
                     >
-                      {stageRun.stage_id} · v{stageRun.stage_version}
+                      {stageRunApiToolLabel(stageRun)} · v{stageRun.stage_version}
                     </div>
                   </div>
                   <p style={{ fontSize: '0.84rem', color: '#b6c4cb', marginTop: 12, lineHeight: 1.5 }}>
                     {stageRunSummary(stageRun)}
                   </p>
                   <div className="stats">
-                    {stageRun.model ? <span>{stageRun.model}</span> : null}
                     <span>{formatDuration(stageRunDurationSec(stageRun))}</span>
                     {tokens.in + tokens.out > 0 ? (
                       <span>{((tokens.in + tokens.out) / 1000).toFixed(1)}K tok</span>
-                    ) : elevenlabsTokens > 0 ? (
-                      <span>{(elevenlabsTokens / 1000).toFixed(1)}K EL tok</span>
+                    ) : stageRunElevenLabsTokens(stageRun) > 0 ? (
+                      <span>{(stageRunElevenLabsTokens(stageRun) / 1000).toFixed(1)}K EL tok</span>
                     ) : null}
+                    {credits > 0 ? <span>{formatCredits(credits)} cr</span> : null}
                     {costUsd > 0 ? <span>{formatCostUsd(costUsd)}</span> : null}
                   </div>
                   {stageRun.error ? (
@@ -206,7 +219,7 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
         )}
       </div>
       <ConsoleDialog
-        title={errorStage ? `${stageRunDisplayName(errorStage)} error` : 'Stage run error'}
+        title={errorStage ? `${stageRunDisplayName(errorStage)} error` : 'API request error'}
         open={errorStageId !== null && Boolean(errorStage?.error)}
         onClose={() => setErrorStageId(null)}
       >

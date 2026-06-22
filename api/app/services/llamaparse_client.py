@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -70,6 +70,10 @@ def summarize_llamaparse_api_payload(payload: dict[str, Any]) -> dict[str, Any]:
 class LlamaParsePage:
     page: int
     markdown: str
+    # Structured layout items for this page (type/md/value/level/bbox ...) from the
+    # agentic result. Kept alongside markdown so the structuring stages can use the
+    # tagged item stream while source-research keeps using the markdown text.
+    items: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -78,6 +82,8 @@ class LlamaParseResult:
     pages: list[LlamaParsePage]
     raw_markdown: str
     api_payload: dict[str, Any]
+    # Normalized {"page_number", "items"} list consumed by the normalize stage.
+    structured_pages: list[dict[str, Any]] = field(default_factory=list)
 
 
 class LlamaParseClient:
@@ -118,11 +124,14 @@ class LlamaParseClient:
             if page.markdown.strip()
         )
 
+        structured_pages = self._extract_structured_pages(payload, pages)
+
         return LlamaParseResult(
             job_id=job_id,
             pages=pages,
             raw_markdown=raw_markdown,
             api_payload=summarize_llamaparse_api_payload(payload),
+            structured_pages=structured_pages,
         )
 
     def _upload_file(self, *, filename: str, content: bytes) -> str:
@@ -184,7 +193,9 @@ class LlamaParseClient:
                 response = client.get(
                     f"{_API_BASE}/api/v2/parse/{job_id}",
                     headers=self.headers,
-                    params={"expand": "markdown"},
+                    # Request markdown plus structured per-page items for the
+                    # structuring stages (see LlamaParse expand: markdown,items).
+                    params={"expand": "markdown,items"},
                 )
 
             if response.status_code >= 400:
@@ -224,6 +235,7 @@ class LlamaParseClient:
 
                     text = page.get("markdown") or page.get("md") or ""
                     page_number = page.get("page") or page.get("page_number") or index
+                    items = page.get("items")
 
                     try:
                         resolved_page = int(page_number)
@@ -234,6 +246,7 @@ class LlamaParseClient:
                         LlamaParsePage(
                             page=resolved_page,
                             markdown=str(text),
+                            items=items if isinstance(items, list) else [],
                         ),
                     )
 
@@ -246,3 +259,54 @@ class LlamaParseClient:
             return [LlamaParsePage(page=1, markdown=markdown_full)]
 
         return []
+
+    def _extract_structured_pages(
+        self,
+        payload: dict[str, Any],
+        pages: list[LlamaParsePage],
+    ) -> list[dict[str, Any]]:
+        """Return a [{"page_number", "items"}] list for the structuring stages."""
+        candidate = _find_items_pages(payload)
+        if candidate:
+            structured: list[dict[str, Any]] = []
+            for index, page in enumerate(candidate, start=1):
+                if not isinstance(page, dict):
+                    continue
+                items = page.get("items")
+                if not isinstance(items, list):
+                    continue
+                page_number = page.get("page_number") or page.get("page") or index
+                try:
+                    resolved = int(page_number)
+                except (TypeError, ValueError):
+                    resolved = index
+                structured.append({"page_number": resolved, "items": items})
+            if structured:
+                return structured
+
+        return [
+            {"page_number": page.page, "items": page.items}
+            for page in pages
+            if page.items
+        ]
+
+
+def _find_items_pages(payload: dict[str, Any]) -> list[Any] | None:
+    """Locate a `pages` array whose entries carry `items`, across known nestings."""
+    containers: list[Any] = [
+        payload.get("items"),
+        payload,
+        payload.get("result"),
+        payload.get("json"),
+        payload.get("data"),
+        payload.get("layout"),  # legacy/alternate nesting from older integrations
+    ]
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        pages = container.get("pages")
+        if isinstance(pages, list) and any(
+            isinstance(page, dict) and isinstance(page.get("items"), list) for page in pages
+        ):
+            return pages
+    return None

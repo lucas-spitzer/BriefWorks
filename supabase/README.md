@@ -74,6 +74,8 @@ supabase/migrations/19-rename-extract-knowledge.sql
 supabase/migrations/19-elevenreader-ebook-v2.sql
 supabase/migrations/20-rename-skills-to-stages.sql
 supabase/migrations/21-add-parse-stage.sql
+supabase/migrations/22-add-structuring-stages.sql
+supabase/migrations/23-ensure-core-pipeline-stages.sql
 ```
 
 ### Migration reference
@@ -104,3 +106,5 @@ These files record how the schema evolved. The final state they produce is equiv
 | `19-elevenreader-ebook-v2.sql` | `elevenreader-ebook` v2.0.0 |
 | `20-rename-skills-to-stages.sql` | Rename `skills`/`skill_runs` to `stages`/`stage_runs` |
 | `21-add-parse-stage.sql` | Register `parse` stage and upgrade pipeline parse step |
+| `22-add-structuring-stages.sql` | Structuring stages; deactivate replaced stages |
+| `23-ensure-core-pipeline-stages.sql` | `source-research`, `extract-knowledge` for sparse DBs |

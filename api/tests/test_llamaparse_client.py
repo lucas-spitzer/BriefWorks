@@ -1,4 +1,4 @@
-from app.services.llamaparse_client import LlamaParseClient, LlamaParseError, _response_json
+from app.services.llamaparse_client import LlamaParseClient, LlamaParseError, LlamaParsePage, _response_json
 
 
 def test_extract_pages_from_markdown_payload() -> None:
@@ -61,3 +61,42 @@ def test_summarize_llamaparse_api_payload_strips_markdown_bodies() -> None:
     assert summary["job"]["status"] == "COMPLETED"
     assert summary["pages"][0]["markdown_length"] == len("# Title")
     assert "markdown" not in summary["pages"][0]
+
+
+def test_extract_structured_pages_from_items_payload() -> None:
+    client = LlamaParseClient(api_key="test-key")
+    payload = {
+        "items": {
+            "pages": [
+                {
+                    "page_number": 1,
+                    "items": [{"type": "heading", "md": "# Title", "value": "Title"}],
+                },
+            ],
+        },
+        "markdown": {
+            "pages": [{"page": 1, "markdown": "# Title"}],
+        },
+    }
+    pages = client._extract_pages(payload)
+
+    structured = client._extract_structured_pages(payload, pages)
+
+    assert len(structured) == 1
+    assert structured[0]["page_number"] == 1
+    assert structured[0]["items"][0]["type"] == "heading"
+
+
+def test_extract_structured_pages_falls_back_to_page_items() -> None:
+    client = LlamaParseClient(api_key="test-key")
+    pages = [
+        LlamaParsePage(
+            page=1,
+            markdown="# Title",
+            items=[{"type": "text", "md": "Body", "value": "Body"}],
+        ),
+    ]
+
+    structured = client._extract_structured_pages({}, pages)
+
+    assert structured == [{"page_number": 1, "items": pages[0].items}]

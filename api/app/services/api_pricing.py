@@ -50,7 +50,9 @@ SPEECHIFY_RATES = CharacterRates(
     per_thousand=_float_env("SPEECHIFY_PRICE_PER_1K_CHARS", 0.10),
 )
 
-TAVILY_PRICE_PER_SEARCH = _float_env("TAVILY_PRICE_PER_SEARCH", 0.01)
+TAVILY_PRICE_PER_CREDIT = _float_env("TAVILY_PRICE_PER_CREDIT", 0.008)
+
+LLAMAPARSE_PRICE_PER_CREDIT = _float_env("LLAMAPARSE_PRICE_PER_CREDIT", 0.00125)
 
 
 def _round_usd(value: float) -> float:
@@ -126,10 +128,22 @@ def cost_speechify_usage(
 
 
 def cost_tavily_usage(*, search_count: int) -> dict[str, Any]:
-    total = search_count * TAVILY_PRICE_PER_SEARCH
+    credit_count = search_count
+    total = credit_count * TAVILY_PRICE_PER_CREDIT
 
     return {
         "provider": "tavily",
         "search_count": search_count,
+        "credit_count": credit_count,
+        "cost_usd": _round_usd(total),
+    }
+
+
+def cost_llamaparse_usage(*, credit_count: int) -> dict[str, Any]:
+    total = credit_count * LLAMAPARSE_PRICE_PER_CREDIT
+
+    return {
+        "provider": "llamaparse",
+        "credit_count": credit_count,
         "cost_usd": _round_usd(total),
     }

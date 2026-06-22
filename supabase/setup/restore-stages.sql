@@ -1,4 +1,5 @@
--- BriefWorks fresh setup: stage definitions (current names, schemas, and prompts).
+-- Restore all stage definitions (idempotent; safe to re-run).
+-- Source of truth: supabase/setup/03-seed-stages.sql
 
 insert into public.stages (
   stage_id,
@@ -360,12 +361,19 @@ values
       "system": "Generate realistic application scenarios from source material.",
       "user_template": "Create scenarios for source {{source_id}}."
     }'::jsonb
-  );
+  )
+on conflict (stage_id, version) do update
+set
+  module = excluded.module,
+  name = excluded.name,
+  description = excluded.description,
+  modalities = excluded.modalities,
+  input_schema = excluded.input_schema,
+  output_schema = excluded.output_schema,
+  prompts = excluded.prompts,
+  is_active = true;
 
-update public.stages
-set is_active = false
-where stage_id in ('prepare-document', 'deconstruct-document', 'elevenreader-ebook');
-
+-- Deactivate legacy stages replaced by the structuring pipeline.
 update public.stages
 set is_active = false
 where stage_id in ('prepare-document', 'deconstruct-document', 'elevenreader-ebook');

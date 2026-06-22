@@ -39,3 +39,6 @@ class ParseResult:
     document: ParsedDocument
     raw_markdown: str
     api_payload: dict[str, Any]
+    # LlamaParse structured layout as a [{"page_number", "items"}] list. Consumed by
+    # the normalize stage; empty when the parser returned markdown only.
+    structured_pages: list[dict[str, Any]] = field(default_factory=list)

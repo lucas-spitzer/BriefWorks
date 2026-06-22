@@ -8,18 +8,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.config import get_settings
-from app.intellex.ingest import parse_artifact_path
+from app.intellex.ingest import parse_artifact_path, structured_pages_artifact_path
 from app.intellex.models import ParsedDocument
-from app.intellex.stages.document_deconstructor import DocumentDeconstructorStage
 from app.intellex.stages.extract_chapter_knowledge import ExtractChapterKnowledgeStage
 from app.intellex.stages.parse_document import ParseStage
-from app.intellex.stages.prepare import PrepareStage, summarize_prepare_reasons
 from app.intellex.stages.promotion import merge_research_into_source_metadata
 from app.intellex.stages.source_research import SourceResearchStage
 from app.intellex.stages.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
 from app.intellex.source_readiness import source_intellex_complete
 from app.intellex.wiki_slug import normalize_slug
-from app.mathesys.stages.eleven_reader_script import ElevenReaderScriptStage
 from app.mathesys.stages.elevenlabs_structured_text import ElevenLabsStructuredTextStage
 from app.mathesys.stages.speechify_api_ssml import SpeechifyApiSsmlStage
 from app.qngen.assessment_promotion import (
@@ -39,6 +36,7 @@ from app.services.stage_run_billing import stage_run_completion_fields, tts_call
 from app.services.speechify_client import SpeechifyClient
 from app.worker.db import WorkerDatabase
 from app.worker.storage import WorkerStorage
+from app.worker.structuring_executors import StructureStageExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +160,7 @@ class ParseStageExecutor:
         workspace_id: str,
         source: dict[str, Any],
         content: bytes,
-    ) -> tuple[str, ParsedDocument]:
+    ) -> tuple[str, ParsedDocument, list[dict[str, Any]]]:
         source_id = source["id"]
         stage_run = self.db.create_stage_run(
             {
@@ -197,6 +195,14 @@ class ParseStageExecutor:
                 content_type="text/markdown",
             )
 
+            structured_path = structured_pages_artifact_path(source["storage_path"])
+            self.storage.upload(
+                structured_path,
+                json.dumps({"pages": output.structured_pages}, ensure_ascii=False).encode("utf-8"),
+                bucket=self.storage.sources_bucket,
+                content_type="application/json",
+            )
+
             existing_metadata = source.get("source_metadata") or {}
             if not isinstance(existing_metadata, dict):
                 existing_metadata = {}
@@ -205,6 +211,8 @@ class ParseStageExecutor:
                 **output.document.to_parse_metadata(),
                 "parsed_at": utc_now_iso(),
                 "raw_markdown_path": raw_markdown_path,
+                "structured_pages_path": structured_path,
+                "structured_page_count": len(output.structured_pages),
             }
             updated_metadata = {
                 **existing_metadata,
@@ -234,223 +242,7 @@ class ParseStageExecutor:
                     "completed_at": utc_now_iso(),
                 },
             )
-            return stage_run_id, output.document
-        except Exception as exc:
-            logger.exception("Stage run %s failed", stage_run_id)
-            self.db.update_stage_run(
-                stage_run_id,
-                {
-                    "status": "failed",
-                    "error": str(exc),
-                    "completed_at": utc_now_iso(),
-                },
-            )
-            raise
-
-
-class PrepareStageExecutor:
-    STAGE_ID = "prepare-document"
-    STAGE_VERSION = "2.0.0"
-    MODULE = "intellex"
-
-    def __init__(
-        self,
-        db: WorkerDatabase | None = None,
-        stage: PrepareStage | None = None,
-    ) -> None:
-        self.db = db or WorkerDatabase()
-        self.stage = stage or PrepareStage()
-
-    def run_for_source(
-        self,
-        *,
-        production_run_id: str,
-        workspace_id: str,
-        source: dict[str, Any],
-        parsed_document: ParsedDocument,
-    ) -> tuple[str, ParsedDocument]:
-        source_id = source["id"]
-        stage_run = self.db.create_stage_run(
-            {
-                "production_run_id": production_run_id,
-                "workspace_id": workspace_id,
-                "stage_id": self.STAGE_ID,
-                "stage_version": self.STAGE_VERSION,
-                "module": self.MODULE,
-                "status": "running",
-                "inputs": {
-                    "source_id": source_id,
-                    "line_count": len(parsed_document.lines),
-                    "page_count": parsed_document.page_count,
-                },
-                "started_at": utc_now_iso(),
-            },
-        )
-        stage_run_id = stage_run["id"]
-
-        try:
-            output, execution = self.stage.run(parsed_document=parsed_document)
-            prepared_at = utc_now_iso()
-            existing_metadata = source.get("source_metadata") or {}
-            if not isinstance(existing_metadata, dict):
-                existing_metadata = {}
-
-            prepare_metadata = {
-                "prepared_at": prepared_at,
-                "kept_line_count": output.kept_line_count,
-                "excluded_line_count": output.excluded_line_count,
-                "excluded_pages": output.excluded_pages,
-                "reasons_summary": summarize_prepare_reasons(output.reasons),
-                "pre_filter": output.pre_filter_report,
-                "validation": output.validation_report,
-            }
-
-            updated_metadata = {
-                **existing_metadata,
-                "prepare": prepare_metadata,
-            }
-
-            self.db.update_source(
-                source_id,
-                {
-                    "source_metadata": updated_metadata,
-                },
-            )
-            source["source_metadata"] = updated_metadata
-
-            self.db.update_stage_run(
-                stage_run_id,
-                {
-                    "status": "completed",
-                    "output": {
-                        "excluded_line_ids": output.excluded_line_ids,
-                        "excluded_pages": output.excluded_pages,
-                        "reasons": output.reasons,
-                        "kept_line_count": output.kept_line_count,
-                        "excluded_line_count": output.excluded_line_count,
-                    },
-                    "promoted": {
-                        "source_ids": [source_id],
-                        "metadata_namespace": "prepare",
-                    },
-                    **stage_run_completion_fields(execution),
-                    "completed_at": utc_now_iso(),
-                },
-            )
-            return stage_run_id, output.prepared_document
-        except Exception as exc:
-            logger.exception("Stage run %s failed", stage_run_id)
-            self.db.update_stage_run(
-                stage_run_id,
-                {
-                    "status": "failed",
-                    "error": str(exc),
-                    "completed_at": utc_now_iso(),
-                },
-            )
-            raise
-
-
-class DocumentDeconstructorStageExecutor:
-    STAGE_ID = "deconstruct-document"
-    STAGE_VERSION = "2.0.0"
-    MODULE = "intellex"
-
-    def __init__(
-        self,
-        db: WorkerDatabase | None = None,
-        stage: DocumentDeconstructorStage | None = None,
-    ) -> None:
-        self.db = db or WorkerDatabase()
-        self.stage = stage or DocumentDeconstructorStage()
-
-    def run_for_source(
-        self,
-        *,
-        production_run_id: str,
-        workspace_id: str,
-        source: dict[str, Any],
-    ) -> str:
-        source_id = source["id"]
-        segments = self.db.list_ndr_segments_for_source(source_id)
-
-        if not segments:
-            raise RuntimeError(f"No NDR segments found for source {source_id}.")
-
-        stage_run = self.db.create_stage_run(
-            {
-                "production_run_id": production_run_id,
-                "workspace_id": workspace_id,
-                "stage_id": self.STAGE_ID,
-                "stage_version": self.STAGE_VERSION,
-                "module": self.MODULE,
-                "status": "running",
-                "inputs": {
-                    "source_id": source_id,
-                    "segment_count": len(segments),
-                },
-                "started_at": utc_now_iso(),
-            },
-        )
-        stage_run_id = stage_run["id"]
-
-        try:
-            source_metadata = source.get("source_metadata") or {}
-            if not isinstance(source_metadata, dict):
-                source_metadata = {}
-
-            output, execution = self.stage.run(
-                source_metadata=source_metadata,
-                segments=segments,
-            )
-
-            self.db.delete_document_chapters_for_source(source_id)
-            chapter_rows = [
-                {
-                    "id": str(uuid.uuid4()),
-                    "source_id": source_id,
-                    "workspace_id": workspace_id,
-                    "sequence_index": chapter.sequence_index,
-                    "title": chapter.title,
-                    "level": chapter.level,
-                    "segment_ids": chapter.segment_ids,
-                }
-                for chapter in output.chapters
-            ]
-            created_chapters = self.db.insert_document_chapters(chapter_rows)
-
-            self.db.update_stage_run(
-                stage_run_id,
-                {
-                    "status": "completed",
-                    "output": output.model_dump(),
-                    "promoted": {
-                        "source_ids": [source_id],
-                        "chapter_ids": [str(row["id"]) for row in created_chapters],
-                    },
-                    **stage_run_completion_fields(execution),
-                    "completed_at": utc_now_iso(),
-                },
-            )
-
-            deconstructed_at = utc_now_iso()
-            updated_metadata = {
-                **source_metadata,
-                "deconstruct": {
-                    "deconstructed_at": deconstructed_at,
-                    "chapter_count": len(output.chapters),
-                    "segment_count": len(segments),
-                },
-            }
-            self.db.update_source(
-                source_id,
-                {
-                    "source_metadata": updated_metadata,
-                },
-            )
-            source["source_metadata"] = updated_metadata
-
-            return stage_run_id
+            return stage_run_id, output.document, output.structured_pages
         except Exception as exc:
             logger.exception("Stage run %s failed", stage_run_id)
             self.db.update_stage_run(
@@ -837,47 +629,6 @@ def _run_mathesys_narration_stage(
         raise
 
 
-class ElevenReaderScriptStageExecutor:
-    STAGE_ID = "elevenreader-ebook"
-    STAGE_VERSION = "2.0.0"
-    MODULE = "mathesys"
-
-    def __init__(
-        self,
-        db: WorkerDatabase | None = None,
-        storage: WorkerStorage | None = None,
-        stage: ElevenReaderScriptStage | None = None,
-    ) -> None:
-        self.db = db or WorkerDatabase()
-        self.storage = storage or WorkerStorage()
-        self.stage = stage or ElevenReaderScriptStage()
-
-    def run_for_source(
-        self,
-        *,
-        production_run_id: str,
-        workspace_id: str,
-        source: dict[str, Any],
-    ) -> str:
-        return _run_mathesys_narration_stage(
-            db=self.db,
-            storage=self.storage,
-            stage=self.stage,
-            stage_id=self.STAGE_ID,
-            stage_version=self.STAGE_VERSION,
-            artifact_type="eleven_reader_script",
-            artifact_format="epub3",
-            production_run_id=production_run_id,
-            workspace_id=workspace_id,
-            source=source,
-            include_wiki=False,
-            extra_manifest=lambda volume: {
-                "chapter_count": volume.get("chapter_count"),
-                "chapter_titles": volume.get("chapter_titles"),
-            },
-        )
-
-
 class SpeechifyApiSsmlStageExecutor:
     STAGE_ID = "speechify-audio"
     STAGE_VERSION = "1.0.0"
@@ -1174,9 +925,9 @@ class AssessmentSetGenStageExecutor:
         if not segments:
             raise RuntimeError(f"No NDR segments found for source {source_id}.")
 
-        has_deconstruct_stage_run = self.db.has_completed_stage_run_for_source(
+        has_structure_stage_run = self.db.has_completed_stage_run_for_source(
             source_id,
-            DocumentDeconstructorStageExecutor.STAGE_ID,
+            StructureStageExecutor.STAGE_ID,
         )
         has_extract_stage_run = self.db.has_completed_stage_run_for_source(
             source_id,
@@ -1187,7 +938,7 @@ class AssessmentSetGenStageExecutor:
             source,
             has_segments=True,
             has_document_chapters=has_document_chapters,
-            has_deconstruct_stage_run=has_deconstruct_stage_run,
+            has_structure_stage_run=has_structure_stage_run,
             has_extract_stage_run=has_extract_stage_run,
         ):
             raise RuntimeError(

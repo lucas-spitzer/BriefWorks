@@ -17,6 +17,7 @@ def test_parse_stage_returns_json_api_response() -> None:
             "job": {"id": "job-123", "status": "COMPLETED"},
             "pages": [{"page": 1, "markdown_length": 24}],
         },
+        structured_pages=[{"page_number": 1, "items": [{"type": "heading", "md": "# Title"}]}],
     )
 
     stage = ParseStage(llamaparse_client=llamaparse_client)
@@ -31,7 +32,9 @@ def test_parse_stage_returns_json_api_response() -> None:
     assert output.page_count == 1
     assert output.line_count >= 1
     assert output.api_payload["job"]["status"] == "COMPLETED"
+    assert len(output.structured_pages) == 1
     assert execution["model"] == "llamaparse"
+    assert execution["page_count"] == 1
     assert execution["api_response"]["job"]["id"] == "job-123"
 
     stage_output = output.to_stage_output(raw_markdown_path="workspaces/ws/sources/src/parse/raw.md")

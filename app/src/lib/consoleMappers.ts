@@ -241,10 +241,123 @@ export function sumWorkspaceCostUsd(
 }
 
 export function stageRunDisplayName(stageRun: StageRun): string {
-  return stageRun.stage_id
+  return apiRequestStageLabel(stageRun.stage_id) ?? stageRun.stage_id
     .split('-')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ')
+}
+
+const API_REQUEST_STAGES: Record<string, { label: string; tool: string }> = {
+  parse: { label: 'Parse', tool: 'LlamaParse' },
+  'normalize-document': { label: 'Normalize', tool: 'Local' },
+  'trim-document-boundaries': { label: 'Trim', tool: 'Local' },
+  'structure-document': { label: 'Structure', tool: 'Local' },
+  'validate-structure': { label: 'Validate', tool: 'Local' },
+  'source-research': { label: 'Source Research', tool: 'Tavily' },
+  'extract-knowledge': { label: 'Extract Knowledge', tool: 'OpenAI' },
+  'create-ebook': { label: 'Create EBook', tool: 'Local' },
+}
+
+const API_PROVIDER_LABELS: Record<string, string> = {
+  tavily: 'Tavily',
+  llamaparse: 'LlamaParse',
+  openai: 'OpenAI',
+  anthropic: 'Claude',
+  elevenlabs: 'ElevenLabs',
+  speechify: 'Speechify',
+}
+
+function apiUsageRecord(stageRun: StageRun): Record<string, unknown> | null {
+  const usage = stageRun.api_usage
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null
+  return usage as Record<string, unknown>
+}
+
+export function stageRunApiCalls(stageRun: StageRun): Record<string, unknown>[] {
+  const usage = apiUsageRecord(stageRun)
+  const calls = usage?.calls
+  if (!Array.isArray(calls)) return []
+  return calls.filter((call): call is Record<string, unknown> => Boolean(call) && typeof call === 'object')
+}
+
+function providerToolLabel(provider: unknown): string | null {
+  if (typeof provider !== 'string' || !provider.trim()) return null
+  return API_PROVIDER_LABELS[provider.trim().toLowerCase()] ?? provider
+}
+
+export function apiRequestStageLabel(stageId: string): string | null {
+  return API_REQUEST_STAGES[stageId]?.label ?? null
+}
+
+export function stageRunApiToolLabel(stageRun: StageRun): string {
+  const configuredTool = API_REQUEST_STAGES[stageRun.stage_id]?.tool
+  if (configuredTool) return configuredTool
+
+  const labels = new Set<string>()
+
+  for (const call of stageRunApiCalls(stageRun)) {
+    const label = providerToolLabel(call.provider)
+    if (label) labels.add(label)
+  }
+
+  const model = (stageRun.model ?? '').trim().toLowerCase()
+  if (model === 'llamaparse') labels.add('LlamaParse')
+  if (model.includes('claude') || model.includes('anthropic')) labels.add('Claude')
+  if (model.includes('gpt') || model.includes('openai')) labels.add('OpenAI')
+
+  if (labels.size > 0) {
+    return [...labels].join(' · ')
+  }
+
+  return stageRun.model ?? '—'
+}
+
+export function stageRunCredits(stageRun: StageRun): number {
+  const usage = apiUsageRecord(stageRun)
+  const totals = usage?.totals
+  if (totals && typeof totals === 'object' && !Array.isArray(totals)) {
+    const creditCount = (totals as Record<string, unknown>).credit_count
+    if (typeof creditCount === 'number' && creditCount > 0) return creditCount
+  }
+
+  let credits = 0
+  for (const call of stageRunApiCalls(stageRun)) {
+    const creditCount = call.credit_count
+    if (typeof creditCount === 'number') credits += creditCount
+  }
+
+  if (credits > 0) return credits
+
+  if (stageRun.stage_id === 'parse') {
+    const pageCount = stageRun.output?.page_count
+    if (typeof pageCount === 'number' && pageCount > 0) return pageCount
+  }
+
+  return 0
+}
+
+export function isApiRequestStageRun(stageRun: StageRun): boolean {
+  if (!API_REQUEST_STAGES[stageRun.stage_id]) return false
+  if (stageRun.model === 'deterministic-passthrough') return false
+
+  const tokens = stageRunTokens(stageRun)
+  if (tokens.in + tokens.out > 0) return true
+  if (stageRunApiCalls(stageRun).length > 0) return true
+  if (stageRunCredits(stageRun) > 0) return true
+  if (stageRunElevenLabsTokens(stageRun) > 0) return true
+
+  const model = (stageRun.model ?? '').trim().toLowerCase()
+  if (model && model !== 'unknown') return true
+
+  return false
+}
+
+export function flattenApiRequests(
+  runs: ProductionRun[],
+  stageRunsByRunId: Record<string, StageRun[]>,
+  sources: Source[],
+): StageRunWithContext[] {
+  return flattenStageRuns(runs, stageRunsByRunId, sources).filter(isApiRequestStageRun)
 }
 
 export function pipelineStepLabel(step: PipelineStep): string {

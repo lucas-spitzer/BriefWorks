@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { formatDateTime, formatDuration, formatCostUsd, statusLabel } from '../../lib/consoleFormat'
 import {
+  flattenApiRequests,
   productionRunCostUsd,
   productionRunDurationSec,
   productionRunLabel,
@@ -152,7 +153,7 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
               </div>
               {sortedRuns.map((run) => {
                 const progress = productionRunProgress(run)
-                const stageCount = stageRunsByRunId[run.id]?.length ?? 0
+                const apiRequestCount = flattenApiRequests([run], stageRunsByRunId, sources).length
                 const runCost = productionRunCostUsd(run, stageRunsByRunId[run.id] ?? [])
                 return (
                   <button
@@ -164,7 +165,7 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
                     <span>
                       <div className="title">{productionRunLabel(run, sources)}</div>
                       <div className="sub">
-                        {run.id.slice(0, 8).toUpperCase()} · {stageCount} stage runs
+                        {run.id.slice(0, 8).toUpperCase()} · {apiRequestCount} API requests
                         {runCost > 0 ? ` · ${formatCostUsd(runCost)}` : ''} ·{' '}
                         {formatDateTime(run.created_at)}
                       </div>

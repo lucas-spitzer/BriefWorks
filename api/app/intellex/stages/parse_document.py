@@ -13,6 +13,7 @@ class ParseOutput:
     document: ParsedDocument
     raw_markdown: str
     api_payload: dict[str, Any]
+    structured_pages: list[dict[str, Any]]
     page_count: int
     line_count: int
     parser: str
@@ -56,6 +57,7 @@ class ParseStage:
             document=document,
             raw_markdown=parse_result.raw_markdown,
             api_payload=parse_result.api_payload,
+            structured_pages=parse_result.structured_pages,
             page_count=document.page_count,
             line_count=len(document.lines),
             parser=document.parser,
@@ -64,6 +66,7 @@ class ParseStage:
         execution = {
             "model": "llamaparse",
             "token_usage": {},
+            "page_count": document.page_count,
             "llamaparse_job_id": document.job_id,
             "api_response": parse_result.api_payload,
         }

@@ -6,24 +6,29 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app.intellex.ingest import chunk_parsed_document
 from app.intellex.models import ParsedDocument
 from app.intellex.source_readiness import source_intellex_complete
+from app.intellex.structuring.chunk import build_segments_and_chapters
+from app.intellex.structuring.models import Book, Element
 from app.worker.db import WorkerDatabase
 from app.worker.stage_executor import (
-    DocumentDeconstructorStageExecutor,
     ElevenLabsStructuredTextStageExecutor,
-    ElevenReaderScriptStageExecutor,
     ExtractChapterKnowledgeStageExecutor,
     FlashcardGenStageExecutor,
     ParseStageExecutor,
-    PrepareStageExecutor,
     QuizGenStageExecutor,
     ScenarioGenStageExecutor,
     SourceResearchStageExecutor,
     SpeechifyApiSsmlStageExecutor,
 )
 from app.worker.storage import WorkerStorage
+from app.worker.structuring_executors import (
+    CreateEbookStageExecutor,
+    NormalizeStageExecutor,
+    PdfStructureValidationStageExecutor,
+    StructureStageExecutor,
+    TrimBoundariesStageExecutor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +87,10 @@ class PipelineContext:
     workspace_id: str
     sources: list[dict[str, Any]]
     parsed_documents: dict[str, ParsedDocument] = field(default_factory=dict)
-    prepared_documents: dict[str, ParsedDocument] = field(default_factory=dict)
+    structured_pages: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    normalized_elements: dict[str, list[Element]] = field(default_factory=dict)
+    trimmed_elements: dict[str, list[Element]] = field(default_factory=dict)
+    books: dict[str, Book] = field(default_factory=dict)
     target_artifacts: list[str] = field(default_factory=list)
     intellex_complete_source_ids: set[str] = field(default_factory=set)
 
@@ -94,10 +102,12 @@ class PipelineRunner:
         storage: WorkerStorage | None = None,
         source_research: SourceResearchStageExecutor | None = None,
         parse: ParseStageExecutor | None = None,
-        prepare: PrepareStageExecutor | None = None,
-        document_deconstructor: DocumentDeconstructorStageExecutor | None = None,
+        normalize: NormalizeStageExecutor | None = None,
+        trim: TrimBoundariesStageExecutor | None = None,
+        structure: StructureStageExecutor | None = None,
+        validate: PdfStructureValidationStageExecutor | None = None,
         extract_chapter_knowledge: ExtractChapterKnowledgeStageExecutor | None = None,
-        eleven_reader_script: ElevenReaderScriptStageExecutor | None = None,
+        create_ebook: CreateEbookStageExecutor | None = None,
         speechify_api_ssml: SpeechifyApiSsmlStageExecutor | None = None,
         elevenlabs_structured_text: ElevenLabsStructuredTextStageExecutor | None = None,
         flashcard_gen: FlashcardGenStageExecutor | None = None,
@@ -108,15 +118,14 @@ class PipelineRunner:
         self.storage = storage or WorkerStorage()
         self.source_research = source_research or SourceResearchStageExecutor(self.db)
         self.parse = parse or ParseStageExecutor(self.db, self.storage)
-        self.prepare = prepare or PrepareStageExecutor(self.db)
-        self.document_deconstructor = document_deconstructor or DocumentDeconstructorStageExecutor(self.db)
+        self.normalize = normalize or NormalizeStageExecutor(self.db, self.storage)
+        self.trim = trim or TrimBoundariesStageExecutor(self.db, self.storage)
+        self.structure = structure or StructureStageExecutor(self.db, self.storage)
+        self.validate = validate or PdfStructureValidationStageExecutor(self.db, self.storage)
         self.extract_chapter_knowledge = (
             extract_chapter_knowledge or ExtractChapterKnowledgeStageExecutor(self.db)
         )
-        self.eleven_reader_script = eleven_reader_script or ElevenReaderScriptStageExecutor(
-            self.db,
-            self.storage,
-        )
+        self.create_ebook = create_ebook or CreateEbookStageExecutor(self.db, self.storage)
         self.speechify_api_ssml = speechify_api_ssml or SpeechifyApiSsmlStageExecutor(
             self.db,
             self.storage,
@@ -167,13 +176,14 @@ class PipelineRunner:
                 continue
 
             content = self.storage.download(source["storage_path"])
-            stage_run_id, parsed_document = self.parse.run_for_source(
+            stage_run_id, parsed_document, structured_pages = self.parse.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
                 content=content,
             )
             context.parsed_documents[source_id] = parsed_document
+            context.structured_pages[source_id] = structured_pages
             stage_run_ids.append(stage_run_id)
             total_pages += parsed_document.page_count
 
@@ -192,41 +202,30 @@ class PipelineRunner:
             ),
         )
 
-    def run_prepare_step(
+    def _run_structuring_step(
         self,
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
+        *,
+        step_name: str,
+        run_source: Any,
     ) -> list[dict[str, Any]]:
         stage_run_ids: list[str] = []
         reused = 0
 
         for source in context.sources:
             source_id = source["id"]
-
             if source_id in context.intellex_complete_source_ids:
                 reused += 1
                 continue
-
-            parsed_document = context.parsed_documents.get(source_id)
-
-            if not parsed_document:
-                raise RuntimeError(f"Parsed document missing for source {source_id}.")
-
-            stage_run_id, prepared_document = self.prepare.run_for_source(
-                production_run_id=context.production_run_id,
-                workspace_id=context.workspace_id,
-                source=source,
-                parsed_document=parsed_document,
-            )
-            context.prepared_documents[source_id] = prepared_document
-            stage_run_ids.append(stage_run_id)
+            stage_run_ids.append(run_source(source))
 
         processed = len(context.sources) - reused
         last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
 
         return mark_step(
             pipeline,
-            "prepare-document",
+            step_name,
             status="completed",
             stage_run_id=last_stage_run_id,
             detail=step_detail(
@@ -234,6 +233,83 @@ class PipelineRunner:
                 reused=reused,
                 suffix=f"{len(stage_run_ids)} stage run(s)" if stage_run_ids else None,
             ),
+        )
+
+    def run_normalize_step(self, context: PipelineContext, pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        def run_source(source: dict[str, Any]) -> str:
+            source_id = source["id"]
+            structured_pages = context.structured_pages.get(source_id)
+            if not structured_pages:
+                raise RuntimeError(
+                    f"No structured layout for source {source_id}. The parse step must capture "
+                    "LlamaParse `items` (agentic layout) for the structuring stages."
+                )
+            stage_run_id, elements = self.normalize.run_for_source(
+                production_run_id=context.production_run_id,
+                workspace_id=context.workspace_id,
+                source=source,
+                structured_pages=structured_pages,
+            )
+            context.normalized_elements[source_id] = elements
+            return stage_run_id
+
+        return self._run_structuring_step(
+            context, pipeline, step_name="normalize-document", run_source=run_source
+        )
+
+    def run_trim_step(self, context: PipelineContext, pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        def run_source(source: dict[str, Any]) -> str:
+            source_id = source["id"]
+            elements = context.normalized_elements.get(source_id)
+            if elements is None:
+                raise RuntimeError(f"Normalized elements missing for source {source_id}.")
+            stage_run_id, trimmed = self.trim.run_for_source(
+                production_run_id=context.production_run_id,
+                workspace_id=context.workspace_id,
+                source=source,
+                elements=elements,
+            )
+            context.trimmed_elements[source_id] = trimmed
+            return stage_run_id
+
+        return self._run_structuring_step(
+            context, pipeline, step_name="trim-document-boundaries", run_source=run_source
+        )
+
+    def run_structure_step(self, context: PipelineContext, pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        def run_source(source: dict[str, Any]) -> str:
+            source_id = source["id"]
+            trimmed = context.trimmed_elements.get(source_id)
+            if trimmed is None:
+                raise RuntimeError(f"Trimmed elements missing for source {source_id}.")
+            stage_run_id, book = self.structure.run_for_source(
+                production_run_id=context.production_run_id,
+                workspace_id=context.workspace_id,
+                source=source,
+                trimmed_elements=trimmed,
+            )
+            context.books[source_id] = book
+            return stage_run_id
+
+        return self._run_structuring_step(
+            context, pipeline, step_name="structure-document", run_source=run_source
+        )
+
+    def run_validate_step(self, context: PipelineContext, pipeline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        def run_source(source: dict[str, Any]) -> str:
+            source_id = source["id"]
+            book = context.books.get(source_id)
+            if book is None:
+                raise RuntimeError(f"Structured book missing for source {source_id}.")
+            return self.validate.run_for_source(
+                production_run_id=context.production_run_id,
+                workspace_id=context.workspace_id,
+                source=source,
+                book=book,
+            )
+
+        return self._run_structuring_step(
+            context, pipeline, step_name="validate-structure", run_source=run_source
         )
 
     def run_chunk_step(
@@ -252,24 +328,25 @@ class PipelineRunner:
                 reused += 1
                 continue
 
-            prepared_document = context.prepared_documents.get(source_id)
+            book = context.books.get(source_id)
+            if book is None:
+                raise RuntimeError(f"Structured book missing for source {source_id}.")
 
-            if not prepared_document:
-                raise RuntimeError(f"Prepared document missing for source {source_id}.")
-
-            self.db.delete_ndr_segments_for_source(source_id)
-            segment_rows = chunk_parsed_document(
-                parsed_document=prepared_document,
+            segment_rows, chapter_rows = build_segments_and_chapters(
+                book,
                 source_id=source_id,
                 workspace_id=context.workspace_id,
             )
+
+            self.db.delete_ndr_segments_for_source(source_id)
             self.db.insert_ndr_segments(segment_rows)
+            self.db.delete_document_chapters_for_source(source_id)
+            self.db.insert_document_chapters(chapter_rows)
             total_segments += len(segment_rows)
 
             existing_metadata = source.get("source_metadata") or {}
             if not isinstance(existing_metadata, dict):
                 existing_metadata = {}
-
             parse_metadata = existing_metadata.get("parse", {})
             if not isinstance(parse_metadata, dict):
                 parse_metadata = {}
@@ -279,16 +356,13 @@ class PipelineRunner:
                 "parse": {
                     **parse_metadata,
                     "segment_count": len(segment_rows),
+                    "chapter_count": len(chapter_rows),
                     "chunked_at": utc_now_iso(),
                 },
             }
-
             self.db.update_source(
                 source_id,
-                {
-                    "status": "ready",
-                    "source_metadata": updated_metadata,
-                },
+                {"status": "ready", "source_metadata": updated_metadata},
             )
             source["source_metadata"] = updated_metadata
 
@@ -322,7 +396,6 @@ class PipelineRunner:
                 continue
 
             parsed_document = context.parsed_documents.get(source_id)
-
             if not parsed_document:
                 raise RuntimeError(f"Parsed document missing for source {source_id}.")
 
@@ -340,43 +413,6 @@ class PipelineRunner:
         return mark_step(
             pipeline,
             "source-research",
-            status="completed",
-            stage_run_id=last_stage_run_id,
-            detail=step_detail(
-                processed=processed,
-                reused=reused,
-                suffix=f"{len(stage_run_ids)} stage run(s)" if stage_run_ids else None,
-            ),
-        )
-
-    def run_document_deconstructor_step(
-        self,
-        context: PipelineContext,
-        pipeline: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        stage_run_ids: list[str] = []
-        reused = 0
-
-        for source in context.sources:
-            source_id = source["id"]
-
-            if source_id in context.intellex_complete_source_ids:
-                reused += 1
-                continue
-
-            stage_run_id = self.document_deconstructor.run_for_source(
-                production_run_id=context.production_run_id,
-                workspace_id=context.workspace_id,
-                source=source,
-            )
-            stage_run_ids.append(stage_run_id)
-
-        processed = len(context.sources) - reused
-        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
-
-        return mark_step(
-            pipeline,
-            "deconstruct-document",
             status="completed",
             stage_run_id=last_stage_run_id,
             detail=step_detail(
@@ -423,17 +459,31 @@ class PipelineRunner:
             ),
         )
 
-    def run_eleven_reader_script_step(
+    def run_create_ebook_step(
         self,
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        return self._run_mathesys_narration_step(
-            context,
+        if "eleven_reader_script" not in context.target_artifacts:
+            return pipeline
+
+        stage_run_ids: list[str] = []
+        for source in context.sources:
+            stage_run_ids.append(
+                self.create_ebook.run_for_source(
+                    production_run_id=context.production_run_id,
+                    workspace_id=context.workspace_id,
+                    source=source,
+                )
+            )
+
+        last_stage_run_id = stage_run_ids[-1] if stage_run_ids else None
+        return mark_step(
             pipeline,
-            target_artifact="eleven_reader_script",
-            step_name="elevenreader-ebook",
-            executor=self.eleven_reader_script,
+            "create-ebook",
+            status="completed",
+            stage_run_id=last_stage_run_id,
+            detail=f"{len(stage_run_ids)} stage run(s)",
         )
 
     def run_speechify_api_ssml_step(
@@ -593,9 +643,9 @@ class PipelineRunner:
             source_id = source["id"]
             has_segments = bool(self.db.list_ndr_segments_for_source(source_id))
             has_document_chapters = self.db.has_document_chapters_for_source(source_id)
-            has_deconstruct_stage_run = self.db.has_completed_stage_run_for_source(
+            has_structure_stage_run = self.db.has_completed_stage_run_for_source(
                 source_id,
-                DocumentDeconstructorStageExecutor.STAGE_ID,
+                StructureStageExecutor.STAGE_ID,
             )
             has_extract_stage_run = self.db.has_completed_stage_run_for_source(
                 source_id,
@@ -606,7 +656,7 @@ class PipelineRunner:
                 source,
                 has_segments=has_segments,
                 has_document_chapters=has_document_chapters,
-                has_deconstruct_stage_run=has_deconstruct_stage_run,
+                has_structure_stage_run=has_structure_stage_run,
                 has_extract_stage_run=has_extract_stage_run,
             ):
                 context.intellex_complete_source_ids.add(source_id)
@@ -626,8 +676,16 @@ class PipelineRunner:
             pipeline = self.run_parse_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
-            # Prepare runs before chunk because chunking consumes the prepared document.
-            pipeline = self.run_prepare_step(context, pipeline)
+            pipeline = self.run_normalize_step(context, pipeline)
+            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
+
+            pipeline = self.run_trim_step(context, pipeline)
+            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
+
+            pipeline = self.run_structure_step(context, pipeline)
+            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
+
+            pipeline = self.run_validate_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
             pipeline, segment_count = self.run_chunk_step(context, pipeline)
@@ -636,13 +694,10 @@ class PipelineRunner:
             pipeline = self.run_source_research_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
-            pipeline = self.run_document_deconstructor_step(context, pipeline)
-            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
-
             pipeline = self.run_extract_chapter_knowledge_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
-            pipeline = self.run_eleven_reader_script_step(context, pipeline)
+            pipeline = self.run_create_ebook_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
             pipeline = self.run_speechify_api_ssml_step(context, pipeline)

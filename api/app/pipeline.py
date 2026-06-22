@@ -1,6 +1,12 @@
 from copy import deepcopy
 from typing import Any
 
+# Intellex ingest, structure-based. Replaces the old prepare-document +
+# deconstruct-document with four explicit structuring stages:
+#   normalize -> trim -> structure -> validate
+# Structure produces the chapter/section model (taking over chapter grouping
+# from the removed deconstruct-document), and the chunk step turns that model
+# into both ndr_segments and document_chapters.
 BASE_PIPELINE: list[dict[str, Any]] = [
     {
         "step": "store",
@@ -17,11 +23,35 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "status": "pending",
     },
     {
-        "step": "prepare-document",
+        "step": "normalize-document",
         "type": "stage",
         "module": "intellex",
-        "stage_id": "prepare-document",
-        "stage_version": "2.0.0",
+        "stage_id": "normalize-document",
+        "stage_version": "1.0.0",
+        "status": "pending",
+    },
+    {
+        "step": "trim-document-boundaries",
+        "type": "stage",
+        "module": "intellex",
+        "stage_id": "trim-document-boundaries",
+        "stage_version": "1.0.0",
+        "status": "pending",
+    },
+    {
+        "step": "structure-document",
+        "type": "stage",
+        "module": "intellex",
+        "stage_id": "structure-document",
+        "stage_version": "1.0.0",
+        "status": "pending",
+    },
+    {
+        "step": "validate-structure",
+        "type": "stage",
+        "module": "intellex",
+        "stage_id": "validate-structure",
+        "stage_version": "1.0.0",
         "status": "pending",
     },
     {
@@ -39,14 +69,6 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "status": "pending",
     },
     {
-        "step": "deconstruct-document",
-        "type": "stage",
-        "module": "intellex",
-        "stage_id": "deconstruct-document",
-        "stage_version": "2.0.0",
-        "status": "pending",
-    },
-    {
         "step": "extract-knowledge",
         "type": "stage",
         "module": "intellex",
@@ -58,11 +80,11 @@ BASE_PIPELINE: list[dict[str, Any]] = [
 
 OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
     "eleven_reader_script": {
-        "step": "elevenreader-ebook",
+        "step": "create-ebook",
         "type": "stage",
         "module": "mathesys",
-        "stage_id": "elevenreader-ebook",
-        "stage_version": "2.0.0",
+        "stage_id": "create-ebook",
+        "stage_version": "1.0.0",
         "status": "pending",
     },
     "speechify_audio": {

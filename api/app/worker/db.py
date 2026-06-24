@@ -92,6 +92,17 @@ class WorkerDatabase:
         )
         return rows or []
 
+    def list_sources_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
+        rows = self._request(
+            "GET",
+            "sources",
+            params={
+                "select": "*",
+                "workspace_id": f"eq.{workspace_id}",
+            },
+        )
+        return rows or []
+
     def update_source(self, source_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         rows = self._request(
             "PATCH",
@@ -158,6 +169,17 @@ class WorkerDatabase:
         for start in range(0, len(segments), NDR_SEGMENT_BATCH_SIZE):
             batch = segments[start : start + NDR_SEGMENT_BATCH_SIZE]
             self._request("POST", "ndr_segments", json_body=batch)
+
+    def list_workspace_stage_settings(self, workspace_id: str) -> list[dict[str, Any]]:
+        rows = self._request(
+            "GET",
+            "workspace_stage_settings",
+            params={
+                "select": "*",
+                "workspace_id": f"eq.{workspace_id}",
+            },
+        )
+        return rows or []
 
     def create_stage_run(self, payload: dict[str, Any]) -> dict[str, Any]:
         rows = self._request("POST", "stage_runs", json_body=payload)

@@ -27,4 +27,4 @@ set
     "user_template": "Research source {{source_id}} from parsed document text."
   }'::jsonb
 where skill_id = 'source-research'
-  and version = '1.0.0';
+  and version = '1.0';

@@ -19,49 +19,35 @@ Create `api/.env` from `.env.example` and fill in the real values:
 cp .env.example .env
 ```
 
-Required variables:
+Required secrets (the app or worker will fail without these for a full pipeline run):
 
 ```text
 SUPABASE_URL
-SUPABASE_PUBLISHABLE_KEY
+SUPABASE_PUBLISHABLE_KEY (or legacy SUPABASE_ANON_KEY)
 SUPABASE_SERVICE_ROLE_KEY
-FRONTEND_ORIGINS
-REDIS_URL
-SOURCES_BUCKET
-RQ_QUEUE_NAME
 OPENAI_API_KEY
-OPENAI_MODEL
-QNGEN_MODEL (default gpt-4o)
-QNGEN_CONCEPT_BATCH_SIZE (default 8)
+ANTHROPIC_API_KEY
 LLAMA_CLOUD_API_KEY
-LLAMAPARSE_TIER (default agentic)
-PREPARE_BATCH_PAGES (default 15)
-TAVILY_API_KEY (optional, enables web gap-fill for Source Research title/authority)
-SOURCE_RESEARCH_MAX_CHARS
 ```
 
-Mathesys audio (text-to-speech) variables:
+Infrastructure variables have defaults (see `.env.example`). Optional Mathesys audio keys enable MP3 synthesis for the corresponding stage.
 
-```text
-ELEVENLABS_API_KEY (enables ElevenLabs Audio MP3 synthesis)
-ELEVENLABS_VOICE_ID (default 21m00Tcm4TlvDq8ikWAM — pick a voice from your ElevenLabs voice library)
-ELEVENLABS_REQUEST_TIMEOUT_SECONDS (default 600 — per-chunk read timeout for TTS API calls)
-ELEVENLABS_MAX_RETRIES (default 3 — retries on timeout or 429/502/503/504)
-ELEVENLABS_CHUNK_CHARS (default 2500 — max characters per TTS request)
-PRODUCTION_RUN_JOB_TIMEOUT (default 2h — RQ worker timeout for full pipeline jobs)
-ELEVENLABS_MODEL_ID (default eleven_v3)
-ELEVENLABS_MAX_CHARS (default 200000 — cost guardrail; raise intentionally for large jobs)
-ELEVENLABS_PRICE_PER_TOKEN (default 0.00018333 — subscription credit cost per character/token)
-SPEECHIFY_API_KEY (optional; when unset, Speechify Audio runs emit a .ssml artifact instead of MP3)
-SPEECHIFY_VOICE_ID (default george)
-SPEECHIFY_MODEL (default simba-english)
-SPEECHIFY_MAX_CHARS (default 200000)
-```
+### Environment variables by pipeline step
 
-Set `ELEVENLABS_API_KEY` and choose `ELEVENLABS_VOICE_ID` from your ElevenLabs
-voice library to produce ElevenLabs Audio MP3s. Speechify Audio synthesizes MP3s
-once `SPEECHIFY_API_KEY` is set; until then it stores clean SSML for later
-synthesis.
+| Pipeline step | Variables | Notes |
+|---|---|---|
+| All | `SUPABASE_*`, `REDIS_URL`, `FRONTEND_ORIGINS`, `SOURCES_BUCKET`, `ARTIFACTS_BUCKET`, `RQ_QUEUE_NAME` | Core API + worker |
+| `parse` | `LLAMA_CLOUD_API_KEY`, `LLAMAPARSE_TIER` | LlamaParse PDF parsing |
+| `source-research` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SOURCE_RESEARCH_MAX_CHARS` | OpenAI JSON extraction |
+| `extract-knowledge` | `ANTHROPIC_API_KEY`, `LLM_EXTRACT_KNOWLEDGE_PROVIDER`, `LLM_EXTRACT_KNOWLEDGE_MODEL` | LLM factory action |
+| `generate-flashcards` / `generate-questions` / `generate-scenarios` | `LLM_QNGEN_DRAFT_*`, `LLM_QNGEN_CRITIQUE_*`, `QNGEN_CONCEPT_BATCH_SIZE`, `QNGEN_MAX_REPAIR_TURNS`, `QNGEN_FLASHCARDS_PER_CHAPTER_{MIN,MAX}`, `QNGEN_SCENARIOS_PER_CHAPTER_{MIN,MAX}` | Blueprint-driven generation (per-chapter count bands) + draft + critique + grounding-repair passes |
+| `elevenlabs-audio` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_*` | Omit key to skip MP3 |
+| `speechify-audio` | `SPEECHIFY_API_KEY`, `SPEECHIFY_*` | Omit key for SSML-only |
+| `create-ebook` | `ELEVEN_READER_MAX_PAGES` | Deterministic EPUB build |
+
+LLM routing for each action is configured via `LLM_<ACTION>_PROVIDER` and `LLM_<ACTION>_MODEL` pairs. Defaults and supported actions live in [`app/config.py`](app/config.py) (`LLM_ACTION_DEFAULTS`).
+
+Set `ELEVENLABS_API_KEY` and choose `ELEVENLABS_VOICE_ID` from your ElevenLabs voice library to produce ElevenLabs Audio MP3s. Speechify Audio synthesizes MP3s once `SPEECHIFY_API_KEY` is set; until then it stores clean SSML for later synthesis.
 
 `SUPABASE_ANON_KEY` may be used instead of `SUPABASE_PUBLISHABLE_KEY` for older Supabase projects.
 
@@ -157,7 +143,7 @@ GET    /workspaces/{workspace_id}/sources/{source_id}/segments
 DELETE /workspaces/{workspace_id}/sources/{source_id}
 ```
 
-`POST /sources` accepts `multipart/form-data` with a `file` field. Each successful upload automatically queues an ingest-only production run (Intellex pipeline through `deconstruct-document`). Redis and the RQ worker must be running.
+`POST /sources` accepts `multipart/form-data` with a `file` field. Each successful upload automatically queues an ingest-only production run (Intellex pipeline through `extract-knowledge`). Redis and the RQ worker must be running.
 
 ### Stages
 
@@ -165,6 +151,8 @@ DELETE /workspaces/{workspace_id}/sources/{source_id}
 GET /stages
 GET /stages/{stage_id}/{version}
 ```
+
+Stage `version` values use major.minor format only (e.g. `1.0`, `2.0`).
 
 Optional query param: `?module=intellex|mathesys|qngen`
 
@@ -218,11 +206,11 @@ Example production run body:
 }
 ```
 
-`target_artifacts` is optional. An empty list runs Intellex ingest only (`store` through `deconstruct-document`).
+`target_artifacts` is optional. An empty list runs Intellex ingest only (`store` through `extract-knowledge`).
 
 Supported `target_artifacts` values:
 
-- `eleven_reader_script` — Mathesys ElevenReader EBook (one chapter-based EPUB per source; requires `deconstruct-document`)
+- `eleven_reader_script` — Mathesys create-ebook (chapter-based EPUB per source)
 - `speechify_audio` — Mathesys Speechify Audio (MP3 via API; SSML when no key)
 - `elevenlabs_audio` — Mathesys ElevenLabs Audio (MP3 via API)
 - `flashcards` — QnGen generate-flashcards
@@ -231,7 +219,7 @@ Supported `target_artifacts` values:
 
 Full pipeline worker behavior:
 
-- always completes Intellex ingest (`store`, `parse`, `prepare-document`, `chunk`, `source-research`, `deconstruct-document`, `extract-knowledge`); reuses prior ingest/Intellex results when a source was already processed
+- always completes Intellex ingest (`store`, `parse`, `normalize-document`, `trim-document-boundaries`, `structure-document`, `validate-structure`, `chunk`, `source-research`, `extract-knowledge`); reuses prior ingest/Intellex results when a source was already processed
 - optionally runs Mathesys narration stages and QnGen stages based on `target_artifacts`
 - promotes Wiki concepts, artifacts, and assessment entities
 - marks production run `completed` when finished

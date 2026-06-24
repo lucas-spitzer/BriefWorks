@@ -22,7 +22,7 @@ def test_promote_concepts_creates_insert_for_new_term() -> None:
         source_id="src-1",
         stage_run_id="run-1",
         stage_id="deconstruct-document",
-        stage_version="1.0.0",
+        stage_version="1.0",
         concepts=[concept],
         segment_index={
             "seg-1": {
@@ -55,7 +55,7 @@ def test_promote_concepts_logs_dispute_on_conflicting_definition() -> None:
         source_id="src-1",
         stage_run_id="run-1",
         stage_id="deconstruct-document",
-        stage_version="1.0.0",
+        stage_version="1.0",
         concepts=[concept],
         segment_index={},
         existing_entries=[

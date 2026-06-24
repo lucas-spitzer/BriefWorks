@@ -16,7 +16,7 @@ insert into public.skills (
 values
   (
     'speechify-audio',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'Speechify Audio',
     'Convert source text to clean SSML, then synthesize MP3 audio through the Speechify API.',
@@ -30,7 +30,7 @@ values
   ),
   (
     'elevenlabs-audio',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'ElevenLabs Audio',
     'Convert source text to an ElevenLabs structured-text script, then synthesize MP3 audio through the ElevenLabs API.',

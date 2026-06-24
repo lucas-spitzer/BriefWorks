@@ -10,6 +10,11 @@ from app.intellex.models import ParsedDocument
 from app.intellex.source_readiness import source_intellex_complete
 from app.intellex.structuring.chunk import build_segments_and_chapters
 from app.intellex.structuring.models import Book, Element
+from app.services.llm import (
+    overrides_from_rows,
+    reset_workspace_overrides,
+    set_workspace_overrides,
+)
 from app.worker.db import WorkerDatabase
 from app.worker.stage_executor import (
     ElevenLabsStructuredTextStageExecutor,
@@ -669,6 +674,10 @@ class PipelineRunner:
             },
         )
 
+        override_token = set_workspace_overrides(
+            overrides_from_rows(self.db.list_workspace_stage_settings(workspace_id)),
+        )
+
         try:
             pipeline = self.run_store_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
@@ -749,3 +758,5 @@ class PipelineRunner:
                     self.db.update_source(source["id"], {"status": "failed"})
 
             raise
+        finally:
+            reset_workspace_overrides(override_token)

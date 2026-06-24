@@ -51,15 +51,6 @@ def execution_from_stage_run(
         "token_usage": token_usage,
     }
 
-    if row.get("stage_id") == "source-research":
-        output = _parse_json_field(row.get("output") or {})
-
-        if isinstance(output, dict):
-            web_sources = output.get("web_sources")
-
-            if isinstance(web_sources, list) and web_sources:
-                execution["web_search_count"] = 1
-
     if row.get("stage_id") == "parse":
         output = _parse_json_field(row.get("output") or {})
 
@@ -95,9 +86,8 @@ def enrich_stage_run_row(row: dict[str, Any]) -> dict[str, Any]:
     execution = execution_from_stage_run(row)
     has_token_usage = any(token_usage.values())
     has_llamaparse = row.get("stage_id") == "parse" and execution.get("page_count")
-    has_tavily = execution.get("web_search_count")
 
-    if not has_token_usage and not has_llamaparse and not has_tavily:
+    if not has_token_usage and not has_llamaparse:
         return row
 
     return {**row, **backfill_fields_for_stage_run(row)}

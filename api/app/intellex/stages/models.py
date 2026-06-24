@@ -33,6 +33,9 @@ class SourceResearchOutput(BaseModel):
     publication_date_public: str | None = None
     source_url: str | None = None
     abstract: str | None = None
+    purpose: str | None = None
+    target_audience: str | None = None
+    scope: str | None = None
     confidence: dict[str, float] = Field(default_factory=dict)
     provenance: dict[str, Literal["document", "web", "inferred"]] = Field(default_factory=dict)
     web_sources: list[dict[str, str]] = Field(default_factory=list)

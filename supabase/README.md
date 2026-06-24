@@ -96,15 +96,20 @@ These files record how the schema evolved. The final state they produce is equiv
 | `09-mathesys-audio-skills.sql` | `speechify-audio`, `elevenlabs-audio` skill seeds |
 | `10-add-api-cost-tracking.sql` | `api_usage`, `cost_usd` on runs |
 | `12-update-source-research-metadata-slice.sql` | `source-research` metadata-slice prompts |
-| `13-add-prepare-skill.sql` | `prepare-document` v1.0.0 |
+| `13-add-prepare-skill.sql` | `prepare-document` v1.0 |
 | `14-add-assessment-sets.sql` | `assessment_sets`, assessment linkage columns |
 | `15-rename-skills.sql` | Skill ID renames (Intellex + QnGen) |
 | `16-rename-mathesys-skills.sql` | Mathesys skill ID renames |
-| `17-refocus-prepare-deconstruct.sql` | `document_chapters`, prepare/deconstruct v2.0.0 |
+| `17-refocus-prepare-deconstruct.sql` | `document_chapters`, prepare/deconstruct v2.0 |
 | `18-add-extract-chapter-knowledge.sql` | `wiki_entries.entry_kind`, `extract-knowledge` skill |
 | `19-rename-extract-knowledge.sql` | Rename to `extract-knowledge` |
-| `19-elevenreader-ebook-v2.sql` | `elevenreader-ebook` v2.0.0 |
+| `19-elevenreader-ebook-v2.sql` | `elevenreader-ebook` v2.0 |
 | `20-rename-skills-to-stages.sql` | Rename `skills`/`skill_runs` to `stages`/`stage_runs` |
 | `21-add-parse-stage.sql` | Register `parse` stage and upgrade pipeline parse step |
 | `22-add-structuring-stages.sql` | Structuring stages; deactivate replaced stages |
 | `23-ensure-core-pipeline-stages.sql` | `source-research`, `extract-knowledge` for sparse DBs |
+| `24-normalize-stage-versions.sql` | Normalize stage versions to major.minor (`1.0`, `2.0`) |
+| `25-source-research-v2.sql` | `source-research` v2.0 |
+| `26-add-workspace-stage-settings.sql` | `workspace_stage_settings` for per-workspace LLM overrides |
+| `27-extract-knowledge-v2.sql` | `extract-knowledge` v2.0 (objectives + evidence quotes) |
+| `28-qngen-assessment-stages-v2.sql` | `generate-flashcards`, `generate-questions`, `generate-scenarios` v2.0 |

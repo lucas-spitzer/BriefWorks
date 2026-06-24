@@ -28,4 +28,4 @@ set
     "user_template": "Metadata slice extraction for source {{source_id}}."
   }'::jsonb
 where skill_id = 'source-research'
-  and version = '1.0.0';
+  and version = '1.0';

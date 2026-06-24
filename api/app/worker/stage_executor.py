@@ -47,7 +47,7 @@ def utc_now_iso() -> str:
 
 class SourceResearchStageExecutor:
     STAGE_ID = "source-research"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "2.0"
     MODULE = "intellex"
 
     def __init__(
@@ -140,7 +140,7 @@ class SourceResearchStageExecutor:
 
 class ParseStageExecutor:
     STAGE_ID = "parse"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
     MODULE = "intellex"
 
     def __init__(
@@ -258,7 +258,7 @@ class ParseStageExecutor:
 
 class ExtractChapterKnowledgeStageExecutor:
     STAGE_ID = "extract-knowledge"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "2.0"
     MODULE = "intellex"
 
     def __init__(
@@ -384,10 +384,15 @@ class ExtractChapterKnowledgeStageExecutor:
                                 "chapter_title": chapter.chapter_title,
                                 "sequence_index": chapter.sequence_index,
                                 "item_count": len(chapter.items),
+                                "objective_count": len(chapter.learning_objectives),
                             }
                             for chapter in output.chapters
                         ],
                         "item_counts": item_counts,
+                        "objective_count": len(output.learning_objectives),
+                        "learning_objectives": [
+                            obj.model_dump() for obj in output.learning_objectives
+                        ],
                         "items": [item.model_dump() for item in output.items],
                     },
                     "promoted": {
@@ -407,6 +412,22 @@ class ExtractChapterKnowledgeStageExecutor:
                     "extracted_at": extracted_at,
                     "chapter_count": len(chapter_rows),
                     "item_counts": item_counts,
+                    "objective_count": len(output.learning_objectives),
+                    "learning_objectives": [
+                        obj.model_dump() for obj in output.learning_objectives
+                    ],
+                    "chapters": [
+                        {
+                            "chapter_id": chapter.chapter_id,
+                            "chapter_title": chapter.chapter_title,
+                            "sequence_index": chapter.sequence_index,
+                            "segment_ids": chapter.segment_ids,
+                            "objectives": [
+                                obj.model_dump() for obj in chapter.learning_objectives
+                            ],
+                        }
+                        for chapter in output.chapters
+                    ],
                 },
             }
             self.db.update_source(
@@ -631,7 +652,7 @@ def _run_mathesys_narration_stage(
 
 class SpeechifyApiSsmlStageExecutor:
     STAGE_ID = "speechify-audio"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
     MODULE = "mathesys"
 
     def __init__(
@@ -703,7 +724,7 @@ class SpeechifyApiSsmlStageExecutor:
 
 class ElevenLabsStructuredTextStageExecutor:
     STAGE_ID = "elevenlabs-audio"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
     MODULE = "mathesys"
 
     def __init__(
@@ -768,7 +789,7 @@ class ElevenLabsStructuredTextStageExecutor:
 
 class FlashcardGenStageExecutor:
     STAGE_ID = "generate-flashcards"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "2.1"
     MODULE = "qngen"
 
     def __init__(
@@ -812,7 +833,7 @@ class FlashcardGenStageExecutor:
 
 class QuizGenStageExecutor:
     STAGE_ID = "generate-questions"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "2.1"
     MODULE = "qngen"
 
     def __init__(
@@ -856,7 +877,7 @@ class QuizGenStageExecutor:
 
 class ScenarioGenStageExecutor:
     STAGE_ID = "generate-scenarios"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "2.1"
     MODULE = "qngen"
 
     def __init__(
@@ -900,7 +921,7 @@ class ScenarioGenStageExecutor:
 
 class AssessmentSetGenStageExecutor:
     STAGE_ID = "assessment-set-gen"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
     MODULE = "qngen"
 
     def __init__(
@@ -1076,7 +1097,45 @@ def _run_qngen_stage(
     if not segments:
         raise RuntimeError(f"No NDR segments found for source {source_id}.")
 
+    has_structure_stage_run = db.has_completed_stage_run_for_source(
+        source_id,
+        StructureStageExecutor.STAGE_ID,
+    )
+    has_extract_stage_run = db.has_completed_stage_run_for_source(
+        source_id,
+        ExtractChapterKnowledgeStageExecutor.STAGE_ID,
+    )
+    has_document_chapters = db.has_document_chapters_for_source(source_id)
+    if not source_intellex_complete(
+        source,
+        has_segments=True,
+        has_document_chapters=has_document_chapters,
+        has_structure_stage_run=has_structure_stage_run,
+        has_extract_stage_run=has_extract_stage_run,
+    ):
+        raise RuntimeError(
+            f"Source {source_id} is not intellex-complete. "
+            "Run parse through extract-knowledge before generating assessments.",
+        )
+
     wiki_entries = db.list_wiki_entries_for_workspace(workspace_id)
+    concepts = build_source_concepts(
+        wiki_entries=wiki_entries,
+        source_id=source_id,
+        segments=segments,
+    )
+
+    if not concepts:
+        raise RuntimeError(
+            f"No canonical wiki concepts with evidence found for source {source_id}. "
+            "Run extract-knowledge first.",
+        )
+
+    settings = get_settings()
+    concept_batches = batch_concepts(
+        concepts,
+        batch_size=settings.qngen_concept_batch_size,
+    )
 
     stage_run = db.create_stage_run(
         {
@@ -1089,6 +1148,7 @@ def _run_qngen_stage(
             "inputs": {
                 "source_id": source_id,
                 "segment_count": len(segments),
+                "concept_count": len(concepts),
                 "wiki_entry_count": len(
                     [entry for entry in wiki_entries if entry.get("status") == "canonical"],
                 ),
@@ -1103,13 +1163,26 @@ def _run_qngen_stage(
         if not isinstance(source_metadata, dict):
             source_metadata = {}
 
+        extract_meta = source_metadata.get("extract") or {}
+        learning_objectives = (
+            extract_meta.get("learning_objectives")
+            if isinstance(extract_meta, dict)
+            else []
+        )
+        if not isinstance(learning_objectives, list):
+            learning_objectives = []
+
         output, execution = stage.run(
             source_metadata=source_metadata,
-            segments=segments,
-            wiki_entries=wiki_entries,
+            concepts=concepts,
+            concept_batches=concept_batches,
+            learning_objectives=learning_objectives,
         )
         output_data = output.model_dump()
         items = output_data[output_key]
+
+        if execution.get("validation_report"):
+            output_data["validation_report"] = execution["validation_report"]
 
         rows = promote_items(
             items=items,

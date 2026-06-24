@@ -79,7 +79,7 @@ insert into public.skills (
 values
   (
     'generate-flashcards',
-    '1.0.0',
+    '1.0',
     'qngen',
     'Generate Flashcards',
     'Generate memorization flashcards grounded in source segments and canonical wiki terminology.',
@@ -113,7 +113,7 @@ values
   ),
   (
     'generate-questions',
-    '1.0.0',
+    '1.0',
     'qngen',
     'Generate Questions',
     'Generate understanding checks grounded in source segments and canonical wiki terminology.',
@@ -149,7 +149,7 @@ values
   ),
   (
     'generate-scenarios',
-    '1.0.0',
+    '1.0',
     'qngen',
     'Generate Scenarios',
     'Generate application scenarios grounded in source doctrine and canonical wiki terminology.',

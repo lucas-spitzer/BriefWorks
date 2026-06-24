@@ -13,7 +13,7 @@ insert into public.skills (
 )
 values (
   'elevenreader-ebook',
-  '2.0.0',
+  '2.0',
   'mathesys',
   'ElevenReader EBook',
   'Build one simple, audio-friendly EPUB from document chapters (titles + subsection headings + body text) for manual ElevenReader upload.',

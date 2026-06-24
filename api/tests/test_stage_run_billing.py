@@ -1,9 +1,9 @@
 from app.services.api_pricing import (
+    cost_anthropic_usage,
     cost_elevenlabs_usage,
     cost_llamaparse_usage,
     cost_openai_usage,
     cost_speechify_usage,
-    cost_tavily_usage,
 )
 from app.services.stage_run_billing import (
     build_api_usage,
@@ -28,14 +28,12 @@ def test_build_api_usage_from_execution() -> None:
                 "input_tokens": 10_000,
                 "output_tokens": 2_000,
             },
-            "web_search_count": 1,
         },
     )
 
-    assert len(usage["calls"]) == 2
+    assert len(usage["calls"]) == 1
     assert usage["totals"]["input_tokens"] == 10_000
     assert usage["totals"]["output_tokens"] == 2_000
-    assert usage["totals"]["search_count"] == 1
     assert usage["totals"]["cost_usd"] > 0
 
 
@@ -84,14 +82,6 @@ def test_stage_run_completion_fields() -> None:
     assert len(fields["api_usage"]["calls"]) == 2
 
 
-def test_tavily_cost() -> None:
-    call = cost_tavily_usage(search_count=3)
-
-    assert call["search_count"] == 3
-    assert call["credit_count"] == 3
-    assert call["cost_usd"] == 0.024
-
-
 def test_llamaparse_cost() -> None:
     call = cost_llamaparse_usage(credit_count=80)
 
@@ -112,3 +102,24 @@ def test_build_api_usage_includes_llamaparse_credits() -> None:
     assert usage["calls"][0]["provider"] == "llamaparse"
     assert usage["totals"]["credit_count"] == 42
     assert usage["totals"]["cost_usd"] == round(42 * 0.00125, 6)
+
+
+def test_build_api_usage_routes_anthropic_provider() -> None:
+    usage = build_api_usage(
+        {
+            "model": "claude-sonnet-4-6",
+            "provider": "anthropic",
+            "token_usage": {
+                "input_tokens": 10_000,
+                "output_tokens": 2_000,
+            },
+        },
+    )
+
+    assert len(usage["calls"]) == 1
+    assert usage["calls"][0]["provider"] == "anthropic"
+    assert usage["totals"]["cost_usd"] == cost_anthropic_usage(
+        model="claude-sonnet-4-6",
+        input_tokens=10_000,
+        output_tokens=2_000,
+    )["cost_usd"]

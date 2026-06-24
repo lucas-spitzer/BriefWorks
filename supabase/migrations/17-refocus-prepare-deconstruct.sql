@@ -1,4 +1,4 @@
--- Refocus prepare-document and deconstruct-document v2.0.0
+-- Refocus prepare-document and deconstruct-document v2.0
 -- Add document_chapters for persisted chapter/section segmentation
 
 create table public.document_chapters (
@@ -34,7 +34,7 @@ insert into public.skills (
 )
 values (
   'prepare-document',
-  '2.0.0',
+  '2.0',
   'intellex',
   'Prepare Document',
   'Remove all non-learning content; keep only chapter/section headings and their body text.',
@@ -66,7 +66,7 @@ insert into public.skills (
 )
 values (
   'deconstruct-document',
-  '2.0.0',
+  '2.0',
   'intellex',
   'Deconstruct Document',
   'Segment prepared document into chapters/sections for downstream chapter-by-chapter processing.',

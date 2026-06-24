@@ -38,7 +38,7 @@ def _concept(wiki_id: str, label: str) -> ConceptCard:
 
 def test_assessment_set_gen_merges_batches_and_filters_types() -> None:
     stage = AssessmentSetGenStage(
-        openai_client=FakeOpenAIClient(
+        llm_client=FakeOpenAIClient(
             [
                 {
                     "items": [

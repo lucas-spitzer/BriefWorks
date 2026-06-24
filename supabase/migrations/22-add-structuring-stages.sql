@@ -15,7 +15,7 @@ insert into public.stages (
 values
   (
     'normalize-document',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Normalize Document',
     'Flatten LlamaParse structured pages into reading-order elements, dropping page furniture.',
@@ -26,7 +26,7 @@ values
   ),
   (
     'trim-document-boundaries',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Trim Document Boundaries',
     'Detect and trim front/back matter before the first chapter and after back-matter markers.',
@@ -37,7 +37,7 @@ values
   ),
   (
     'structure-document',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Structure Document',
     'Classify trimmed elements into chapters, sections, and body paragraphs.',
@@ -48,7 +48,7 @@ values
   ),
   (
     'validate-structure',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Validate Structure',
     'Cross-check the structured Book against the source PDF; raises on hard failure.',
@@ -59,7 +59,7 @@ values
   ),
   (
     'create-ebook',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'Create EBook',
     'Render the structured Book to an EPUB for manual ElevenReader upload.',
@@ -93,7 +93,7 @@ set pipeline = (
           'type', 'stage',
           'module', 'intellex',
           'stage_id', 'normalize-document',
-          'stage_version', '1.0.0',
+          'stage_version', '1.0',
           'status', 'pending'
         )
       when 'deconstruct-document' then
@@ -102,7 +102,7 @@ set pipeline = (
           'type', 'stage',
           'module', 'intellex',
           'stage_id', 'validate-structure',
-          'stage_version', '1.0.0',
+          'stage_version', '1.0',
           'status', 'pending'
         )
       when 'elevenreader-ebook' then
@@ -111,7 +111,7 @@ set pipeline = (
           'type', 'stage',
           'module', 'mathesys',
           'stage_id', 'create-ebook',
-          'stage_version', '1.0.0',
+          'stage_version', '1.0',
           'status', 'pending'
         )
       else elem

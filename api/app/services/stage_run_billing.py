@@ -5,9 +5,8 @@ from typing import Any
 from app.services.api_pricing import (
     cost_elevenlabs_usage,
     cost_llamaparse_usage,
-    cost_openai_usage,
+    cost_llm_usage,
     cost_speechify_usage,
-    cost_tavily_usage,
 )
 
 
@@ -43,18 +42,15 @@ def build_api_usage(
         output_tokens = _token_count(token_usage, "output_tokens", "completion_tokens")
 
         if input_tokens or output_tokens:
+            provider = str(execution.get("provider") or "openai").strip().lower()
             calls.append(
-                cost_openai_usage(
+                cost_llm_usage(
+                    provider=provider,
                     model=str(execution.get("model") or "unknown"),
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                 ),
             )
-
-    search_count = execution.get("web_search_count")
-
-    if isinstance(search_count, int) and search_count > 0:
-        calls.append(cost_tavily_usage(search_count=search_count))
 
     llamaparse_credits = execution.get("llamaparse_credit_count")
     if not isinstance(llamaparse_credits, int) or llamaparse_credits <= 0:

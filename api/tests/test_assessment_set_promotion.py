@@ -48,7 +48,7 @@ def test_promote_assessment_set_builds_canonical_and_denormalized_rows() -> None
         production_run_id="run-1",
         stage_run_id="stage-1",
         stage_id="assessment-set-gen",
-        stage_version="1.0.0",
+        stage_version="1.0",
         source_metadata={"research": {"title": "Combined Arms"}},
         assessment_types=["flashcards", "quizzes", "scenarios"],
         items=items,

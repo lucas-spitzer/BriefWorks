@@ -62,21 +62,23 @@ After running setup, replace the placeholder owner email in `approved_users` wit
 
 ### Seeded stages
 
+Stage versions use **major.minor** format only (`1.0`, `2.0` — never `1.0.0`).
+
 | Module | Stage ID | Version |
 |--------|----------|---------|
-| intellex | `parse` | 1.0.0 |
-| intellex | `source-research` | 1.0.0 |
-| intellex | `prepare-document` | 1.0.0, 2.0.0 |
-| intellex | `deconstruct-document` | 1.0.0, 2.0.0 |
-| intellex | `extract-knowledge` | 1.0.0 |
-| mathesys | `elevenreader-ebook` | 1.0.0, 2.0.0 |
-| mathesys | `speechify-audio` | 1.0.0 |
-| mathesys | `elevenlabs-audio` | 1.0.0 |
-| qngen | `generate-flashcards` | 1.0.0 |
-| qngen | `generate-questions` | 1.0.0 |
-| qngen | `generate-scenarios` | 1.0.0 |
+| intellex | `parse` | 1.0 |
+| intellex | `source-research` | 1.0 |
+| intellex | `prepare-document` | 1.0, 2.0 |
+| intellex | `deconstruct-document` | 1.0, 2.0 |
+| intellex | `extract-knowledge` | 1.0, 2.0 |
+| mathesys | `elevenreader-ebook` | 1.0, 2.0 |
+| mathesys | `speechify-audio` | 1.0 |
+| mathesys | `elevenlabs-audio` | 1.0 |
+| qngen | `generate-flashcards` | 1.0, 2.0 |
+| qngen | `generate-questions` | 1.0, 2.0 |
+| qngen | `generate-scenarios` | 1.0, 2.0 |
 
-The active pipeline uses `prepare-document` 2.0.0, `deconstruct-document` 2.0.0, `extract-knowledge` 1.0.0, and `elevenreader-ebook` 2.0.0. Older stage versions are kept for foreign-key compatibility.
+The active pipeline uses `prepare-document` 2.0, `deconstruct-document` 2.0, `extract-knowledge` 2.0, `source-research` 2.0, and `elevenreader-ebook` 2.0. Older stage versions are kept for foreign-key compatibility.
 
 ## Migrations vs setup
 

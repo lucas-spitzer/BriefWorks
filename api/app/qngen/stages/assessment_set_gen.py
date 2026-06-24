@@ -3,11 +3,10 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from app.config import get_settings
 from app.qngen.canonical_context import ConceptCard, format_concepts_for_llm, format_concept_segments_for_llm
 from app.qngen.context import format_json_block
 from app.qngen.stages.assessment_set_models import AssessmentBatchOutput, AssessmentSetGenOutput
-from app.services.openai_client import OpenAIClient
+from app.services.llm import LLMClient, get_llm_client
 
 SYSTEM_PROMPT = """You generate linked assessment items from canonical wiki concepts.
 
@@ -71,9 +70,15 @@ Only include fields relevant to each item type. Omit flashcard fields from quiz/
 
 
 class AssessmentSetGenStage:
-    def __init__(self, *, openai_client: OpenAIClient | None = None) -> None:
-        settings = get_settings()
-        self.openai_client = openai_client or OpenAIClient(model=settings.qngen_model)
+    def __init__(self, *, llm_client: LLMClient | None = None) -> None:
+        self._llm_client = llm_client
+
+    @property
+    def llm_client(self) -> LLMClient:
+        # Resolved lazily so workspace overrides set at run time are honored.
+        if self._llm_client is None:
+            self._llm_client = get_llm_client("assessment_set_gen")
+        return self._llm_client
 
     def run(
         self,
@@ -87,7 +92,7 @@ class AssessmentSetGenStage:
 
         output = AssessmentSetGenOutput()
         token_usage: dict[str, int] = {}
-        model = self.openai_client.model
+        model = self.llm_client.model
 
         for batch in concept_batches:
             batch_output, execution = self._run_batch(
@@ -113,7 +118,7 @@ class AssessmentSetGenStage:
         concepts: list[ConceptCard],
         assessment_types: list[str],
     ) -> tuple[AssessmentBatchOutput, dict[str, Any]]:
-        result = self.openai_client.complete_json(
+        result = self.llm_client.complete_json(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=USER_TEMPLATE.format(
                 source_metadata=format_json_block(source_metadata),

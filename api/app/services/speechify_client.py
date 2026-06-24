@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import base64
-import os
 from typing import Any
 
 import httpx
 
-DEFAULT_VOICE_ID = "george"
-DEFAULT_MODEL = "simba-english"
-DEFAULT_MAX_CHARS = 200_000
+from app.config import get_settings
 
 _API_URL = "https://api.speechify.ai/v1/audio/speech"
 
@@ -26,12 +23,11 @@ class SpeechifyClient:
         model: str | None = None,
         max_chars: int | None = None,
     ) -> None:
-        self.api_key = api_key if api_key is not None else os.getenv("SPEECHIFY_API_KEY")
-        self.voice_id = voice_id or os.getenv("SPEECHIFY_VOICE_ID") or DEFAULT_VOICE_ID
-        self.model = model or os.getenv("SPEECHIFY_MODEL") or DEFAULT_MODEL
-        self.max_chars = max_chars or int(
-            os.getenv("SPEECHIFY_MAX_CHARS", str(DEFAULT_MAX_CHARS)),
-        )
+        settings = get_settings().speechify
+        self.api_key = api_key if api_key is not None else settings.api_key
+        self.voice_id = voice_id or settings.voice_id
+        self.model = model or settings.model
+        self.max_chars = max_chars or settings.max_chars
 
     @property
     def enabled(self) -> bool:

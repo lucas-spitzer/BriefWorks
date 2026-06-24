@@ -1,24 +1,18 @@
-import os
-from pathlib import Path
-
 import httpx
-from dotenv import load_dotenv
 
-API_DIR = Path(__file__).resolve().parents[2]
-load_dotenv(API_DIR / ".env")
+from app.config import get_settings
 
 
 class WorkerStorage:
     def __init__(self) -> None:
-        supabase_url = os.environ["SUPABASE_URL"].rstrip("/")
-        service_role_key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-        self.base_url = f"{supabase_url}/storage/v1"
+        settings = get_settings()
+        self.base_url = f"{settings.supabase.url}/storage/v1"
         self.headers = {
-            "apikey": service_role_key,
-            "Authorization": f"Bearer {service_role_key}",
+            "apikey": settings.supabase.service_role_key,
+            "Authorization": f"Bearer {settings.supabase.service_role_key}",
         }
-        self.sources_bucket = os.getenv("SOURCES_BUCKET", "sources")
-        self.artifacts_bucket = os.getenv("ARTIFACTS_BUCKET", "artifacts")
+        self.sources_bucket = settings.infra.sources_bucket
+        self.artifacts_bucket = settings.infra.artifacts_bucket
 
     def download(self, path: str, *, bucket: str | None = None) -> bytes:
         bucket_name = bucket or self.sources_bucket

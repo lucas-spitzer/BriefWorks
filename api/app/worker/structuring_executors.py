@@ -110,7 +110,7 @@ class NormalizeStageExecutor(_ExecutorBase):
     """Stage: NORMALIZE -- flatten LlamaParse items, drop headers/footers."""
 
     STAGE_ID = "normalize-document"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
 
     def run_for_source(
         self,
@@ -153,7 +153,7 @@ class TrimBoundariesStageExecutor(_ExecutorBase):
     """Stage: TRIM -- drop front/back matter."""
 
     STAGE_ID = "trim-document-boundaries"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
 
     def run_for_source(
         self,
@@ -204,7 +204,7 @@ class StructureStageExecutor(_ExecutorBase):
     """Stage: STRUCTURE -- classify into chapters/sections/body (replaces deconstruct)."""
 
     STAGE_ID = "structure-document"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
 
     def run_for_source(
         self,
@@ -254,7 +254,7 @@ class PdfStructureValidationStageExecutor(_ExecutorBase):
     """Stage: VALIDATE -- cross-check the Book against the source PDF; raises on failure."""
 
     STAGE_ID = "validate-structure"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
 
     def run_for_source(
         self,
@@ -294,7 +294,7 @@ class CreateEbookStageExecutor(_ExecutorBase):
     """Stage: CREATE EBOOK -- render the Book to EPUB (replaces elevenreader-ebook)."""
 
     STAGE_ID = "create-ebook"
-    STAGE_VERSION = "1.0.0"
+    STAGE_VERSION = "1.0"
     MODULE = "mathesys"
 
     def _publication_metadata(self, source: dict[str, Any]) -> dict[str, Any]:

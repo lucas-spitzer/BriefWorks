@@ -42,7 +42,6 @@ flowchart TD
 
     subgraph ext["External APIs"]
         OPENAI[OpenAI<br/>LLM + embeddings]
-        TAVILY[Tavily<br/>web research]
     end
 
     UI --> SBJS
@@ -57,7 +56,6 @@ flowchart TD
     RQ -- dispatch job --> RUNNER
     RUNNER --> EXEC
     EXEC --> OPENAI
-    EXEC --> TAVILY
     EXEC -- read/write --> PG
     EXEC -- read/write artifacts --> STORE
     UI -- poll status --> ROUTERS
@@ -245,7 +243,7 @@ erDiagram
     }
 ```
 
-Stages are **versioned definitions** (`stage_id` + `version`) seeded in Postgres; each execution creates a `stage_run` capturing the exact inputs, output, model, and token usage. Postgres has `pgvector` enabled for embedding-based search over NDR segments and wiki entries.
+Stages are **versioned definitions** (`stage_id` + `version`, major.minor format such as `1.0` or `2.0`) seeded in Postgres; each execution creates a `stage_run` capturing the exact inputs, output, model, and token usage. Postgres has `pgvector` enabled for embedding-based search over NDR segments and wiki entries.
 
 ---
 
@@ -262,7 +260,6 @@ Stages are **versioned definitions** (`stage_id` + `version`) seeded in Postgres
 | File storage | Supabase Storage (`sources`, `artifacts` buckets) |
 | LLM / embeddings | OpenAI |
 | PDF parsing | LlamaParse (LlamaCloud, agentic tier) |
-| Web research | Tavily (optional gap-fill) |
 
 ---
 
@@ -273,7 +270,7 @@ BriefWorks/
 ├── api/                      FastAPI backend + worker
 │   └── app/
 │       ├── routers/          HTTP endpoints
-│       ├── services/         upload, queue, supabase, openai, web_research
+│       ├── services/         upload, queue, supabase, openai
 │       ├── repositories/     Postgres data access
 │       ├── intellex/         ingest, parsing, chunking, deconstruction stages
 │       ├── mathesys/         narration / EPUB / SSML stages

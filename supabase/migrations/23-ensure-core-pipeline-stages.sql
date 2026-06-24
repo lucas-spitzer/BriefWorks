@@ -17,7 +17,7 @@ insert into public.stages (
 values
   (
     'source-research',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Source Research',
     'Extract title, issuing authority, version, publication date, and distribution line from early parsed pages with optional web gap-fill for title and authority.',
@@ -50,7 +50,7 @@ values
   ),
   (
     'extract-knowledge',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Extract Knowledge',
     'Extract terms, concepts, and insights from each chapter via isolated LLM calls.',

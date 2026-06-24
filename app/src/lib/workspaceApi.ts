@@ -1,5 +1,5 @@
 import { getAccessToken } from '../features/auth/authService'
-import { apiRequest, hasApiBaseUrl, parseApiErrorMessage } from './apiClient'
+import { apiRequest, apiRequestVoid, hasApiBaseUrl, parseApiErrorMessage } from './apiClient'
 
 export interface Workspace {
   id: string
@@ -227,6 +227,37 @@ export async function listArtifacts(workspaceId: string): Promise<Artifact[]> {
   return apiRequest<Artifact[]>(`/workspaces/${workspaceId}/artifacts`)
 }
 
+export async function uploadArtifact(workspaceId: string, file: File): Promise<Artifact> {
+  if (!hasApiBaseUrl()) {
+    throw new Error('Missing VITE_API_BASE_URL.')
+  }
+
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string
+  const token = await getAccessToken()
+
+  if (!token) {
+    throw new Error('Missing access token.')
+  }
+
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${apiBaseUrl}/workspaces/${workspaceId}/artifacts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const message = await parseApiErrorMessage(response)
+    throw new Error(message)
+  }
+
+  return response.json() as Promise<Artifact>
+}
+
 export async function getArtifactDownloadUrl(
   artifactId: string,
 ): Promise<{ download_url: string }> {
@@ -267,4 +298,68 @@ export async function createProductionRun(
 
 export async function listStageRuns(runId: string): Promise<StageRun[]> {
   return apiRequest<StageRun[]>(`/production-runs/${runId}/stage-runs`)
+}
+
+export interface CatalogModel {
+  model: string
+  provider: string
+  display_name: string
+  capability_tier: number
+  supports_reasoning: boolean
+  reasoning_modes: string[]
+  context_window: number | null
+  input_per_million: number | null
+  output_per_million: number | null
+}
+
+export interface StageSetting {
+  stage_action: string
+  label: string
+  provider: string
+  model: string
+  reasoning_effort: string | null
+  reasoning_tokens: number | null
+  is_overridden: boolean
+  default_provider: string
+  default_model: string
+}
+
+export async function getModelCatalog(): Promise<CatalogModel[]> {
+  const response = await apiRequest<{ models: CatalogModel[] }>('/llm/catalog')
+  return response.models
+}
+
+export async function getStageSettings(workspaceId: string): Promise<StageSetting[]> {
+  const response = await apiRequest<{ settings: StageSetting[] }>(
+    `/workspaces/${workspaceId}/stage-settings`,
+  )
+  return response.settings
+}
+
+export async function putStageSetting(
+  workspaceId: string,
+  stageAction: string,
+  payload: {
+    provider: string
+    model: string
+    reasoning_effort?: string | null
+    reasoning_tokens?: number | null
+  },
+): Promise<StageSetting> {
+  return apiRequest<StageSetting>(
+    `/workspaces/${workspaceId}/stage-settings/${stageAction}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    },
+  )
+}
+
+export async function deleteStageSetting(
+  workspaceId: string,
+  stageAction: string,
+): Promise<void> {
+  await apiRequestVoid(`/workspaces/${workspaceId}/stage-settings/${stageAction}`, {
+    method: 'DELETE',
+  })
 }

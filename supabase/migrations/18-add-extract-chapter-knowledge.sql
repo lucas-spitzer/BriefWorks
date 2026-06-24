@@ -23,7 +23,7 @@ insert into public.skills (
 )
 values (
   'extract-knowledge',
-  '1.0.0',
+  '1.0',
   'intellex',
   'Extract Knowledge',
   'Extract terms, concepts, and insights from each chapter via isolated LLM calls.',

@@ -15,7 +15,7 @@ insert into public.stages (
 values
   (
     'parse',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Parse Document',
     'Parse PDF sources into structured lines via the LlamaParse API.',
@@ -41,7 +41,7 @@ values
   ),
   (
     'normalize-document',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Normalize Document',
     'Flatten LlamaParse structured pages into reading-order elements, dropping page furniture.',
@@ -52,7 +52,7 @@ values
   ),
   (
     'trim-document-boundaries',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Trim Document Boundaries',
     'Detect and trim front/back matter before the first chapter and after back-matter markers.',
@@ -63,7 +63,7 @@ values
   ),
   (
     'structure-document',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Structure Document',
     'Classify trimmed elements into chapters, sections, and body paragraphs.',
@@ -74,7 +74,7 @@ values
   ),
   (
     'validate-structure',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Validate Structure',
     'Cross-check the structured Book against the source PDF; raises on hard failure.',
@@ -85,7 +85,7 @@ values
   ),
   (
     'source-research',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Source Research',
     'Extract title, issuing authority, version, publication date, and distribution line from early parsed pages with optional web gap-fill for title and authority.',
@@ -118,7 +118,7 @@ values
   ),
   (
     'prepare-document',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Prepare Document',
     'Strip non-narration content from parsed documents before chunking using GPT-4o-mini.',
@@ -129,7 +129,7 @@ values
   ),
   (
     'prepare-document',
-    '2.0.0',
+    '2.0',
     'intellex',
     'Prepare Document',
     'Remove all non-learning content; keep only chapter/section headings and their body text.',
@@ -140,7 +140,7 @@ values
   ),
   (
     'deconstruct-document',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Deconstruct Document',
     'Identify essential terms and concepts required to understand a document and promote them to Wiki entries.',
@@ -176,7 +176,7 @@ values
   ),
   (
     'deconstruct-document',
-    '2.0.0',
+    '2.0',
     'intellex',
     'Deconstruct Document',
     'Segment prepared document into chapters/sections for downstream chapter-by-chapter processing.',
@@ -187,7 +187,7 @@ values
   ),
   (
     'extract-knowledge',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Extract Knowledge',
     'Extract terms, concepts, and insights from each chapter via isolated LLM calls.',
@@ -197,8 +197,19 @@ values
     '{"system":"Extract terms, concepts, and insights from one chapter at a time. Ground every item in chapter segment text.","user_template":"Extract knowledge for chapter {{chapter_title}} in source {{source_id}}."}'::jsonb
   ),
   (
+    'extract-knowledge',
+    '2.0',
+    'intellex',
+    'Extract Knowledge',
+    'Derive Bloom-aligned learning objectives per chapter, then extract terms, concepts, and insights with evidence quotes and objective mapping.',
+    array['text'],
+    '{"type":"object","properties":{"source_id":{"type":"string"},"chapter_count":{"type":"integer"},"segment_count":{"type":"integer"}}}'::jsonb,
+    '{"type":"object","properties":{"chapters":{"type":"array"},"items":{"type":"array"},"learning_objectives":{"type":"array"},"item_counts":{"type":"object"}}}'::jsonb,
+    '{"system":"Derive learning objectives for each chapter, then extract grounded terms, concepts, and insights with evidence quotes mapped to objectives.","user_template":"Extract knowledge for chapter {{chapter_title}} in source {{source_id}}."}'::jsonb
+  ),
+  (
     'elevenreader-ebook',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'ElevenReader EBook',
     'Generate a Wiki-aware, content-only EPUB EBook for easy import into ElevenReader.',
@@ -209,7 +220,7 @@ values
   ),
   (
     'elevenreader-ebook',
-    '2.0.0',
+    '2.0',
     'mathesys',
     'ElevenReader EBook',
     'Build one simple, audio-friendly EPUB from document chapters (titles + subsection headings + body text) for manual ElevenReader upload.',
@@ -220,7 +231,7 @@ values
   ),
   (
     'create-ebook',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'Create EBook',
     'Render the structured Book to an EPUB for manual ElevenReader upload.',
@@ -231,7 +242,7 @@ values
   ),
   (
     'speechify-audio',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'Speechify Audio',
     'Convert source text to clean SSML, then synthesize MP3 audio through the Speechify API.',
@@ -245,7 +256,7 @@ values
   ),
   (
     'elevenlabs-audio',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'ElevenLabs Audio',
     'Convert source text to an ElevenLabs structured-text script, then synthesize MP3 audio through the ElevenLabs API.',
@@ -259,7 +270,7 @@ values
   ),
   (
     'generate-flashcards',
-    '1.0.0',
+    '1.0',
     'qngen',
     'Generate Flashcards',
     'Generate memorization flashcards grounded in source segments and canonical wiki terminology.',
@@ -293,7 +304,7 @@ values
   ),
   (
     'generate-questions',
-    '1.0.0',
+    '1.0',
     'qngen',
     'Generate Questions',
     'Generate understanding checks grounded in source segments and canonical wiki terminology.',
@@ -329,7 +340,7 @@ values
   ),
   (
     'generate-scenarios',
-    '1.0.0',
+    '1.0',
     'qngen',
     'Generate Scenarios',
     'Generate application scenarios grounded in source doctrine and canonical wiki terminology.',
@@ -359,6 +370,48 @@ values
     }'::jsonb,
     '{
       "system": "Generate realistic application scenarios from source material.",
+      "user_template": "Create scenarios for source {{source_id}}."
+    }'::jsonb
+  ),
+  (
+    'generate-flashcards',
+    '2.0',
+    'qngen',
+    'Generate Flashcards',
+    'Generate memorization flashcards via skill-based draft/critique orchestration, grounded in wiki concepts, evidence segments, and learning objectives.',
+    array['text'],
+    '{"type":"object","properties":{"source_id":{"type":"string"},"concept_count":{"type":"integer"},"batch_count":{"type":"integer"}}}'::jsonb,
+    '{"type":"object","required":["items"],"properties":{"items":{"type":"array"},"flashcards":{"type":"array"}}}'::jsonb,
+    '{
+      "system": "Generate memorization flashcards from canonical wiki concepts using draft/critique skill orchestration.",
+      "user_template": "Create flashcards for source {{source_id}}."
+    }'::jsonb
+  ),
+  (
+    'generate-questions',
+    '2.0',
+    'qngen',
+    'Generate Questions',
+    'Generate understanding checks via skill-based draft/critique orchestration, grounded in wiki concepts, evidence segments, and learning objectives.',
+    array['text'],
+    '{"type":"object","properties":{"source_id":{"type":"string"},"concept_count":{"type":"integer"},"batch_count":{"type":"integer"}}}'::jsonb,
+    '{"type":"object","required":["items"],"properties":{"items":{"type":"array"},"questions":{"type":"array"}}}'::jsonb,
+    '{
+      "system": "Generate quiz questions that test understanding using draft/critique skill orchestration.",
+      "user_template": "Create quiz questions for source {{source_id}}."
+    }'::jsonb
+  ),
+  (
+    'generate-scenarios',
+    '2.0',
+    'qngen',
+    'Generate Scenarios',
+    'Generate application scenarios via skill-based draft/critique orchestration, grounded in essential wiki concepts and evidence segments.',
+    array['text'],
+    '{"type":"object","properties":{"source_id":{"type":"string"},"concept_count":{"type":"integer"},"batch_count":{"type":"integer"}}}'::jsonb,
+    '{"type":"object","required":["items"],"properties":{"items":{"type":"array"},"scenarios":{"type":"array"}}}'::jsonb,
+    '{
+      "system": "Generate realistic application scenarios using draft/critique skill orchestration.",
       "user_template": "Create scenarios for source {{source_id}}."
     }'::jsonb
   )

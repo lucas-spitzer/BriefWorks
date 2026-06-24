@@ -173,7 +173,7 @@ insert into public.skills (
 values
   (
     'source-research',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Source Research',
     'Extract and corroborate document metadata from parsed text with web gap-fill.',
@@ -184,7 +184,7 @@ values
   ),
   (
     'deconstruct-document',
-    '1.0.0',
+    '1.0',
     'intellex',
     'Deconstruct Document',
     'Identify essential terms and concepts required to understand a document.',
@@ -195,7 +195,7 @@ values
   ),
   (
     'elevenreader-ebook',
-    '1.0.0',
+    '1.0',
     'mathesys',
     'ElevenReader EBook',
     'Generate a Wiki-aware, content-only EPUB EBook for easy import into ElevenReader.',

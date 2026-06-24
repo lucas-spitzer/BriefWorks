@@ -82,6 +82,16 @@ export function sourceAbstract(source: Source): string | null {
   return metadataString(meta.abstract)
 }
 
+export function sourcePurpose(source: Source): string | null {
+  const research = researchMetadata(source)
+  return metadataString(research?.purpose)
+}
+
+export function sourceAudience(source: Source): string | null {
+  const research = researchMetadata(source)
+  return metadataString(research?.target_audience)
+}
+
 export function sourceResearchTitle(source: Source): string {
   const research = researchMetadata(source)
   const researchedTitle = metadataString(research?.title)
@@ -253,9 +263,12 @@ const API_REQUEST_STAGES: Record<string, { label: string; tool: string }> = {
   'trim-document-boundaries': { label: 'Trim', tool: 'Local' },
   'structure-document': { label: 'Structure', tool: 'Local' },
   'validate-structure': { label: 'Validate', tool: 'Local' },
-  'source-research': { label: 'Source Research', tool: 'Tavily' },
-  'extract-knowledge': { label: 'Extract Knowledge', tool: 'OpenAI' },
+  'source-research': { label: 'Source Research', tool: 'OpenAI' },
+  'extract-knowledge': { label: 'Extract Knowledge', tool: 'Claude' },
   'create-ebook': { label: 'Create EBook', tool: 'Local' },
+  'generate-flashcards': { label: 'Generate Flashcards', tool: 'Claude' },
+  'generate-questions': { label: 'Generate Questions', tool: 'Claude' },
+  'generate-scenarios': { label: 'Generate Scenarios', tool: 'Claude' },
 }
 
 const API_PROVIDER_LABELS: Record<string, string> = {
@@ -436,7 +449,8 @@ export function artifactModule(artifact: Artifact): string {
     artifact.artifact_type === 'eleven_reader_script' ||
     artifact.artifact_type === 'speechify_script' ||
     artifact.artifact_type === 'speechify_audio' ||
-    artifact.artifact_type === 'elevenlabs_audio'
+    artifact.artifact_type === 'elevenlabs_audio' ||
+    artifact.artifact_type === 'uploaded'
   ) {
     return 'mathesys'
   }
@@ -449,6 +463,8 @@ export interface SourceDisplay {
   title: string
   documentType: string | null
   issuingAuthority: string | null
+  purpose: string | null
+  audience: string | null
   mimeLabel: string
   sizeLabel: string
   pages: number | null
@@ -465,6 +481,8 @@ export function mapSourceDisplay(source: Source): SourceDisplay {
     title: sourceTitle(source),
     documentType: sourceDocumentType(source),
     issuingAuthority: sourceIssuingAuthority(source),
+    purpose: sourcePurpose(source),
+    audience: sourceAudience(source),
     mimeLabel: mimeLabel(source.mime_type),
     sizeLabel: formatBytes(source.file_size_bytes),
     pages: sourcePages(source),

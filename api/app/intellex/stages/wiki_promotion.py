@@ -39,6 +39,11 @@ def build_evidence_records(
     segment_index: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     evidence: list[dict[str, Any]] = []
+    quotes_by_segment = {
+        quote.get("segment_id"): quote.get("quote")
+        for quote in concept.evidence_quotes
+        if quote.get("segment_id")
+    }
 
     for segment_id in concept.evidence_segment_ids:
         segment = segment_index.get(segment_id)
@@ -47,13 +52,15 @@ def build_evidence_records(
             continue
 
         locator = segment.get("locator") or {}
-        evidence.append(
-            {
-                "source_id": source_id,
-                "segment_id": segment_id,
-                "page": locator.get("page"),
-            },
-        )
+        record: dict[str, Any] = {
+            "source_id": source_id,
+            "segment_id": segment_id,
+            "page": locator.get("page"),
+        }
+        quote = quotes_by_segment.get(segment_id)
+        if quote:
+            record["quote"] = quote
+        evidence.append(record)
 
     if evidence:
         return evidence
@@ -71,7 +78,7 @@ def promote_concepts_to_wiki(
     *,
     workspace_id: str,
     source_id: str,
-    stage_run_id: str,
+    stage_run_id: str | None,
     stage_id: str,
     stage_version: str,
     concepts: list[DeconstructedConcept],
@@ -94,12 +101,13 @@ def promote_concepts_to_wiki(
             concept=concept,
             segment_index=segment_index,
         )
-        origin = {
-            "stage_run_id": stage_run_id,
+        origin: dict[str, Any] = {
             "output_index": output_index,
             "stage_id": stage_id,
             "stage_version": stage_version,
         }
+        if stage_run_id:
+            origin["stage_run_id"] = stage_run_id
         if concept.chapter_id:
             origin["chapter_id"] = concept.chapter_id
         if concept.chapter_sequence_index is not None:
@@ -126,18 +134,18 @@ def promote_concepts_to_wiki(
             continue
 
         if _definitions_conflict(str(existing.get("definition") or ""), concept.definition):
-            disputes.append(
-                {
-                    "workspace_id": workspace_id,
-                    "wiki_entry_id": existing.get("id"),
-                    "term_label": concept.term_label,
-                    "existing_definition": existing.get("definition"),
-                    "proposed_definition": concept.definition,
-                    "stage_run_id": stage_run_id,
-                    "source_id": source_id,
-                    "status": "open",
-                },
-            )
+            dispute: dict[str, Any] = {
+                "workspace_id": workspace_id,
+                "wiki_entry_id": existing.get("id"),
+                "term_label": concept.term_label,
+                "existing_definition": existing.get("definition"),
+                "proposed_definition": concept.definition,
+                "source_id": source_id,
+                "status": "open",
+            }
+            if stage_run_id:
+                dispute["stage_run_id"] = stage_run_id
+            disputes.append(dispute)
             updates.append(
                 {
                     "id": existing["id"],

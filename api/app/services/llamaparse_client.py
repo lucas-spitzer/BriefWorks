@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
+
+from app.config import get_settings
 
 _API_BASE = "https://api.cloud.llamaindex.ai"
 _DEFAULT_TIER = "agentic"
@@ -95,13 +96,14 @@ class LlamaParseClient:
         poll_interval_seconds: float = _DEFAULT_POLL_INTERVAL_SECONDS,
         max_poll_seconds: float = _DEFAULT_MAX_POLL_SECONDS,
     ) -> None:
-        resolved_key = api_key or os.getenv("LLAMA_CLOUD_API_KEY")
+        settings = get_settings().intellex
+        resolved_key = api_key or settings.llama_cloud_api_key
 
         if not resolved_key:
             raise RuntimeError("Missing required environment variable: LLAMA_CLOUD_API_KEY")
 
         self.api_key = resolved_key
-        self.tier = tier or os.getenv("LLAMAPARSE_TIER", _DEFAULT_TIER)
+        self.tier = tier or settings.llamaparse_tier
         self.poll_interval_seconds = poll_interval_seconds
         self.max_poll_seconds = max_poll_seconds
         self.headers = {

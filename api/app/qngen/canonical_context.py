@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.intellex.ndr_formatting import format_segments_for_llm
 
 Importance = Literal["essential", "supporting", "contextual"]
@@ -65,14 +65,21 @@ def build_source_concepts(
             if not segment:
                 continue
 
-            resolved_segments.append(
-                {
-                    "segment_id": segment_id,
-                    "kind": segment.get("kind"),
-                    "text": segment.get("text"),
-                    "page": (segment.get("locator") or {}).get("page"),
-                },
-            )
+            quote = None
+            for record in source_evidence:
+                if str(record.get("segment_id")) == segment_id and record.get("quote"):
+                    quote = str(record["quote"])
+                    break
+
+            segment_payload: dict[str, Any] = {
+                "segment_id": segment_id,
+                "kind": segment.get("kind"),
+                "text": segment.get("text"),
+                "page": (segment.get("locator") or {}).get("page"),
+            }
+            if quote:
+                segment_payload["quote"] = quote
+            resolved_segments.append(segment_payload)
 
         if not resolved_segments:
             continue
@@ -115,13 +122,86 @@ def batch_concepts(
     if not concepts:
         return []
 
-    resolved_batch_size = batch_size or int(os.getenv("QNGEN_CONCEPT_BATCH_SIZE", "8"))
+    resolved_batch_size = batch_size or get_settings().qngen.concept_batch_size
     batches: list[list[ConceptCard]] = []
 
     for start in range(0, len(concepts), resolved_batch_size):
         batches.append(concepts[start : start + resolved_batch_size])
 
     return batches
+
+
+class ObjectiveBlueprint(BaseModel):
+    objective_id: str
+    statement: str
+    bloom_level: str = "understand"
+    concept_labels: list[str] = Field(default_factory=list)
+
+
+class ChapterBlueprint(BaseModel):
+    chapter_id: str
+    chapter_title: str
+    sequence_index: int
+    segment_ids: list[str] = Field(default_factory=list)
+    concepts: list[ConceptCard] = Field(default_factory=list)
+    objectives: list[ObjectiveBlueprint] = Field(default_factory=list)
+
+
+def build_chapter_blueprint(
+    chapters: list[dict[str, Any]],
+    concepts: list[ConceptCard],
+) -> list[ChapterBlueprint]:
+    """Join persisted chapter structure with this source's concepts.
+
+    ``chapters`` is the ``source_metadata["extract"]["chapters"]`` block. Each
+    concept is attached to every chapter whose ``segment_ids`` overlap its
+    evidence. Returns chapters ordered by ``sequence_index``.
+
+    A concept may appear under more than one chapter when its evidence spans
+    them; concepts with no overlapping chapter are simply absent (callers fall
+    back to flat batching). Returns an empty list when no chapter structure is
+    available, keeping the concept-fan-out path intact.
+    """
+    if not chapters:
+        return []
+
+    blueprints: list[ChapterBlueprint] = []
+
+    for chapter in chapters:
+        segment_ids = [str(segment_id) for segment_id in (chapter.get("segment_ids") or [])]
+        segment_set = set(segment_ids)
+
+        chapter_concepts = [
+            concept
+            for concept in concepts
+            if segment_set.intersection(concept.evidence_segment_ids)
+        ]
+
+        objectives = [
+            ObjectiveBlueprint(
+                objective_id=str(objective.get("objective_id") or ""),
+                statement=str(objective.get("statement") or ""),
+                bloom_level=str(objective.get("bloom_level") or "understand"),
+                concept_labels=[
+                    str(label) for label in (objective.get("concept_labels") or [])
+                ],
+            )
+            for objective in chapter.get("objectives") or []
+        ]
+
+        blueprints.append(
+            ChapterBlueprint(
+                chapter_id=str(chapter.get("chapter_id") or ""),
+                chapter_title=str(chapter.get("chapter_title") or "Untitled"),
+                sequence_index=int(chapter.get("sequence_index") or 0),
+                segment_ids=segment_ids,
+                concepts=chapter_concepts,
+                objectives=objectives,
+            ),
+        )
+
+    blueprints.sort(key=lambda chapter: chapter.sequence_index)
+    return blueprints
 
 
 def format_concepts_for_llm(concepts: list[ConceptCard]) -> str:

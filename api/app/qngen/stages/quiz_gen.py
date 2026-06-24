@@ -2,71 +2,80 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.qngen.context import build_wiki_context, compact_segments, format_json_block
-from app.qngen.stages.models import QuizGenOutput
-from app.services.openai_client import OpenAIClient
-
-SYSTEM_PROMPT = """You generate quiz questions that test understanding of source documents.
-
-Rules:
-- Ground every question in the provided source segments.
-- Use canonical wiki terminology exactly when wiki entries are provided.
-- Prefer multiple_choice with 4 options when possible; true_false and short_answer are allowed.
-- Provide a clear correct_answer and brief explanation.
-- Include difficulty: easy, medium, or hard.
-- Cite wiki_ids_cited and segment_ids_used from the provided context.
-- Return valid JSON only."""
-
-USER_TEMPLATE = """Source metadata:
-{source_metadata}
-
-Canonical wiki entries:
-{wiki_entries}
-
-Source segments:
-{segments_json}
-
-Return JSON:
-{{
-  "questions": [
-    {{
-      "question": "question text",
-      "question_type": "multiple_choice|true_false|short_answer",
-      "options": ["A", "B", "C", "D"],
-      "correct_answer": "answer",
-      "explanation": "why this is correct",
-      "difficulty": "easy|medium|hard",
-      "wiki_ids_cited": ["wiki-id"],
-      "segment_ids_used": ["segment-id"]
-    }}
-  ]
-}}"""
+from app.qngen.canonical_context import ConceptCard, build_chapter_blueprint
+from app.qngen.skills.questions.helpers import normalize_quiz_items
+from app.qngen.skills.shared.item_mapping import (
+    assessment_item_to_quiz,
+    ensure_item_ids,
+)
+from app.qngen.skills.shared.orchestrator import (
+    run_blueprinted_generation,
+    run_skill_generation,
+)
+from app.qngen.stages.models import GeneratedQuizQuestion, QuizGenOutput
+from app.qngen.validators import validate_assessment_items
 
 
 class QuizGenStage:
-    def __init__(self, *, openai_client: OpenAIClient | None = None) -> None:
-        self.openai_client = openai_client or OpenAIClient()
-
     def run(
         self,
         *,
         source_metadata: dict[str, Any],
-        segments: list[dict[str, Any]],
-        wiki_entries: list[dict[str, Any]],
+        concepts: list[ConceptCard],
+        concept_batches: list[list[ConceptCard]],
+        learning_objectives: list[dict[str, Any]],
     ) -> tuple[QuizGenOutput, dict[str, Any]]:
-        # SECURITY: Compact source segments and approved wiki entries are sent to
-        # the model for assessment generation within the authenticated workspace.
-        result = self.openai_client.complete_json(
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=USER_TEMPLATE.format(
-                source_metadata=format_json_block(source_metadata),
-                wiki_entries=format_json_block(build_wiki_context(wiki_entries)),
-                segments_json=format_json_block(compact_segments(segments)),
-            ),
-        )
-        output = QuizGenOutput.model_validate(result.content)
+        chapters_meta = (source_metadata.get("extract") or {}).get("chapters") or []
+        blueprint = build_chapter_blueprint(chapters_meta, concepts)
 
-        return output, {
-            "model": result.model,
-            "token_usage": result.token_usage,
+        raw_items: list[dict[str, Any]] = []
+        execution: dict[str, Any] = {}
+        if blueprint:
+            # One question per objective, scoped per chapter (no count band —
+            # questions are deterministically objective-driven).
+            raw_items, execution = run_blueprinted_generation(
+                skill_name="questions",
+                artifact_type="quiz",
+                source_metadata=source_metadata,
+                blueprint=blueprint,
+            )
+
+        if not raw_items:
+            # No chapter structure, or the chapter↔concept join produced nothing
+            # (e.g. orphan evidence segments): fall back to the concept-fan-out
+            # path so a missing/broken blueprint can't silently zero out output.
+            if not concept_batches:
+                raise RuntimeError(
+                    "At least one concept batch is required for quiz generation.",
+                )
+            raw_items, execution = run_skill_generation(
+                skill_name="questions",
+                artifact_type="quiz",
+                source_metadata=source_metadata,
+                concept_batches=concept_batches,
+                learning_objectives=learning_objectives,
+            )
+
+        raw_items = normalize_quiz_items(ensure_item_ids(raw_items))
+
+        wiki_ids = {concept.wiki_id for concept in concepts}
+        segment_ids = {
+            segment_id
+            for concept in concepts
+            for segment_id in concept.evidence_segment_ids
         }
+
+        validated, validation_report = validate_assessment_items(
+            items=raw_items,
+            concepts=concepts,
+            segment_ids=segment_ids,
+            wiki_ids=wiki_ids,
+        )
+        questions = [
+            GeneratedQuizQuestion.model_validate(assessment_item_to_quiz(item))
+            for item in validated
+            if item.get("type") == "quiz"
+        ]
+
+        execution["validation_report"] = validation_report
+        return QuizGenOutput(questions=questions), execution

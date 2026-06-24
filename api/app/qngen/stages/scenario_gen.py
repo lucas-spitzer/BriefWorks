@@ -2,69 +2,113 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.qngen.context import build_wiki_context, compact_segments, format_json_block
-from app.qngen.stages.models import ScenarioGenOutput
-from app.services.openai_client import OpenAIClient
+from app.config import get_settings
+from app.qngen.canonical_context import ConceptCard, build_chapter_blueprint
+from app.qngen.skills.scenarios.helpers import filter_essential_only
+from app.qngen.skills.shared.item_mapping import (
+    assessment_item_to_scenario,
+    ensure_item_ids,
+)
+from app.qngen.skills.shared.orchestrator import (
+    run_blueprinted_generation,
+    run_skill_generation,
+)
+from app.qngen.stages.models import GeneratedScenario, ScenarioGenOutput
+from app.qngen.validators import validate_assessment_items
 
-SYSTEM_PROMPT = """You generate application scenarios from source documents.
 
-Rules:
-- Ground every scenario in the provided source segments and doctrine.
-- Use canonical wiki terminology exactly when wiki entries are provided.
-- Title: short scenario name. Prompt: what the learner must decide or do.
-- Context: optional situational background.
-- evaluation_criteria: bullet-style criteria for a strong response.
-- Include difficulty: easy, medium, or hard.
-- Cite wiki_ids_cited and segment_ids_used from the provided context.
-- Return valid JSON only."""
-
-USER_TEMPLATE = """Source metadata:
-{source_metadata}
-
-Canonical wiki entries:
-{wiki_entries}
-
-Source segments:
-{segments_json}
-
-Return JSON:
-{{
-  "scenarios": [
-    {{
-      "title": "scenario title",
-      "prompt": "what the learner must address",
-      "context": "optional background",
-      "evaluation_criteria": ["criterion"],
-      "difficulty": "easy|medium|hard",
-      "wiki_ids_cited": ["wiki-id"],
-      "segment_ids_used": ["segment-id"]
-    }}
-  ]
-}}"""
+def _empty_execution(reason: str) -> dict[str, Any]:
+    return {
+        "model": "deterministic-passthrough",
+        "provider": "local",
+        "token_usage": {},
+        "batch_count": 0,
+        "validation_report": {
+            "input_count": 0,
+            "validated_count": 0,
+            "skipped": reason,
+        },
+    }
 
 
 class ScenarioGenStage:
-    def __init__(self, *, openai_client: OpenAIClient | None = None) -> None:
-        self.openai_client = openai_client or OpenAIClient()
-
     def run(
         self,
         *,
         source_metadata: dict[str, Any],
-        segments: list[dict[str, Any]],
-        wiki_entries: list[dict[str, Any]],
+        concepts: list[ConceptCard],
+        concept_batches: list[list[ConceptCard]],
+        learning_objectives: list[dict[str, Any]],
     ) -> tuple[ScenarioGenOutput, dict[str, Any]]:
-        result = self.openai_client.complete_json(
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=USER_TEMPLATE.format(
-                source_metadata=format_json_block(source_metadata),
-                wiki_entries=format_json_block(build_wiki_context(wiki_entries)),
-                segments_json=format_json_block(compact_segments(segments)),
-            ),
-        )
-        output = ScenarioGenOutput.model_validate(result.content)
+        chapters_meta = (source_metadata.get("extract") or {}).get("chapters") or []
+        blueprint = build_chapter_blueprint(chapters_meta, concepts)
 
-        return output, {
-            "model": result.model,
-            "token_usage": result.token_usage,
+        raw_items: list[dict[str, Any]] = []
+        execution: dict[str, Any] = {}
+        if blueprint:
+            settings = get_settings()
+            raw_items, execution = run_blueprinted_generation(
+                skill_name="scenarios",
+                artifact_type="scenario",
+                source_metadata=source_metadata,
+                blueprint=blueprint,
+                concept_filter=lambda concept: concept.importance == "essential",
+                count_band=(
+                    settings.qngen.scenarios_per_chapter_min,
+                    settings.qngen.scenarios_per_chapter_max,
+                ),
+            )
+
+        if not raw_items:
+            # No chapter structure, or the chapter↔concept join produced nothing
+            # (e.g. essential concepts whose evidence sits in unassigned
+            # segments): fall back to essential concept batches so a broken
+            # blueprint can't silently zero out scenarios.
+            essential_batches = [
+                [concept for concept in batch if concept.importance == "essential"]
+                for batch in concept_batches
+            ]
+            essential_batches = [batch for batch in essential_batches if batch]
+
+            if not essential_batches:
+                return ScenarioGenOutput(scenarios=[]), _empty_execution(
+                    "no essential concepts",
+                )
+
+            raw_items, execution = run_skill_generation(
+                skill_name="scenarios",
+                artifact_type="scenario",
+                source_metadata=source_metadata,
+                concept_batches=essential_batches,
+                learning_objectives=learning_objectives,
+            )
+
+        essential_wiki_ids = {
+            concept.wiki_id for concept in concepts if concept.importance == "essential"
         }
+        raw_items = filter_essential_only(
+            ensure_item_ids(raw_items),
+            essential_wiki_ids=essential_wiki_ids,
+        )
+
+        wiki_ids = {concept.wiki_id for concept in concepts}
+        segment_ids = {
+            segment_id
+            for concept in concepts
+            for segment_id in concept.evidence_segment_ids
+        }
+
+        validated, validation_report = validate_assessment_items(
+            items=raw_items,
+            concepts=concepts,
+            segment_ids=segment_ids,
+            wiki_ids=wiki_ids,
+        )
+        scenarios = [
+            GeneratedScenario.model_validate(assessment_item_to_scenario(item))
+            for item in validated
+            if item.get("type") == "scenario"
+        ]
+
+        execution["validation_report"] = validation_report
+        return ScenarioGenOutput(scenarios=scenarios), execution

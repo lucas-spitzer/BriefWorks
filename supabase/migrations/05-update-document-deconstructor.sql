@@ -31,4 +31,4 @@ set
     "user_template": "Extract concepts for source {{source_id}} from NDR segments."
   }'::jsonb
 where skill_id = 'deconstruct-document'
-  and version = '1.0.0';
+  and version = '1.0';

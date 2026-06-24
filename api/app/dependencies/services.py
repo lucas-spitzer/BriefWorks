@@ -11,6 +11,7 @@ from app.repositories.production_runs import ProductionRunRepository
 from app.repositories.stage_runs import StageRunRepository
 from app.repositories.stages import StageRepository
 from app.repositories.sources import SourceRepository
+from app.repositories.stage_settings import StageSettingsRepository
 from app.repositories.workspaces import WorkspaceRepository
 from app.services.supabase_rest import SupabaseRestClient
 from app.services.supabase_storage import SupabaseStorageClient
@@ -38,6 +39,12 @@ def get_stage_repository(
     db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
 ) -> StageRepository:
     return StageRepository(db)
+
+
+def get_stage_settings_repository(
+    db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
+) -> StageSettingsRepository:
+    return StageSettingsRepository(db)
 
 
 def get_source_repository(

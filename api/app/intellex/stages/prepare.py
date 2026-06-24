@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
-import os
 from collections import Counter
 from dataclasses import dataclass
 from typing import Any
 
+from app.config import get_settings
+
 from app.intellex.line_content_filter import pre_filter_lines, validate_prepared_document
 from app.intellex.models import ParsedDocument, ParsedLine
-from app.services.openai_client import OpenAIClient
+from app.services.llm import LLMClient, get_llm_client
 
 SYSTEM_PROMPT = """You extract learning content from parsed documents.
 
@@ -72,11 +73,18 @@ class PrepareStage:
     def __init__(
         self,
         *,
-        openai_client: OpenAIClient | None = None,
+        llm_client: LLMClient | None = None,
         batch_pages: int | None = None,
     ) -> None:
-        self.openai_client = openai_client or OpenAIClient()
-        self.batch_pages = batch_pages or int(os.getenv("PREPARE_BATCH_PAGES", "15"))
+        self._llm_client = llm_client
+        self.batch_pages = batch_pages or get_settings().intellex.prepare_batch_pages
+
+    @property
+    def llm_client(self) -> LLMClient:
+        # Resolved lazily so workspace overrides set at run time are honored.
+        if self._llm_client is None:
+            self._llm_client = get_llm_client("prepare")
+        return self._llm_client
 
     def run(self, *, parsed_document: ParsedDocument) -> tuple[PrepareOutput, dict[str, Any]]:
         if not parsed_document.lines:
@@ -106,7 +114,7 @@ class PrepareStage:
         exclude_pages: set[int] = set()
         reasons: dict[str, str] = {}
         token_usage: dict[str, int] = {}
-        model = self.openai_client.model
+        model = self.llm_client.model
 
         for batch_index, batch_pages in enumerate(batches, start=1):
             batch_lines = [line for line in candidate_lines if line.page in batch_pages]
@@ -184,7 +192,7 @@ class PrepareStage:
                 },
             )
 
-        result = self.openai_client.complete_json(
+        result = self.llm_client.complete_json(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=USER_TEMPLATE.format(
                 batch_index=batch_index,

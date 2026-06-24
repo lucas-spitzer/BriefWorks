@@ -96,6 +96,43 @@ export async function apiRequest<TResponse>(
   return response.json() as Promise<TResponse>
 }
 
+export async function apiRequestVoid(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<void> {
+  if (!apiBaseUrl) {
+    throw new ApiError('Missing VITE_API_BASE_URL.', 0)
+  }
+
+  const { requiresAuth = true, headers, body, ...fetchOptions } = options
+  const requestHeaders = new Headers(headers)
+
+  if (body && !requestHeaders.has('Content-Type')) {
+    requestHeaders.set('Content-Type', 'application/json')
+  }
+
+  if (requiresAuth) {
+    const token = await getAccessToken()
+
+    if (!token) {
+      throw new ApiError('Missing access token.', 401)
+    }
+
+    requestHeaders.set('Authorization', `Bearer ${token}`)
+  }
+
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    ...fetchOptions,
+    body,
+    headers: requestHeaders,
+  })
+
+  if (!response.ok) {
+    const message = await parseApiErrorMessage(response)
+    throw new ApiError(message, response.status)
+  }
+}
+
 export async function getCurrentUser(): Promise<CurrentUserResponse> {
   return apiRequest<CurrentUserResponse>('/me')
 }

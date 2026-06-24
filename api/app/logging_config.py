@@ -1,10 +1,11 @@
 import logging
-import os
+
+from app.config import get_settings
 
 
 def configure_logging() -> None:
     """Configure application-wide logging for API and worker processes."""
-    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level_name = get_settings().infra.log_level
     level = getattr(logging, level_name, logging.INFO)
 
     logging.basicConfig(

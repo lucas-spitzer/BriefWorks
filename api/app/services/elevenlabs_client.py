@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import time
 from typing import Any
 
 import httpx
+
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -132,24 +133,14 @@ class ElevenLabsClient:
         max_retries: int | None = None,
         output_format: str = DEFAULT_OUTPUT_FORMAT,
     ) -> None:
-        self.api_key = api_key if api_key is not None else os.getenv("ELEVENLABS_API_KEY")
-        self.voice_id = voice_id or os.getenv("ELEVENLABS_VOICE_ID") or DEFAULT_VOICE_ID
-        self.model_id = model_id or os.getenv("ELEVENLABS_MODEL_ID") or DEFAULT_MODEL_ID
-        self.max_chars = max_chars or int(
-            os.getenv("ELEVENLABS_MAX_CHARS", str(DEFAULT_MAX_CHARS)),
-        )
-        self.chunk_chars = chunk_chars or int(
-            os.getenv("ELEVENLABS_CHUNK_CHARS", str(DEFAULT_CHUNK_CHARS)),
-        )
-        self.request_timeout_seconds = request_timeout_seconds or int(
-            os.getenv(
-                "ELEVENLABS_REQUEST_TIMEOUT_SECONDS",
-                str(DEFAULT_REQUEST_TIMEOUT_SECONDS),
-            ),
-        )
-        self.max_retries = max_retries or int(
-            os.getenv("ELEVENLABS_MAX_RETRIES", str(DEFAULT_MAX_RETRIES)),
-        )
+        settings = get_settings().elevenlabs
+        self.api_key = api_key if api_key is not None else settings.api_key
+        self.voice_id = voice_id or settings.voice_id
+        self.model_id = model_id or settings.model_id
+        self.max_chars = max_chars or settings.max_chars
+        self.chunk_chars = chunk_chars or settings.chunk_chars
+        self.request_timeout_seconds = request_timeout_seconds or settings.request_timeout_seconds
+        self.max_retries = max_retries or settings.max_retries
         self.output_format = output_format
 
     @property

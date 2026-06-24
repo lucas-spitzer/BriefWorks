@@ -25,6 +25,7 @@ export interface WorkspaceDataContextValue {
   error: string | null
   activeRunCount: number
   uploadSource: (file: File) => Promise<Source>
+  uploadArtifact: (file: File) => Promise<Artifact>
   createProductionRun: (payload: {
     source_ids: string[]
     target_artifacts: string[]

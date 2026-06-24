@@ -26,7 +26,7 @@ def test_promote_flashcards_maps_rows() -> None:
         production_run_id="run-1",
         stage_run_id="stage-1",
         stage_id="generate-flashcards",
-        stage_version="1.0.0",
+        stage_version="1.0",
         flashcards=[
             {
                 "front": "What is METT-T?",
@@ -51,7 +51,7 @@ def test_promote_quizzes_maps_rows() -> None:
         production_run_id="run-1",
         stage_run_id="stage-1",
         stage_id="generate-questions",
-        stage_version="1.0.0",
+        stage_version="1.0",
         questions=[
             {
                 "question": "Which factor is part of METT-T?",
@@ -73,7 +73,7 @@ def test_promote_scenarios_maps_rows() -> None:
         production_run_id="run-1",
         stage_run_id="stage-1",
         stage_id="generate-scenarios",
-        stage_version="1.0.0",
+        stage_version="1.0",
         scenarios=[
             {
                 "title": "Urban patrol decision",

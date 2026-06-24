@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.llm.model_catalog import catalog_list_price
+
 
 @dataclass(frozen=True)
 class TokenRates:
@@ -42,6 +44,27 @@ DEFAULT_OPENAI_RATES = TokenRates(
     output_per_million=_float_env("OPENAI_DEFAULT_OUTPUT_PER_M", 0.60),
 )
 
+# Placeholder rates — override via env before relying on cost_usd for billing.
+ANTHROPIC_MODEL_RATES: dict[str, TokenRates] = {
+    "claude-opus-4": TokenRates(
+        input_per_million=_float_env("ANTHROPIC_OPUS_INPUT_PER_M", 5.00),
+        output_per_million=_float_env("ANTHROPIC_OPUS_OUTPUT_PER_M", 25.00),
+    ),
+    "claude-sonnet-4": TokenRates(
+        input_per_million=_float_env("ANTHROPIC_SONNET_INPUT_PER_M", 3.00),
+        output_per_million=_float_env("ANTHROPIC_SONNET_OUTPUT_PER_M", 15.00),
+    ),
+    "claude-haiku-4": TokenRates(
+        input_per_million=_float_env("ANTHROPIC_HAIKU_INPUT_PER_M", 1.00),
+        output_per_million=_float_env("ANTHROPIC_HAIKU_OUTPUT_PER_M", 5.00),
+    ),
+}
+
+DEFAULT_ANTHROPIC_RATES = TokenRates(
+    input_per_million=_float_env("ANTHROPIC_DEFAULT_INPUT_PER_M", 3.00),
+    output_per_million=_float_env("ANTHROPIC_DEFAULT_OUTPUT_PER_M", 15.00),
+)
+
 # ElevenLabs subscription credits are billed per character; we call them tokens in
 # the console. Default: $220 / 1.2M credits per year ≈ $0.00018333 per token.
 ELEVENLABS_PRICE_PER_TOKEN = _float_env("ELEVENLABS_PRICE_PER_TOKEN", 0.00018333)
@@ -49,8 +72,6 @@ ELEVENLABS_PRICE_PER_TOKEN = _float_env("ELEVENLABS_PRICE_PER_TOKEN", 0.00018333
 SPEECHIFY_RATES = CharacterRates(
     per_thousand=_float_env("SPEECHIFY_PRICE_PER_1K_CHARS", 0.10),
 )
-
-TAVILY_PRICE_PER_CREDIT = _float_env("TAVILY_PRICE_PER_CREDIT", 0.008)
 
 LLAMAPARSE_PRICE_PER_CREDIT = _float_env("LLAMAPARSE_PRICE_PER_CREDIT", 0.00125)
 
@@ -68,6 +89,10 @@ def openai_rates_for_model(model: str | None) -> TokenRates:
     for key, rates in OPENAI_MODEL_RATES.items():
         if normalized.startswith(key):
             return rates
+
+    catalog = catalog_list_price(model)
+    if catalog is not None:
+        return TokenRates(input_per_million=catalog[0], output_per_million=catalog[1])
 
     return DEFAULT_OPENAI_RATES
 
@@ -92,6 +117,63 @@ def cost_openai_usage(
         "output_cost_usd": _round_usd(output_cost),
         "cost_usd": _round_usd(total),
     }
+
+
+def anthropic_rates_for_model(model: str | None) -> TokenRates:
+    normalized = (model or "").strip().lower()
+
+    for key, rates in ANTHROPIC_MODEL_RATES.items():
+        if normalized.startswith(key):
+            return rates
+
+    catalog = catalog_list_price(model)
+    if catalog is not None:
+        return TokenRates(input_per_million=catalog[0], output_per_million=catalog[1])
+
+    return DEFAULT_ANTHROPIC_RATES
+
+
+def cost_anthropic_usage(
+    *,
+    model: str | None,
+    input_tokens: int,
+    output_tokens: int,
+) -> dict[str, Any]:
+    rates = anthropic_rates_for_model(model)
+    input_cost = (input_tokens / 1_000_000) * rates.input_per_million
+    output_cost = (output_tokens / 1_000_000) * rates.output_per_million
+    total = input_cost + output_cost
+
+    return {
+        "provider": "anthropic",
+        "model": model or "unknown",
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "input_cost_usd": _round_usd(input_cost),
+        "output_cost_usd": _round_usd(output_cost),
+        "cost_usd": _round_usd(total),
+    }
+
+
+def cost_llm_usage(
+    *,
+    provider: str,
+    model: str | None,
+    input_tokens: int,
+    output_tokens: int,
+) -> dict[str, Any]:
+    if provider == "anthropic":
+        return cost_anthropic_usage(
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+
+    return cost_openai_usage(
+        model=model,
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
+    )
 
 
 def cost_elevenlabs_usage(
@@ -123,18 +205,6 @@ def cost_speechify_usage(
         "provider": "speechify",
         "model": model or "unknown",
         "character_count": character_count,
-        "cost_usd": _round_usd(total),
-    }
-
-
-def cost_tavily_usage(*, search_count: int) -> dict[str, Any]:
-    credit_count = search_count
-    total = credit_count * TAVILY_PRICE_PER_CREDIT
-
-    return {
-        "provider": "tavily",
-        "search_count": search_count,
-        "credit_count": credit_count,
         "cost_usd": _round_usd(total),
     }
 

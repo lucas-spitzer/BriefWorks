@@ -13,7 +13,7 @@ insert into public.stages (
 )
 values (
   'parse',
-  '1.0.0',
+  '1.0',
   'intellex',
   'Parse Document',
   'Parse PDF sources into structured lines via the LlamaParse API.',
@@ -56,7 +56,7 @@ set pipeline = (
         || jsonb_build_object(
           'type', 'stage',
           'stage_id', 'parse',
-          'stage_version', '1.0.0'
+          'stage_version', '1.0'
         )
       else elem
     end

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Any
+
+from app.config import get_settings
 
 _DEFAULT_MAX_CHARS = 80_000
 
@@ -17,7 +18,11 @@ def _segment_payload(segment: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_budget(max_chars: int | None = None) -> int:
-    return max_chars or int(os.getenv("EXTRACT_CHAPTER_MAX_CHARS", str(_DEFAULT_MAX_CHARS)))
+    if max_chars is not None:
+        return max_chars
+
+    configured = get_settings().intellex.extract_chapter_max_chars
+    return configured if configured is not None else _DEFAULT_MAX_CHARS
 
 
 def batch_chapter_segments_for_llm(

@@ -7,6 +7,7 @@ import { ConsoleAssessments } from './ConsoleAssessments'
 import { ConsoleOps } from './ConsoleOps'
 import { ConsoleStages } from './ConsoleStages'
 import { ConsoleSources } from './ConsoleSources'
+import { ConsoleStageSettings } from './ConsoleStageSettings'
 import { ConsoleWorkspaces } from './ConsoleWorkspaces'
 import { railIconSize, railItems, type ConsolePage } from './types'
 
@@ -54,6 +55,7 @@ export function ConsoleShell() {
         {page === 'artifacts' ? <ConsoleArtifacts /> : null}
         {page === 'assessments' ? <ConsoleAssessments /> : null}
         {page === 'workspace' ? <ConsoleWorkspaces /> : null}
+        {page === 'settings' ? <ConsoleStageSettings /> : null}
       </div>
     </div>
   )

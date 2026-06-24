@@ -36,19 +36,6 @@ def test_enrich_stage_run_row_fills_missing_cost() -> None:
     assert enriched["api_usage"]["totals"]["input_tokens"] == 500
 
 
-def test_execution_from_source_research_infers_tavily() -> None:
-    execution = execution_from_stage_run(
-        {
-            "stage_id": "source-research",
-            "model": "gpt-4o-mini",
-            "token_usage": {"input_tokens": 100, "output_tokens": 50},
-            "output": {"web_sources": [{"url": "https://example.com"}]},
-        },
-    )
-
-    assert execution["web_search_count"] == 1
-
-
 def test_execution_from_parse_infers_page_credits() -> None:
     execution = execution_from_stage_run(
         {

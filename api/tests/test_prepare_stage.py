@@ -96,7 +96,7 @@ def test_prepare_stage_excludes_marked_lines() -> None:
     )
 
     stage = PrepareStage(
-        openai_client=FakeOpenAIClient(
+        llm_client=FakeOpenAIClient(
             {
                 "exclude_line_ids": [],
                 "exclude_pages": [],
@@ -128,7 +128,7 @@ def test_prepare_stage_applies_llm_exclusions_after_pre_filter() -> None:
     )
 
     stage = PrepareStage(
-        openai_client=FakeOpenAIClient(
+        llm_client=FakeOpenAIClient(
             {
                 "exclude_line_ids": ["p1-l1"],
                 "exclude_pages": [],

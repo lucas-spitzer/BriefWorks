@@ -19,7 +19,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "parse",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     {
@@ -27,7 +27,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "normalize-document",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     {
@@ -35,7 +35,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "trim-document-boundaries",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     {
@@ -43,7 +43,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "structure-document",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     {
@@ -51,7 +51,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "validate-structure",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     {
@@ -65,7 +65,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "source-research",
-        "stage_version": "1.0.0",
+        "stage_version": "2.0",
         "status": "pending",
     },
     {
@@ -73,7 +73,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "extract-knowledge",
-        "stage_version": "1.0.0",
+        "stage_version": "2.0",
         "status": "pending",
     },
 ]
@@ -84,7 +84,7 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "type": "stage",
         "module": "mathesys",
         "stage_id": "create-ebook",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     "speechify_audio": {
@@ -92,7 +92,7 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "type": "stage",
         "module": "mathesys",
         "stage_id": "speechify-audio",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     "elevenlabs_audio": {
@@ -100,7 +100,7 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "type": "stage",
         "module": "mathesys",
         "stage_id": "elevenlabs-audio",
-        "stage_version": "1.0.0",
+        "stage_version": "1.0",
         "status": "pending",
     },
     "flashcards": {
@@ -108,7 +108,7 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "type": "stage",
         "module": "qngen",
         "stage_id": "generate-flashcards",
-        "stage_version": "1.0.0",
+        "stage_version": "2.0",
         "status": "pending",
     },
     "quizzes": {
@@ -116,7 +116,7 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "type": "stage",
         "module": "qngen",
         "stage_id": "generate-questions",
-        "stage_version": "1.0.0",
+        "stage_version": "2.0",
         "status": "pending",
     },
     "scenarios": {
@@ -124,7 +124,7 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "type": "stage",
         "module": "qngen",
         "stage_id": "generate-scenarios",
-        "stage_version": "1.0.0",
+        "stage_version": "2.0",
         "status": "pending",
     },
 }

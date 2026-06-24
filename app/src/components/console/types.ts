@@ -1,7 +1,14 @@
 import type { LucideIcon } from 'lucide-react'
-import { BookText, Boxes, Brain, CircleGauge, Layers, Package } from 'lucide-react'
+import { BookText, Boxes, Brain, CircleGauge, Layers, Package, SlidersHorizontal } from 'lucide-react'
 
-export type ConsolePage = 'ops' | 'sources' | 'stages' | 'artifacts' | 'assessments' | 'workspace'
+export type ConsolePage =
+  | 'ops'
+  | 'sources'
+  | 'stages'
+  | 'artifacts'
+  | 'assessments'
+  | 'workspace'
+  | 'settings'
 
 export type ConsoleView = 'grid' | 'list'
 
@@ -14,4 +21,5 @@ export const railItems: { id: ConsolePage; label: string; icon: LucideIcon }[] =
   { id: 'artifacts', label: 'ART', icon: Package },
   { id: 'assessments', label: 'ASM', icon: Brain },
   { id: 'workspace', label: 'WRK', icon: Boxes },
+  { id: 'settings', label: 'CFG', icon: SlidersHorizontal },
 ]

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import os
 from typing import Any, Callable
 
+from app.config import get_settings
 from app.mathesys.audio.audio_document_builder import AudioDocumentBuilder
 from app.mathesys.chapter_grouping import (
     chapter_page_count,
@@ -25,9 +25,7 @@ class NarrationStageBase:
         max_pages_per_volume: int | None = None,
     ) -> None:
         self.document_builder = document_builder or AudioDocumentBuilder()
-        self.max_pages_per_volume = max_pages_per_volume or int(
-            os.getenv("ELEVEN_READER_MAX_PAGES", "500"),
-        )
+        self.max_pages_per_volume = max_pages_per_volume or get_settings().intellex.eleven_reader_max_pages
 
     @property
     def _build_model_label(self) -> str:

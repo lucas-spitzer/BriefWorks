@@ -12,6 +12,7 @@ import {
   listSources,
   listWikiEntries,
   uploadSource as uploadSourceRequest,
+  uploadArtifact as uploadArtifactRequest,
   type Artifact,
   type AssessmentSetSummary,
   type Flashcard,
@@ -150,6 +151,19 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
     [workspaceId, refresh],
   )
 
+  const uploadArtifact = useCallback(
+    async (file: File) => {
+      if (!workspaceId) {
+        throw new Error('No active workspace.')
+      }
+
+      const artifact = await uploadArtifactRequest(workspaceId, file)
+      await refresh()
+      return artifact
+    },
+    [workspaceId, refresh],
+  )
+
   const createProductionRun = useCallback(
     async (payload: { source_ids: string[]; target_artifacts: string[] }) => {
       if (!workspaceId) {
@@ -183,6 +197,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       error,
       activeRunCount,
       uploadSource,
+      uploadArtifact,
       createProductionRun,
       downloadArtifact,
     }),
@@ -200,6 +215,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       error,
       activeRunCount,
       uploadSource,
+      uploadArtifact,
       createProductionRun,
       downloadArtifact,
     ],

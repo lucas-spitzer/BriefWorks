@@ -1,72 +1,78 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
-from app.intellex.metadata_slice import build_metadata_slice
+from app.config import get_settings
+from app.intellex.metadata_slice import build_source_research_slices
 from app.intellex.models import ParsedDocument
 from app.intellex.stages.models import SourceResearchOutput
-from app.services.openai_client import OpenAIClient
-from app.services.web_research import WebResearchClient, build_research_query
+from app.services.llm import LLMClient, get_llm_client
 
-DOCUMENT_SYSTEM_PROMPT = """You extract bibliographic metadata from the early pages of a parsed document.
+SYSTEM_PROMPT = """You extract a source profile from labeled sections of a parsed PDF document.
 
-Extract ONLY these document-origin fields from the provided text:
-- title
-- issuing_authority
-- version
+Extract bibliographic fields from document evidence:
+- title, identifier, issuing_authority, authors, version
 - publication_date_in_document (ISO-8601 YYYY-MM-DD when possible, otherwise null)
+- publication_date_public and source_url only when explicitly printed in the document
 - distribution_line (distribution / dissemination / releasability statement when present)
-- abstract (brief description of the document's subject and purpose, 1-2 sentences maximum; null if not inferable from the text)
+
+Extract interpretive fields:
+- purpose: why the document exists
+- target_audience: intended readers
+- scope: what the document covers and any stated boundaries
+- abstract: 2-3 sentence summary of subject and purpose, grounded in the document
 
 Rules:
-- Use only evidence from the provided document text.
-- Leave other fields null or empty unless explicitly present in the text.
+- Use only evidence from the provided sections. Filename is a weak hint when cover text is sparse.
 - document_type may be inferred when obvious (military_doctrine, research_paper, white_paper, report, unknown).
+- Prefer preface/foreword/introduction for purpose, target_audience, and scope.
+- Infer purpose, audience, or scope from TOC/structure only when not stated explicitly; mark those as provenance "inferred" with lower confidence.
+- Set provenance to "document" for values taken directly from the text.
+- Leave fields null when not supported by evidence.
 - Provide per-field confidence from 0.0 to 1.0 for populated fields.
-- Set provenance to "document" for populated fields.
 - Return valid JSON only."""
 
-DOCUMENT_USER_TEMPLATE = """Filename: {filename}
+USER_TEMPLATE = """Filename: {filename}
 MIME type: {mime_type}
 
-Metadata slice (early pages):
-{document_text}
+## Cover
+{cover}
+
+## Preface / Foreword / Introduction
+{preface}
+
+## Table of Contents
+{toc}
+
+## Additional early pages
+{remainder}
 
 Return JSON with keys:
 document_type, title, identifier, issuing_authority, authors, version,
 publication_date_in_document, publication_date_public, source_url, abstract,
-distribution_line, confidence, provenance"""
+distribution_line, purpose, target_audience, scope, confidence, provenance"""
 
-WEB_SYSTEM_PROMPT = """You fill missing bibliographic metadata using web search snippets.
 
-Rules:
-- Only fill title or issuing_authority when null or low-confidence in the document draft.
-- Do not overwrite high-confidence document values.
-- Set provenance to "web" for fields filled from web snippets.
-- Keep existing provenance "document" for unchanged fields.
-- Return valid JSON only."""
-
-WEB_USER_TEMPLATE = """Document draft metadata:
-{document_metadata}
-
-Web search results:
-{web_results}
-
-Return the updated metadata JSON with the same keys as the draft."""
+def _section_or_placeholder(text: str) -> str:
+    return text.strip() if text.strip() else "(not found in document)"
 
 
 class SourceResearchStage:
     def __init__(
         self,
         *,
-        openai_client: OpenAIClient | None = None,
-        web_client: WebResearchClient | None = None,
-        max_document_chars: int = 12_000,
+        llm_client: LLMClient | None = None,
+        max_document_chars: int | None = None,
     ) -> None:
-        self.openai_client = openai_client or OpenAIClient()
-        self.web_client = web_client or WebResearchClient()
-        self.max_document_chars = max_document_chars
+        self._llm_client = llm_client
+        self.max_document_chars = max_document_chars or get_settings().intellex.source_research_max_chars
+
+    @property
+    def llm_client(self) -> LLMClient:
+        # Resolved lazily so workspace overrides set at run time are honored.
+        if self._llm_client is None:
+            self._llm_client = get_llm_client("source_research")
+        return self._llm_client
 
     def run(
         self,
@@ -75,66 +81,29 @@ class SourceResearchStage:
         mime_type: str,
         parsed_document: ParsedDocument,
     ) -> tuple[SourceResearchOutput, dict[str, Any]]:
-        # SECURITY: Only a bounded metadata slice from early pages is sent to the model.
-        document_text = build_metadata_slice(
+        # SECURITY: Only bounded metadata slices from early pages are sent to the model.
+        slices = build_source_research_slices(
             parsed_document,
             max_chars=self.max_document_chars,
         )
 
-        if not document_text:
+        if not any(slices.values()):
             raise RuntimeError("Parsed document contains no text for source research.")
 
-        document_result = self.openai_client.complete_json(
-            system_prompt=DOCUMENT_SYSTEM_PROMPT,
-            user_prompt=DOCUMENT_USER_TEMPLATE.format(
+        result = self.llm_client.complete_json(
+            system_prompt=SYSTEM_PROMPT,
+            user_prompt=USER_TEMPLATE.format(
                 filename=filename,
                 mime_type=mime_type,
-                document_text=document_text,
+                cover=_section_or_placeholder(slices["cover"]),
+                preface=_section_or_placeholder(slices["preface"]),
+                toc=_section_or_placeholder(slices["toc"]),
+                remainder=_section_or_placeholder(slices["remainder"]),
             ),
         )
-        draft = SourceResearchOutput.model_validate(document_result.content)
+        output = SourceResearchOutput.model_validate(result.content)
 
-        token_usage = dict(document_result.token_usage)
-        model = document_result.model
-        web_sources: list[dict[str, str]] = []
-        web_search_count = 0
-
-        if self._needs_web_gap_fill(draft) and self.web_client.enabled:
-            query = build_research_query(
-                title=draft.title,
-                identifier=draft.identifier,
-            )
-
-            if query:
-                web_sources = self.web_client.search(query)
-                web_search_count = 1
-                web_result = self.openai_client.complete_json(
-                    system_prompt=WEB_SYSTEM_PROMPT,
-                    user_prompt=WEB_USER_TEMPLATE.format(
-                        document_metadata=json.dumps(draft.model_dump(), indent=2),
-                        web_results=json.dumps(web_sources, indent=2),
-                    ),
-                )
-                draft = SourceResearchOutput.model_validate(web_result.content)
-                draft.web_sources = web_sources
-
-                for key, value in web_result.token_usage.items():
-                    token_usage[key] = token_usage.get(key, 0) + value
-
-        return draft, {
-            "model": model,
-            "token_usage": token_usage,
-            "web_search_count": web_search_count,
+        return output, {
+            "model": result.model,
+            "token_usage": dict(result.token_usage),
         }
-
-    def _needs_web_gap_fill(self, draft: SourceResearchOutput) -> bool:
-        if not draft.title or draft.title == "Untitled document":
-            return True
-
-        if draft.confidence.get("title", 1.0) < 0.75:
-            return True
-
-        if not draft.issuing_authority:
-            return True
-
-        return draft.confidence.get("issuing_authority", 1.0) < 0.75

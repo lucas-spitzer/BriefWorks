@@ -13,7 +13,7 @@ insert into public.skills (
 )
 values (
   'prepare-document',
-  '1.0.0',
+  '1.0',
   'intellex',
   'Prepare Document',
   'Strip non-narration content from parsed documents before chunking using GPT-4o-mini.',

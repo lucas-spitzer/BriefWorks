@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.llm_defaults import DEFAULT_OPENAI_MODEL, HAIKU_45_MODEL
+from app.llm_defaults import GPT_54_MINI_MODEL, GPT_54_MODEL, HAIKU_45_MODEL
 
 
 @dataclass(frozen=True)
@@ -24,12 +24,11 @@ class LLMAction:
 
 
 LLM_ACTIONS: tuple[LLMAction, ...] = (
-    LLMAction("source_research", "Source Research", "openai", DEFAULT_OPENAI_MODEL),
-    LLMAction("prepare", "Prepare", "openai", DEFAULT_OPENAI_MODEL),
+    LLMAction("source_research", "Source Research", "openai", GPT_54_MINI_MODEL),
+    LLMAction("prepare", "Prepare Document", "openai", GPT_54_MODEL),
     LLMAction("extract_knowledge", "Extract Knowledge", "anthropic", HAIKU_45_MODEL),
-    LLMAction("qngen_draft", "Assessment Draft", "anthropic", HAIKU_45_MODEL),
+    LLMAction("qngen_draft", "Assessment Draft", "openai", GPT_54_MINI_MODEL),
     LLMAction("qngen_critique", "Assessment Critique", "anthropic", HAIKU_45_MODEL),
-    LLMAction("assessment_set_gen", "Assessment Set Generation", "openai", DEFAULT_OPENAI_MODEL),
 )
 
 LLM_ACTION_DEFAULTS: dict[str, tuple[str, str]] = {

@@ -1,9 +1,11 @@
 import pytest
 
+from app.config import get_settings
 from app.intellex.stages.concept_models import DeconstructedConcept
 from app.intellex.stages.extract_chapter_knowledge import (
     ExtractChapterKnowledgeStage,
     merge_knowledge_items,
+    quote_supported_by_segment,
 )
 from app.intellex.stages.wiki_promotion import build_evidence_records, promote_concepts_to_wiki
 from app.services.llm.base import LLMCompletionResult
@@ -83,6 +85,213 @@ def test_merge_knowledge_items_keeps_different_entry_kinds_separate() -> None:
     assert len(merged) == 2
     kinds = {item.entry_kind for item in merged}
     assert kinds == {"concept", "insight"}
+
+
+class FakeEmbeddingClient:
+    def __init__(self, vectors: list[list[float]]) -> None:
+        self.vectors = vectors
+        self.calls = 0
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        return self.vectors[: len(texts)]
+
+
+@pytest.fixture
+def embedding_dedup_on(monkeypatch):
+    monkeypatch.setenv("EXTRACT_EMBEDDING_DEDUP", "true")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def test_extract_stage_runs_embedding_dedup(embedding_dedup_on) -> None:
+    segments = [_seg("p1", "paragraph", "Alpha appears here. Beta appears here.", page=1)]
+    chapter_rows = [
+        {"id": "ch-1", "title": "Chapter 1", "sequence_index": 0, "level": 1, "segment_ids": ["p1"]},
+    ]
+    client = FakeLLMClient(
+        [
+            {"objectives": [{"objective_id": "ch1-obj-1", "statement": "Understand", "bloom_level": "understand", "concept_labels": []}]},
+            {
+                "items": [
+                    {
+                        "entry_kind": "concept",
+                        "term_label": "Alpha",
+                        "definition": "First idea.",
+                        "importance": "essential",
+                        "evidence_segment_ids": ["p1"],
+                        "evidence_quotes": [{"segment_id": "p1", "quote": "Alpha appears here."}],
+                        "confidence": 0.9,
+                    },
+                    {
+                        "entry_kind": "concept",
+                        "term_label": "Beta",
+                        "definition": "Same idea, different words.",
+                        "importance": "supporting",
+                        "evidence_segment_ids": ["p1"],
+                        "evidence_quotes": [{"segment_id": "p1", "quote": "Beta appears here."}],
+                        "confidence": 0.8,
+                    },
+                ],
+            },
+        ],
+    )
+    # Identical vectors → the two candidates collapse into one entry.
+    embedding_client = FakeEmbeddingClient([[1.0, 0.0], [1.0, 0.0]])
+
+    output, _execution = ExtractChapterKnowledgeStage(
+        llm_client=client,
+        embedding_client=embedding_client,
+    ).run(
+        source_metadata={},
+        chapter_rows=chapter_rows,
+        segments=segments,
+        existing_labels=[],
+    )
+
+    assert embedding_client.calls == 1
+    assert len(output.items) == 1
+
+
+@pytest.fixture
+def document_budget(monkeypatch):
+    """Enable the curation gate with a 1-entry document budget."""
+    monkeypatch.setenv("EXTRACT_MAX_ENTRIES_PER_DOCUMENT", "1")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def _curation_concept(label: str) -> DeconstructedConcept:
+    return DeconstructedConcept(
+        term_label=label,
+        definition=f"Definition of {label}.",
+        entry_kind="concept",
+        evidence_segment_ids=["seg-1"],
+        selection_score=0.5,
+    )
+
+
+def test_curate_entries_marks_unselected_as_candidate(document_budget) -> None:
+    items = [_curation_concept("Alpha"), _curation_concept("Beta"), _curation_concept("Gamma")]
+    client = FakeLLMClient([{"canonical_labels": ["Alpha"]}])
+
+    result, _execution = ExtractChapterKnowledgeStage(llm_client=client)._curate_entries(
+        source_metadata={},
+        items=items,
+    )
+
+    status_by_label = {item.term_label: item.status for item in result}
+    assert status_by_label == {"Alpha": "canonical", "Beta": "candidate", "Gamma": "candidate"}
+    assert client.calls == 1
+
+
+def test_curate_entries_is_noop_without_budget() -> None:
+    get_settings.cache_clear()
+    items = [_curation_concept("Alpha"), _curation_concept("Beta")]
+    client = FakeLLMClient([])  # must not be called when the gate is off
+
+    result, _execution = ExtractChapterKnowledgeStage(llm_client=client)._curate_entries(
+        source_metadata={},
+        items=items,
+    )
+
+    assert all(item.status == "canonical" for item in result)
+    assert client.calls == 0
+
+
+def test_merge_knowledge_items_collapses_term_and_concept() -> None:
+    # A subject extracted as both a term and a concept must not become two
+    # entries; the richer "concept" kind wins.
+    items = [
+        DeconstructedConcept(
+            term_label="Enemy system",
+            definition="A belligerent understood as a system.",
+            entry_kind="term",
+            evidence_segment_ids=["a"],
+        ),
+        DeconstructedConcept(
+            term_label="enemy system",
+            definition="A belligerent understood as a system.",
+            entry_kind="concept",
+            evidence_segment_ids=["b"],
+        ),
+    ]
+
+    merged = merge_knowledge_items(items)
+
+    assert len(merged) == 1
+    assert merged[0].entry_kind == "concept"
+    assert set(merged[0].evidence_segment_ids) == {"a", "b"}
+
+
+def test_quote_supported_by_segment() -> None:
+    segment = "Doctrine explains intent, and commanders apply judgment."
+    # Case/whitespace/typographic differences still match.
+    assert quote_supported_by_segment("doctrine   explains  intent", segment)
+    assert quote_supported_by_segment("Commanders apply judgment.", segment)
+    # Curly punctuation normalizes to ascii.
+    assert quote_supported_by_segment("commanders apply judgment", "Commanders apply judgment.")
+    # Hallucinated or empty quotes are not supported.
+    assert not quote_supported_by_segment("The enemy retreated at dawn.", segment)
+    assert not quote_supported_by_segment("", segment)
+
+
+def _single_chapter_inputs(*, quote: str) -> tuple[list[dict], list[dict], FakeLLMClient]:
+    segments = [_seg("p1", "paragraph", "Doctrine explains intent.", page=1)]
+    chapter_rows = [
+        {"id": "ch-1", "title": "Chapter 1", "sequence_index": 0, "level": 1, "segment_ids": ["p1"]},
+    ]
+    client = FakeLLMClient(
+        [
+            {"objectives": [{"objective_id": "ch1-obj-1", "statement": "Understand", "bloom_level": "understand", "concept_labels": []}]},
+            {
+                "items": [
+                    {
+                        "entry_kind": "concept",
+                        "term_label": "Doctrine",
+                        "definition": "Guides decisions.",
+                        "importance": "essential",
+                        "evidence_segment_ids": ["p1"],
+                        "evidence_quotes": [{"segment_id": "p1", "quote": quote}],
+                        "confidence": 0.9,
+                    },
+                ],
+            },
+        ],
+    )
+    return segments, chapter_rows, client
+
+
+def test_extract_stage_drops_item_with_only_unverified_quote() -> None:
+    segments, chapter_rows, client = _single_chapter_inputs(
+        quote="This sentence never appears in the segment.",
+    )
+
+    output, _execution = ExtractChapterKnowledgeStage(llm_client=client).run(
+        source_metadata={},
+        chapter_rows=chapter_rows,
+        segments=segments,
+        existing_labels=[],
+    )
+
+    # Hallucinated grounding → segment pruned → item has no evidence → dropped.
+    assert output.items == []
+
+
+def test_extract_stage_keeps_item_with_verified_quote() -> None:
+    segments, chapter_rows, client = _single_chapter_inputs(quote="Doctrine explains intent.")
+
+    output, _execution = ExtractChapterKnowledgeStage(llm_client=client).run(
+        source_metadata={},
+        chapter_rows=chapter_rows,
+        segments=segments,
+        existing_labels=[],
+    )
+
+    assert len(output.items) == 1
+    assert output.items[0].evidence_segment_ids == ["p1"]
 
 
 def test_extract_stage_runs_objectives_concepts_and_consolidation() -> None:

@@ -54,7 +54,6 @@ export interface Artifact {
 
 export interface Flashcard {
   id: string
-  assessment_set_id?: string | null
   item_id?: string | null
   subtype?: string | null
   front: string
@@ -66,7 +65,6 @@ export interface Flashcard {
 
 export interface Quiz {
   id: string
-  assessment_set_id?: string | null
   item_id?: string | null
   subtype?: string | null
   question: string
@@ -80,7 +78,6 @@ export interface Quiz {
 
 export interface Scenario {
   id: string
-  assessment_set_id?: string | null
   item_id?: string | null
   subtype?: string | null
   title: string
@@ -88,18 +85,6 @@ export interface Scenario {
   context: string | null
   evaluation_criteria: string[]
   difficulty: string
-  created_at: string
-}
-
-export interface AssessmentSetSummary {
-  id: string
-  workspace_id: string
-  source_id: string | null
-  production_run_id: string | null
-  title: string
-  learning_goal: string | null
-  assessment_types: string[]
-  item_count: number
   created_at: string
 }
 
@@ -150,17 +135,13 @@ export interface StageRun {
 // A production run produces at most one narration artifact, chosen here.
 export const NARRATION_ARTIFACT_OPTIONS = [
   { value: 'eleven_reader_script', label: 'ElevenReader EBook' },
-  { value: 'speechify_audio', label: 'Speechify Audio' },
-  { value: 'elevenlabs_audio', label: 'ElevenLabs Audio' },
 ] as const
 
-// Review material is generated as a single bundle of all three assessment types.
-export const REVIEW_ARTIFACT_VALUES = ['flashcards', 'quizzes', 'scenarios'] as const
-
-export const REVIEW_PURPOSES = [
-  { label: 'Flashcards', purpose: 'Memorization' },
-  { label: 'Quizzes', purpose: 'Understanding' },
-  { label: 'Scenarios', purpose: 'Application' },
+// Assessment outputs are selected individually; any combination may be generated.
+export const ASSESSMENT_ARTIFACT_OPTIONS = [
+  { value: 'flashcards', label: 'Flashcards' },
+  { value: 'quizzes', label: 'Quizzes' },
+  { value: 'scenarios', label: 'Scenarios' },
 ] as const
 
 export async function listWorkspaces(): Promise<Workspace[]> {
@@ -276,10 +257,6 @@ export async function listQuizzes(workspaceId: string): Promise<Quiz[]> {
 
 export async function listScenarios(workspaceId: string): Promise<Scenario[]> {
   return apiRequest<Scenario[]>(`/workspaces/${workspaceId}/scenarios`)
-}
-
-export async function listAssessmentSets(workspaceId: string): Promise<AssessmentSetSummary[]> {
-  return apiRequest<AssessmentSetSummary[]>(`/workspaces/${workspaceId}/assessment-sets`)
 }
 
 export async function listProductionRuns(workspaceId: string): Promise<ProductionRun[]> {

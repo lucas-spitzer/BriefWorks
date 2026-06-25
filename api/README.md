@@ -39,7 +39,7 @@ Infrastructure variables have defaults (see `.env.example`). Optional Mathesys a
 | All | `SUPABASE_*`, `REDIS_URL`, `FRONTEND_ORIGINS`, `SOURCES_BUCKET`, `ARTIFACTS_BUCKET`, `RQ_QUEUE_NAME` | Core API + worker |
 | `parse` | `LLAMA_CLOUD_API_KEY`, `LLAMAPARSE_TIER` | LlamaParse PDF parsing |
 | `source-research` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SOURCE_RESEARCH_MAX_CHARS` | OpenAI JSON extraction |
-| `extract-knowledge` | `ANTHROPIC_API_KEY`, `LLM_EXTRACT_KNOWLEDGE_PROVIDER`, `LLM_EXTRACT_KNOWLEDGE_MODEL` | LLM factory action |
+| `extract-knowledge` | `ANTHROPIC_API_KEY`, `LLM_EXTRACT_KNOWLEDGE_PROVIDER`, `LLM_EXTRACT_KNOWLEDGE_MODEL`, `EXTRACT_MAX_ENTRIES_PER_{CHAPTER,DOCUMENT}`, `EXTRACT_MIN_{CONFIDENCE,SELECTION_SCORE}`, `EXTRACT_{ESSENTIAL,SUPPORTING}_FRACTION`, `EXTRACT_EMBEDDING_DEDUP`, `EXTRACT_EMBEDDING_{MODEL,SIMILARITY_THRESHOLD}` | LLM factory action + wiki-entry selection bands (0 = no cap/gate) + comparative importance fractions + optional embedding dedup |
 | `generate-flashcards` / `generate-questions` / `generate-scenarios` | `LLM_QNGEN_DRAFT_*`, `LLM_QNGEN_CRITIQUE_*`, `QNGEN_CONCEPT_BATCH_SIZE`, `QNGEN_MAX_REPAIR_TURNS`, `QNGEN_FLASHCARDS_PER_CHAPTER_{MIN,MAX}`, `QNGEN_SCENARIOS_PER_CHAPTER_{MIN,MAX}` | Blueprint-driven generation (per-chapter count bands) + draft + critique + grounding-repair passes |
 | `elevenlabs-audio` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_*` | Omit key to skip MP3 |
 | `speechify-audio` | `SPEECHIFY_API_KEY`, `SPEECHIFY_*` | Omit key for SSML-only |

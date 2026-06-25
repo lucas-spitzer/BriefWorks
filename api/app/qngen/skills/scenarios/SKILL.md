@@ -47,7 +47,9 @@ per chapter, not one-per-concept.
 1. 1–3 decision-worthy TDGs for the chapter (quality over coverage).
 2. Each has a genuine decision point, not an explanation prompt.
 3. Cite wiki_ids_cited and source_chunk_ids.
-4. Difficulty: medium for single-concept application, hard for multi-concept trade-offs.
+4. Difficulty must be exactly one of `easy`, `medium`, or `hard` — never a
+   compound value like `medium-hard`. Use `medium` for single-concept
+   application, `hard` for multi-concept trade-offs.
 
 ## Critique Checklist
 

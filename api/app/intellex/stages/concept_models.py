@@ -10,6 +10,25 @@ EntryKind = Literal["term", "concept", "insight"]
 _IMPORTANCE_VALUES = {"essential", "supporting", "contextual"}
 _ENTRY_KIND_VALUES = {"term", "concept", "insight"}
 
+ENTRY_KIND_PRIORITY = {"concept": 2, "term": 1, "insight": 0}
+
+
+def merge_group(entry_kind: str) -> str:
+    """Group key for dedup: ``term`` and ``concept`` collapse together.
+
+    A subject extracted as both a term and a concept describes the same
+    vocabulary item and must not become two wiki entries. Insights are headline
+    takeaways with distinct labels, so they stay in their own group.
+    """
+    return "definitional" if entry_kind in {"term", "concept"} else entry_kind
+
+
+def pick_entry_kind(existing: str, proposed: str) -> str:
+    """Return the richer of two entry kinds (concept > term > insight)."""
+    if ENTRY_KIND_PRIORITY.get(proposed, 0) > ENTRY_KIND_PRIORITY.get(existing, 0):
+        return proposed
+    return existing
+
 _CONCEPT_KEY_ALIASES = {
     "term": "term_label",
     "label": "term_label",
@@ -51,6 +70,10 @@ class DeconstructedConcept(BaseModel):
     confidence: float = 0.5
     chapter_id: str | None = None
     chapter_sequence_index: int | None = None
+    # Selection-gate outputs (extraction redesign). ``status`` defaults to
+    # canonical so paths that don't run the curation gate are unaffected.
+    selection_score: float | None = None
+    status: str = "canonical"
 
     @model_validator(mode="before")
     @classmethod

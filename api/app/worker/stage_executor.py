@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import logging
-import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -24,13 +23,10 @@ from app.qngen.assessment_promotion import (
     promote_quizzes,
     promote_scenarios,
 )
-from app.qngen.assessment_set_promotion import promote_assessment_set
 from app.qngen.canonical_context import batch_concepts, build_source_concepts
-from app.qngen.stages.assessment_set_gen import AssessmentSetGenStage
 from app.qngen.stages.flashcard_gen import FlashcardGenStage
 from app.qngen.stages.quiz_gen import QuizGenStage
 from app.qngen.stages.scenario_gen import ScenarioGenStage
-from app.qngen.validators import validate_assessment_items
 from app.services.elevenlabs_client import ElevenLabsClient
 from app.services.stage_run_billing import stage_run_completion_fields, tts_call_from_manifest
 from app.services.speechify_client import SpeechifyClient
@@ -258,7 +254,7 @@ class ParseStageExecutor:
 
 class ExtractChapterKnowledgeStageExecutor:
     STAGE_ID = "extract-knowledge"
-    STAGE_VERSION = "2.0"
+    STAGE_VERSION = "2.1"
     MODULE = "intellex"
 
     def __init__(
@@ -917,163 +913,6 @@ class ScenarioGenStageExecutor:
             output_key="scenarios",
             promoted_key="scenario_ids",
         )
-
-
-class AssessmentSetGenStageExecutor:
-    STAGE_ID = "assessment-set-gen"
-    STAGE_VERSION = "1.0"
-    MODULE = "qngen"
-
-    def __init__(
-        self,
-        db: WorkerDatabase | None = None,
-        stage: AssessmentSetGenStage | None = None,
-    ) -> None:
-        self.db = db or WorkerDatabase()
-        self.stage = stage or AssessmentSetGenStage()
-
-    def run_for_source(
-        self,
-        *,
-        production_run_id: str,
-        workspace_id: str,
-        source: dict[str, Any],
-        assessment_types: list[str],
-    ) -> str:
-        source_id = source["id"]
-        segments = self.db.list_ndr_segments_for_source(source_id)
-
-        if not segments:
-            raise RuntimeError(f"No NDR segments found for source {source_id}.")
-
-        has_structure_stage_run = self.db.has_completed_stage_run_for_source(
-            source_id,
-            StructureStageExecutor.STAGE_ID,
-        )
-        has_extract_stage_run = self.db.has_completed_stage_run_for_source(
-            source_id,
-            ExtractChapterKnowledgeStageExecutor.STAGE_ID,
-        )
-        has_document_chapters = self.db.has_document_chapters_for_source(source_id)
-        if not source_intellex_complete(
-            source,
-            has_segments=True,
-            has_document_chapters=has_document_chapters,
-            has_structure_stage_run=has_structure_stage_run,
-            has_extract_stage_run=has_extract_stage_run,
-        ):
-            raise RuntimeError(
-                f"Source {source_id} is not intellex-complete. "
-                "Run parse through extract-knowledge before generating assessments.",
-            )
-
-        wiki_entries = self.db.list_wiki_entries_for_workspace(workspace_id)
-        concepts = build_source_concepts(
-            wiki_entries=wiki_entries,
-            source_id=source_id,
-            segments=segments,
-        )
-
-        if not concepts:
-            raise RuntimeError(
-                f"No canonical wiki concepts with evidence found for source {source_id}. "
-                "Run extract-knowledge first.",
-            )
-
-        settings = get_settings()
-        concept_batches = batch_concepts(
-            concepts,
-            batch_size=settings.qngen_concept_batch_size,
-        )
-        wiki_ids = {concept.wiki_id for concept in concepts}
-        segment_ids = {str(segment["id"]) for segment in segments}
-
-        stage_run = self.db.create_stage_run(
-            {
-                "production_run_id": production_run_id,
-                "workspace_id": workspace_id,
-                "stage_id": self.STAGE_ID,
-                "stage_version": self.STAGE_VERSION,
-                "module": self.MODULE,
-                "status": "running",
-                "inputs": {
-                    "source_id": source_id,
-                    "segment_count": len(segments),
-                    "concept_count": len(concepts),
-                    "assessment_types": assessment_types,
-                },
-                "started_at": utc_now_iso(),
-            },
-        )
-        stage_run_id = stage_run["id"]
-
-        try:
-            source_metadata = source.get("source_metadata") or {}
-            if not isinstance(source_metadata, dict):
-                source_metadata = {}
-
-            output, execution = self.stage.run(
-                source_metadata=source_metadata,
-                concept_batches=concept_batches,
-                assessment_types=assessment_types,
-            )
-            validated_items, validation_report = validate_assessment_items(
-                items=output.items,
-                concepts=concepts,
-                segment_ids=segment_ids,
-                wiki_ids=wiki_ids,
-            )
-
-            assessment_set_id = str(uuid.uuid4())
-            set_row, flashcard_rows, quiz_rows, scenario_rows = promote_assessment_set(
-                workspace_id=workspace_id,
-                source_id=source_id,
-                production_run_id=production_run_id,
-                stage_run_id=stage_run_id,
-                stage_id=self.STAGE_ID,
-                stage_version=self.STAGE_VERSION,
-                source_metadata=source_metadata,
-                assessment_types=assessment_types,
-                items=validated_items,
-                assessment_set_id=assessment_set_id,
-            )
-
-            created_set = self.db.insert_assessment_set(set_row)
-            created_flashcards = self.db.insert_flashcards(flashcard_rows)
-            created_quizzes = self.db.insert_quizzes(quiz_rows)
-            created_scenarios = self.db.insert_scenarios(scenario_rows)
-
-            output_data = {
-                "items": validated_items,
-                "validation_report": validation_report,
-                "assessment_set_id": created_set["id"],
-            }
-
-            db_update = {
-                "status": "completed",
-                "output": output_data,
-                "promoted": {
-                    "assessment_set_id": created_set["id"],
-                    "flashcard_ids": [str(row["id"]) for row in created_flashcards],
-                    "quiz_ids": [str(row["id"]) for row in created_quizzes],
-                    "scenario_ids": [str(row["id"]) for row in created_scenarios],
-                },
-                **stage_run_completion_fields(execution),
-                "completed_at": utc_now_iso(),
-            }
-            self.db.update_stage_run(stage_run_id, db_update)
-            return stage_run_id
-        except Exception as exc:
-            logger.exception("Stage run %s failed", stage_run_id)
-            self.db.update_stage_run(
-                stage_run_id,
-                {
-                    "status": "failed",
-                    "error": str(exc),
-                    "completed_at": utc_now_iso(),
-                },
-            )
-            raise
 
 
 def _run_qngen_stage(

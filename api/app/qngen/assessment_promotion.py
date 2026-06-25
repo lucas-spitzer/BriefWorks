@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.qngen.skills.shared.item_mapping import normalize_difficulty
+
 
 def build_citations(
     *,
@@ -46,7 +48,7 @@ def promote_flashcards(
                 "stage_run_id": stage_run_id,
                 "front": card["front"],
                 "back": card["back"],
-                "difficulty": card.get("difficulty") or "medium",
+                "difficulty": normalize_difficulty(card.get("difficulty")),
                 "tags": card.get("tags") or [],
                 "citations": build_citations(
                     wiki_ids=card.get("wiki_ids_cited") or [],
@@ -88,7 +90,7 @@ def promote_quizzes(
                 "options": question.get("options") or [],
                 "correct_answer": question["correct_answer"],
                 "explanation": question.get("explanation"),
-                "difficulty": question.get("difficulty") or "medium",
+                "difficulty": normalize_difficulty(question.get("difficulty")),
                 "citations": build_citations(
                     wiki_ids=question.get("wiki_ids_cited") or [],
                     segment_ids=question.get("segment_ids_used") or [],
@@ -128,7 +130,7 @@ def promote_scenarios(
                 "prompt": scenario["prompt"],
                 "context": scenario.get("context"),
                 "evaluation_criteria": scenario.get("evaluation_criteria") or [],
-                "difficulty": scenario.get("difficulty") or "medium",
+                "difficulty": normalize_difficulty(scenario.get("difficulty")),
                 "citations": build_citations(
                     wiki_ids=scenario.get("wiki_ids_cited") or [],
                     segment_ids=scenario.get("segment_ids_used") or [],

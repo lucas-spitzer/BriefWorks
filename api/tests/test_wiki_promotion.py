@@ -41,6 +41,81 @@ def test_promote_concepts_creates_insert_for_new_term() -> None:
     assert disputes == []
 
 
+def test_promote_merges_term_into_existing_concept_entry() -> None:
+    # A term whose label matches an existing concept entry must update that
+    # entry (not create a `tempo--term` duplicate), keeping the richer kind.
+    concept = DeconstructedConcept(
+        term_label="Tempo",
+        definition="Speed over time.",
+        entry_kind="term",
+        importance="essential",
+        evidence_segment_ids=["seg-1"],
+    )
+
+    inserts, updates, disputes = promote_concepts_to_wiki(
+        workspace_id="ws-1",
+        source_id="src-2",
+        stage_run_id="run-2",
+        stage_id="extract-chapter-knowledge",
+        stage_version="2.0",
+        concepts=[concept],
+        segment_index={"seg-1": {"id": "seg-1", "locator": {"page": 1}}},
+        existing_entries=[
+            {
+                "id": "wiki-tempo",
+                "canonical_slug": "tempo",
+                "preferred_label": "Tempo",
+                "definition": "Speed over time.",
+                "entry_kind": "concept",
+                "aliases": [],
+                "importance": "supporting",
+                "evidence": [],
+            },
+        ],
+    )
+
+    assert inserts == []
+    assert disputes == []
+    assert len(updates) == 1
+    assert updates[0]["id"] == "wiki-tempo"
+    assert updates[0]["entry_kind"] == "concept"  # richer kind retained
+
+
+def test_promote_keeps_insight_separate_from_concept() -> None:
+    insight = DeconstructedConcept(
+        term_label="Tempo",
+        definition="Sustaining a faster tempo collapses enemy decision-making.",
+        entry_kind="insight",
+        importance="essential",
+        evidence_segment_ids=["seg-1"],
+    )
+
+    inserts, updates, _disputes = promote_concepts_to_wiki(
+        workspace_id="ws-1",
+        source_id="src-2",
+        stage_run_id="run-2",
+        stage_id="extract-chapter-knowledge",
+        stage_version="2.0",
+        concepts=[insight],
+        segment_index={"seg-1": {"id": "seg-1", "locator": {"page": 1}}},
+        existing_entries=[
+            {
+                "id": "wiki-tempo",
+                "canonical_slug": "tempo",
+                "preferred_label": "Tempo",
+                "definition": "Speed over time.",
+                "entry_kind": "concept",
+                "aliases": [],
+                "evidence": [],
+            },
+        ],
+    )
+
+    assert updates == []
+    assert len(inserts) == 1
+    assert inserts[0]["canonical_slug"] == "tempo--insight"
+
+
 def test_promote_concepts_logs_dispute_on_conflicting_definition() -> None:
     concept = DeconstructedConcept(
         term_label="ROE",

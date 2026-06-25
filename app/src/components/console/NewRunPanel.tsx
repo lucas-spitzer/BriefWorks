@@ -2,9 +2,8 @@ import { useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { sourceTitle } from '../../lib/consoleMappers'
 import {
+  ASSESSMENT_ARTIFACT_OPTIONS,
   NARRATION_ARTIFACT_OPTIONS,
-  REVIEW_ARTIFACT_VALUES,
-  REVIEW_PURPOSES,
 } from '../../lib/workspaceApi'
 import { ErrorBanner } from './ErrorBanner'
 
@@ -17,7 +16,7 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
   const { sources, createProductionRun } = useWorkspaceData()
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
   const [narrationTarget, setNarrationTarget] = useState<string | null>(null)
-  const [includeReview, setIncludeReview] = useState(false)
+  const [selectedAssessments, setSelectedAssessments] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
@@ -31,6 +30,12 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
     setNarrationTarget((current) => (current === value ? null : value))
   }
 
+  const toggleAssessment = (value: string) => {
+    setSelectedAssessments((current) =>
+      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
+    )
+  }
+
   const handleSubmit = async () => {
     if (!selectedSourceIds.length) {
       setSubmitError('Select at least one source.')
@@ -41,9 +46,7 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
     if (narrationTarget) {
       targetArtifacts.push(narrationTarget)
     }
-    if (includeReview) {
-      targetArtifacts.push(...REVIEW_ARTIFACT_VALUES)
-    }
+    targetArtifacts.push(...selectedAssessments)
 
     setIsSubmitting(true)
     setSubmitError(null)
@@ -89,8 +92,7 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
               ))}
             </div>
 
-            <p className="bw-console__field-label">Narration output</p>
-            <p className="bw-console__field-hint">Choose one. Leave unselected to upload only.</p>
+            <p className="bw-console__field-label">Artifacts</p>
             <div className="bw-console__chips" style={{ marginBottom: 20 }}>
               {NARRATION_ARTIFACT_OPTIONS.map((option) => (
                 <button
@@ -104,31 +106,18 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
               ))}
             </div>
 
-            <p className="bw-console__field-label">Review material</p>
-            <div className="bw-console__review-material">
-              <button
-                type="button"
-                className={`bw-console__toggle${includeReview ? ' is-on' : ''}`}
-                role="switch"
-                aria-checked={includeReview}
-                onClick={() => setIncludeReview((current) => !current)}
-              >
-                <span className="bw-console__toggle-track" aria-hidden="true">
-                  <span className="bw-console__toggle-thumb" />
-                </span>
-                <span className="bw-console__toggle-label">
-                  {includeReview ? 'Generating review material' : 'Generate review material'}
-                </span>
-              </button>
-              <div className={`bw-console__purposes${includeReview ? ' is-on' : ''}`}>
-                {REVIEW_PURPOSES.map((item) => (
-                  <div key={item.label} className="bw-console__purpose">
-                    <span className="bw-console__purpose-name">{item.label}</span>
-                    <span className="bw-console__purpose-arrow" aria-hidden="true">→</span>
-                    <span className="bw-console__purpose-goal">{item.purpose}</span>
-                  </div>
-                ))}
-              </div>
+            <p className="bw-console__field-label">Assessments</p>
+            <div className="bw-console__chips" style={{ marginBottom: 20 }}>
+              {ASSESSMENT_ARTIFACT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`bw-console__chip${selectedAssessments.includes(option.value) ? ' is-active' : ''}`}
+                  onClick={() => toggleAssessment(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
             </div>
             {submitError ? <ErrorBanner message={submitError} /> : null}
             <button

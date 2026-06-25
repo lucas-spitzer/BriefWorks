@@ -25,10 +25,10 @@ def test_capability_tiers_within_range() -> None:
 
 
 def test_get_catalog_model_exact_and_prefix() -> None:
-    assert get_catalog_model("gpt-4o-mini").display_name == "GPT-4o mini"
-    # A dated snapshot should resolve by longest-prefix, not collapse to gpt-4o.
-    assert get_catalog_model("gpt-4o-mini-2024-07-18").model == "gpt-4o-mini"
-    assert get_catalog_model("gpt-4o-2024-08-06").model == "gpt-4o"
+    assert get_catalog_model("gpt-5.4-mini").display_name == "GPT-5.4 mini"
+    # A dated snapshot should resolve by longest-prefix, not collapse to gpt-5.4.
+    assert get_catalog_model("gpt-5.4-mini-2026-01-01").model == "gpt-5.4-mini"
+    assert get_catalog_model("gpt-5.4-2026-01-01").model == "gpt-5.4"
     assert get_catalog_model("nonexistent-model") is None
     assert get_catalog_model(None) is None
 

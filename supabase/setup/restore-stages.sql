@@ -198,7 +198,7 @@ values
   ),
   (
     'extract-knowledge',
-    '2.0',
+    '2.1',
     'intellex',
     'Extract Knowledge',
     'Derive Bloom-aligned learning objectives per chapter, then extract terms, concepts, and insights with evidence quotes and objective mapping.',
@@ -375,7 +375,7 @@ values
   ),
   (
     'generate-flashcards',
-    '2.0',
+    '2.1',
     'qngen',
     'Generate Flashcards',
     'Generate memorization flashcards via skill-based draft/critique orchestration, grounded in wiki concepts, evidence segments, and learning objectives.',
@@ -389,7 +389,7 @@ values
   ),
   (
     'generate-questions',
-    '2.0',
+    '2.1',
     'qngen',
     'Generate Questions',
     'Generate understanding checks via skill-based draft/critique orchestration, grounded in wiki concepts, evidence segments, and learning objectives.',
@@ -403,7 +403,7 @@ values
   ),
   (
     'generate-scenarios',
-    '2.0',
+    '2.1',
     'qngen',
     'Generate Scenarios',
     'Generate application scenarios via skill-based draft/critique orchestration, grounded in essential wiki concepts and evidence segments.',

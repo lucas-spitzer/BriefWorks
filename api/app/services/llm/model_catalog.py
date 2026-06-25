@@ -20,7 +20,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.llm_defaults import DEFAULT_OPENAI_MODEL, HAIKU_45_MODEL
+from app.llm_defaults import HAIKU_45_MODEL
 
 
 @dataclass(frozen=True)
@@ -109,28 +109,6 @@ MODEL_CATALOG: tuple[CatalogModel, ...] = (
         input_per_million=0.75,
         output_per_million=4.50,
     ),
-    CatalogModel(
-        model="gpt-4o",
-        provider="openai",
-        display_name="GPT-4o",
-        capability_tier=3,
-        supports_reasoning=False,
-        reasoning_modes=(),
-        context_window=128_000,
-        input_per_million=2.50,
-        output_per_million=10.00,
-    ),
-    CatalogModel(
-        model=DEFAULT_OPENAI_MODEL,
-        provider="openai",
-        display_name="GPT-4o mini",
-        capability_tier=2,
-        supports_reasoning=False,
-        reasoning_modes=(),
-        context_window=128_000,
-        input_per_million=0.15,
-        output_per_million=0.60,
-    ),
 )
 
 
@@ -145,7 +123,7 @@ def get_catalog_model(model: str | None) -> CatalogModel | None:
         if entry.model.lower() == normalized:
             return entry
 
-    # Longest prefix first so "gpt-4o-mini-..." beats "gpt-4o".
+    # Longest prefix first so "gpt-5.4-mini-..." beats "gpt-5.4".
     for entry in sorted(MODEL_CATALOG, key=lambda e: len(e.model), reverse=True):
         if normalized.startswith(entry.model.lower()):
             return entry

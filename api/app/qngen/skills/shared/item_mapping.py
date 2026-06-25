@@ -5,6 +5,29 @@ from typing import Any, Literal
 
 ArtifactType = Literal["flashcard", "quiz", "scenario"]
 
+_VALID_DIFFICULTIES = {"easy", "medium", "hard"}
+
+
+def normalize_difficulty(value: Any) -> str:
+    """Coerce a model-emitted difficulty onto the DB-allowed enum.
+
+    The ``{flashcards,quizzes,scenarios}_difficulty_check`` constraints only
+    permit ``easy|medium|hard``. Models routinely improvise values like
+    ``"medium-hard"``, ``"very easy"``, or ``"challenging"``; map those onto a
+    valid bucket rather than letting the insert fail.
+    """
+    if not isinstance(value, str):
+        return "medium"
+
+    cleaned = value.strip().lower()
+    if cleaned in _VALID_DIFFICULTIES:
+        return cleaned
+    if "hard" in cleaned:
+        return "hard"
+    if "easy" in cleaned:
+        return "easy"
+    return "medium"
+
 
 def normalize_question_type(subtype: str | None) -> str:
     mapping = {
@@ -21,7 +44,7 @@ def assessment_item_to_flashcard(item: dict[str, Any]) -> dict[str, Any]:
     return {
         "front": item.get("front") or "",
         "back": item.get("back") or "",
-        "difficulty": item.get("difficulty") or "medium",
+        "difficulty": normalize_difficulty(item.get("difficulty")),
         "tags": item.get("tags") or [],
         "wiki_ids_cited": item.get("wiki_ids_cited") or [],
         "segment_ids_used": item.get("source_chunk_ids") or [],
@@ -42,7 +65,7 @@ def assessment_item_to_quiz(item: dict[str, Any]) -> dict[str, Any]:
         "options": choices,
         "correct_answer": correct_answer,
         "explanation": item.get("explanation"),
-        "difficulty": item.get("difficulty") or "medium",
+        "difficulty": normalize_difficulty(item.get("difficulty")),
         "wiki_ids_cited": item.get("wiki_ids_cited") or [],
         "segment_ids_used": item.get("source_chunk_ids") or [],
     }
@@ -62,7 +85,7 @@ def assessment_item_to_scenario(item: dict[str, Any]) -> dict[str, Any]:
         "prompt": task,
         "context": situation,
         "evaluation_criteria": criteria,
-        "difficulty": item.get("difficulty") or "medium",
+        "difficulty": normalize_difficulty(item.get("difficulty")),
         "wiki_ids_cited": item.get("wiki_ids_cited") or [],
         "segment_ids_used": item.get("source_chunk_ids") or [],
     }

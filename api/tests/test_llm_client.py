@@ -52,7 +52,7 @@ def test_resolve_action_openai_stage_defaults(monkeypatch: pytest.MonkeyPatch) -
     provider, model = resolve_action("source_research")
 
     assert provider == "openai"
-    assert model == "gpt-4o-mini"
+    assert model == "gpt-5.4-mini"
 
 
 def test_resolve_action_openai_stage_uses_global_model_default(

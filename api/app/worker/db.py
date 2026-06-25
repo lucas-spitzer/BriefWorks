@@ -389,9 +389,3 @@ class WorkerDatabase:
             created.extend(self._request("POST", "scenarios", json_body=batch) or [])
 
         return created
-
-    def insert_assessment_set(self, row: dict[str, Any]) -> dict[str, Any]:
-        created = self._request("POST", "assessment_sets", json_body=row)
-        if isinstance(created, list):
-            return created[0]
-        return created

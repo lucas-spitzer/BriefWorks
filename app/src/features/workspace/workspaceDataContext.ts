@@ -1,7 +1,6 @@
 import { createContext, useContext } from 'react'
 import type {
   Artifact,
-  AssessmentSetSummary,
   Flashcard,
   ProductionRun,
   Quiz,
@@ -17,7 +16,6 @@ export interface WorkspaceDataContextValue {
   stageRunsByRunId: Record<string, StageRun[]>
   artifacts: Artifact[]
   wikiEntries: WikiEntry[]
-  assessmentSets: AssessmentSetSummary[]
   flashcards: Flashcard[]
   quizzes: Quiz[]
   scenarios: Scenario[]

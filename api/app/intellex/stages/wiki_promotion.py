@@ -3,7 +3,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from app.intellex.stages.concept_models import DeconstructedConcept
+from app.intellex.stages.concept_models import (
+    DeconstructedConcept,
+    merge_group,
+    pick_entry_kind,
+)
 from app.intellex.wiki_slug import normalize_slug
 
 
@@ -14,7 +18,13 @@ def _wiki_slug_for_concept(
     base = normalize_slug(concept.term_label)
     existing = entries_by_slug.get(base)
 
-    if existing and str(existing.get("entry_kind") or "concept") != concept.entry_kind:
+    # Only diverge to a kind-suffixed slug when the existing entry is in a
+    # different merge group (e.g. an insight vs a term/concept). A term and a
+    # concept for the same subject share the base slug so they merge into one
+    # entry instead of becoming near-duplicates.
+    if existing and merge_group(str(existing.get("entry_kind") or "concept")) != merge_group(
+        concept.entry_kind
+    ):
         return f"{base}--{concept.entry_kind}"
 
     return base
@@ -125,7 +135,9 @@ def promote_concepts_to_wiki(
                 "prerequisites": [],
                 "importance": concept.importance,
                 "entry_kind": concept.entry_kind,
-                "status": "canonical",
+                "status": concept.status,
+                "confidence": concept.confidence,
+                "selection_score": concept.selection_score,
                 "evidence": evidence,
                 "origin": origin,
             }
@@ -172,7 +184,10 @@ def promote_concepts_to_wiki(
                     str(existing.get("importance") or "supporting"),
                     concept.importance,
                 ),
-                "entry_kind": concept.entry_kind,
+                "entry_kind": pick_entry_kind(
+                    str(existing.get("entry_kind") or "concept"),
+                    concept.entry_kind,
+                ),
                 "evidence": _merge_evidence(existing.get("evidence") or [], evidence),
                 "origin": origin,
             },

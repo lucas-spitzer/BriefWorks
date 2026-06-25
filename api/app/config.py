@@ -9,8 +9,26 @@ from app.llm_actions import LLM_ACTION_DEFAULTS, LLM_GLOBAL_DEFAULT
 from app.llm_defaults import DEFAULT_OPENAI_MODEL
 
 API_DIR = Path(__file__).resolve().parents[1]
+_DOTENV_PATH = API_DIR / ".env"
+_DOTENV_MTIME: float | None = None
 
-load_dotenv(API_DIR / ".env")
+load_dotenv(_DOTENV_PATH)
+
+
+def _refresh_dotenv_if_changed() -> None:
+    """Reload .env when the file changes so dev edits apply without a restart."""
+    global _DOTENV_MTIME
+
+    if not _DOTENV_PATH.exists():
+        return
+
+    mtime = _DOTENV_PATH.stat().st_mtime
+    if _DOTENV_MTIME == mtime:
+        return
+
+    load_dotenv(_DOTENV_PATH, override=True)
+    _DOTENV_MTIME = mtime
+    _get_settings_cached.cache_clear()
 
 
 def get_required_env(name: str) -> str:
@@ -50,6 +68,7 @@ def _bool_env(name: str, default: bool) -> bool:
 
 
 def _resolve_llm_action(action: str) -> "LLMActionSettings":
+    _refresh_dotenv_if_changed()
     provider_default, model_default = LLM_ACTION_DEFAULTS.get(action, LLM_GLOBAL_DEFAULT)
     key = action.upper()
     provider = os.getenv(f"LLM_{key}_PROVIDER", provider_default).strip().lower()
@@ -112,6 +131,22 @@ class IntellexSettings:
     extract_chapter_max_chars: int | None
     eleven_reader_max_pages: int
     prepare_batch_pages: int
+    # Wiki-entry selection bands/thresholds (extraction redesign). Defaults are
+    # permissive (0 = no cap / no gate) so behavior is unchanged until the
+    # scored-selection phases consume them.
+    extract_max_entries_per_chapter: int
+    extract_max_entries_per_document: int
+    extract_min_confidence: float
+    extract_min_selection_score: float
+    # Comparative importance calibration: top fraction → essential, next
+    # fraction → supporting, remainder → contextual (document-wide ranking).
+    extract_essential_fraction: float
+    extract_supporting_fraction: float
+    # Embedding-based semantic dedup (off by default — adds per-extraction
+    # embedding API cost). Merges candidates whose vectors exceed the threshold.
+    extract_embedding_dedup: bool
+    extract_embedding_model: str
+    extract_embedding_similarity_threshold: float
 
 
 @dataclass(frozen=True)
@@ -206,7 +241,7 @@ class Settings:
 
 
 @lru_cache
-def get_settings() -> Settings:
+def _get_settings_cached() -> Settings:
     deep_importance = tuple(
         value.strip()
         for value in parse_csv_env("EXTRACT_KNOWLEDGE_DEEP_IMPORTANCE", "essential,supporting")
@@ -250,6 +285,17 @@ def get_settings() -> Settings:
             extract_chapter_max_chars=extract_chapter_max_chars,
             eleven_reader_max_pages=int(os.getenv("ELEVEN_READER_MAX_PAGES", "500")),
             prepare_batch_pages=int(os.getenv("PREPARE_BATCH_PAGES", "15")),
+            extract_max_entries_per_chapter=int(os.getenv("EXTRACT_MAX_ENTRIES_PER_CHAPTER", "0")),
+            extract_max_entries_per_document=int(os.getenv("EXTRACT_MAX_ENTRIES_PER_DOCUMENT", "0")),
+            extract_min_confidence=float(os.getenv("EXTRACT_MIN_CONFIDENCE", "0.0")),
+            extract_min_selection_score=float(os.getenv("EXTRACT_MIN_SELECTION_SCORE", "0.0")),
+            extract_essential_fraction=float(os.getenv("EXTRACT_ESSENTIAL_FRACTION", "0.2")),
+            extract_supporting_fraction=float(os.getenv("EXTRACT_SUPPORTING_FRACTION", "0.4")),
+            extract_embedding_dedup=_bool_env("EXTRACT_EMBEDDING_DEDUP", False),
+            extract_embedding_model=os.getenv("EXTRACT_EMBEDDING_MODEL", "text-embedding-3-small"),
+            extract_embedding_similarity_threshold=float(
+                os.getenv("EXTRACT_EMBEDDING_SIMILARITY_THRESHOLD", "0.86"),
+            ),
         ),
         qngen=QnGenSettings(
             concept_batch_size=int(os.getenv("QNGEN_CONCEPT_BATCH_SIZE", "8")),
@@ -277,3 +323,11 @@ def get_settings() -> Settings:
             max_chars=int(os.getenv("SPEECHIFY_MAX_CHARS", "200000")),
         ),
     )
+
+
+def get_settings() -> Settings:
+    _refresh_dotenv_if_changed()
+    return _get_settings_cached()
+
+
+get_settings.cache_clear = _get_settings_cached.cache_clear  # type: ignore[attr-defined]

@@ -7,6 +7,10 @@ from typing import Any
 # Structure produces the chapter/section model (taking over chapter grouping
 # from the removed deconstruct-document), and the chunk step turns that model
 # into both ndr_segments and document_chapters.
+#
+# Knowledge no longer comes from an extraction stage: wiki entries are curated
+# manually via the wiki authoring flow (services/wiki_authoring.py) after the
+# author reads the generated ebook, then QnGen runs against that curated wiki.
 BASE_PIPELINE: list[dict[str, Any]] = [
     {
         "step": "store",
@@ -65,21 +69,24 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "source-research",
-        "stage_version": "2.0",
+        "stage_version": "2.1",
         "status": "pending",
     },
+    # Verifies the extracted profile against the public record (status,
+    # canonical URL, public publication date) via LLM web search. Skipped
+    # per-source when the distribution line marks the document non-public.
     {
-        "step": "extract-knowledge",
+        "step": "web-enrichment",
         "type": "stage",
         "module": "intellex",
-        "stage_id": "extract-knowledge",
-        "stage_version": "2.0",
+        "stage_id": "web-enrichment",
+        "stage_version": "1.0",
         "status": "pending",
     },
 ]
 
 OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
-    "eleven_reader_script": {
+    "electronic_book": {
         "step": "create-ebook",
         "type": "stage",
         "module": "mathesys",
@@ -87,19 +94,19 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "stage_version": "1.0",
         "status": "pending",
     },
-    "speechify_audio": {
-        "step": "speechify-audio",
+    "narration_audio": {
+        "step": "generate-narration",
         "type": "stage",
         "module": "mathesys",
-        "stage_id": "speechify-audio",
+        "stage_id": "generate-narration",
         "stage_version": "1.0",
         "status": "pending",
     },
-    "elevenlabs_audio": {
-        "step": "elevenlabs-audio",
+    "wiki_json": {
+        "step": "export-wiki-json",
         "type": "stage",
         "module": "mathesys",
-        "stage_id": "elevenlabs-audio",
+        "stage_id": "export-wiki-json",
         "stage_version": "1.0",
         "status": "pending",
     },

@@ -135,9 +135,7 @@ flowchart LR
 
     subgraph optional["Optional steps — appended per target_artifact"]
         direction TB
-        M1[elevenreader-ebook]
-        M3[speechify-audio]
-        M4[elevenlabs-audio]
+        M1[create-ebook]
         Q1[generate-flashcards]
         Q2[generate-questions]
         Q3[generate-scenarios]
@@ -148,9 +146,7 @@ flowchart LR
 
 | `target_artifact` | Pipeline step | Module | Output |
 |-------------------|---------------|--------|--------|
-| `eleven_reader_script` | `elevenreader-ebook` | Mathesys | ElevenReader EBook (one chapter-based EPUB for manual upload) |
-| `speechify_audio` | `speechify-audio` | Mathesys | Speechify Audio (MP3 via API; SSML when no key) |
-| `elevenlabs_audio` | `elevenlabs-audio` | Mathesys | ElevenLabs Audio (MP3 via API) |
+| `electronic_book` | `create-ebook` | Mathesys | Electronic Book (one chapter-based EPUB for manual upload) |
 | `flashcards` | `generate-flashcards` | QnGen | Flashcard set |
 | `quizzes` | `generate-questions` | QnGen | Question set |
 | `scenarios` | `generate-scenarios` | QnGen | Scenario set |
@@ -173,9 +169,7 @@ flowchart TD
     end
 
     subgraph mathesys["Mathesys Stage — selected only"]
-        ELEVEN[elevenreader-ebook]
-        SPAPI[speechify-audio]
-        ELLABS[elevenlabs-audio]
+        EBOOK[create-ebook]
     end
 
     subgraph qngen["QnGen Stage — selected only"]
@@ -187,7 +181,7 @@ flowchart TD
     RUNNING --> STORE
     EXTRACT -- promote knowledge --> WIKI[(wiki_entries)]
     EXTRACT --> mathesys
-    mathesys -- EPUB / SSML --> ART[(artifacts + Storage)]
+    mathesys -- EPUB --> ART[(artifacts + Storage)]
     mathesys --> qngen
     qngen --> ASSESS[(flashcards · quizzes · scenarios)]
     qngen --> DONE([status = completed])
@@ -195,7 +189,7 @@ flowchart TD
     DONE -.failure at any step.-> FAILED([status = failed<br/>error recorded])
 ```
 
-Each stage step runs once per selected source, recording an immutable `stage_run` row (inputs, output, model, token usage). Intellex `prepare-document` strips non-learning content; `deconstruct-document` persists chapter/section groupings in `document_chapters`; `extract-knowledge` promotes terms, concepts, and insights into `wiki_entries`. Mathesys `elevenreader-ebook` builds one simple EPUB per source from `document_chapters` (chapter titles, subsection headings, body text) for manual ElevenReader upload. Other Mathesys stages emit `artifacts` (EPUB files land in Storage; a signed URL is served on download). QnGen stages promote `flashcards`, `quizzes`, and `scenarios`. If any step raises, the run is marked `failed`, the error is recorded, and in-flight sources are reset.
+Each stage step runs once per selected source, recording an immutable `stage_run` row (inputs, output, model, token usage). Intellex `prepare-document` strips non-learning content; `deconstruct-document` persists chapter/section groupings in `document_chapters`; `extract-knowledge` promotes terms, concepts, and insights into `wiki_entries`. Mathesys `create-ebook` builds one simple EPUB per source from `document_chapters` (chapter titles, subsection headings, body text) for manual ElevenReader upload; the resulting `electronic_book` artifact lands in Storage with a signed URL served on download. QnGen stages promote `flashcards`, `quizzes`, and `scenarios`. If any step raises, the run is marked `failed`, the error is recorded, and in-flight sources are reset.
 
 ---
 

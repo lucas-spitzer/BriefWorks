@@ -152,7 +152,7 @@ export function ConsoleOps({ onGoToSources }: ConsoleOpsProps) {
                 <span className="bw-count">{sortedRuns.length}</span>
               </div>
               {sortedRuns.map((run) => {
-                const progress = productionRunProgress(run)
+                const progress = productionRunProgress(run, stageRunsByRunId[run.id] ?? [])
                 const apiRequestCount = flattenApiRequests([run], stageRunsByRunId, sources).length
                 const runCost = productionRunCostUsd(run, stageRunsByRunId[run.id] ?? [])
                 return (

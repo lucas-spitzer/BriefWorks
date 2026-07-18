@@ -8,6 +8,8 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from app.config import Settings, get_settings
 from app.dependencies.auth import require_approved_user
 from app.dependencies.services import (
+    get_document_chapter_repository,
+    get_narration_segment_repository,
     get_ndr_segment_repository,
     get_production_run_repository,
     get_source_repository,
@@ -16,9 +18,13 @@ from app.dependencies.services import (
 from app.dependencies.workspace import require_workspace
 from app.errors import is_duplicate_key_error
 from app.models.auth import CurrentUser
+from app.models.document_chapter import DocumentChapterResponse
+from app.models.narration import NarrationAudioResponse, NarrationSegmentResponse
 from app.models.ndr_segment import NdrSegmentResponse
 from app.models.source import SourceResponse
 from app.models.workspace import WorkspaceResponse
+from app.repositories.document_chapters import DocumentChapterRepository
+from app.repositories.narration_segments import NarrationSegmentRepository
 from app.repositories.ndr_segments import NdrSegmentRepository
 from app.repositories.production_runs import ProductionRunRepository
 from app.repositories.sources import SourceRepository
@@ -173,6 +179,98 @@ async def list_source_segments(
         ) from exc
 
     return [NdrSegmentResponse.model_validate(row) for row in rows]
+
+
+@router.get("/{source_id}/chapters", response_model=list[DocumentChapterResponse])
+async def list_source_chapters(
+    source_id: str,
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
+    user: Annotated[CurrentUser, Depends(require_approved_user)],
+    chapters: Annotated[DocumentChapterRepository, Depends(get_document_chapter_repository)],
+    limit: Annotated[int, Query(ge=1, le=1000)] = 500,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[DocumentChapterResponse]:
+    try:
+        rows = await chapters.list_for_source(
+            source_id,
+            workspace.id,
+            user.id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source not found.",
+        ) from exc
+
+    return [DocumentChapterResponse.model_validate(row) for row in rows]
+
+
+@router.get("/{source_id}/narration", response_model=list[NarrationSegmentResponse])
+async def list_source_narration(
+    source_id: str,
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
+    user: Annotated[CurrentUser, Depends(require_approved_user)],
+    narration: Annotated[NarrationSegmentRepository, Depends(get_narration_segment_repository)],
+    limit: Annotated[int, Query(ge=1, le=2000)] = 1000,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[NarrationSegmentResponse]:
+    try:
+        rows = await narration.list_for_source(
+            source_id,
+            workspace.id,
+            user.id,
+            limit=limit,
+            offset=offset,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source not found.",
+        ) from exc
+
+    return [NarrationSegmentResponse.model_validate(row) for row in rows]
+
+
+@router.get(
+    "/{source_id}/narration/{segment_id}/audio",
+    response_model=NarrationAudioResponse,
+)
+async def get_source_narration_audio(
+    source_id: str,
+    segment_id: str,
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
+    user: Annotated[CurrentUser, Depends(require_approved_user)],
+    narration: Annotated[NarrationSegmentRepository, Depends(get_narration_segment_repository)],
+    storage: Annotated[SupabaseStorageClient, Depends(get_supabase_storage_client)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> NarrationAudioResponse:
+    try:
+        row = await narration.get_for_segment(source_id, segment_id, workspace.id, user.id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Source not found.",
+        ) from exc
+
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Narration not found for this segment.",
+        )
+
+    audio_url = await storage.create_signed_url(
+        bucket=settings.sources_bucket,
+        path=row["audio_path"],
+        expires_in=settings.signed_url_expires_seconds,
+    )
+
+    return NarrationAudioResponse(
+        segment_id=segment_id,
+        audio_url=audio_url,
+        expires_in=settings.signed_url_expires_seconds,
+    )
 
 
 @router.delete("/{source_id}", status_code=status.HTTP_204_NO_CONTENT)

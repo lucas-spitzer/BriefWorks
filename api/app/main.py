@@ -9,7 +9,7 @@ from app.dependencies.auth import require_approved_user
 from app.errors import register_exception_handlers
 from app.logging_config import configure_logging
 from app.models.auth import CurrentUser, CurrentUserResponse
-from app.routers import artifacts, assessments, llm, production_runs, stages, sources, wiki, workspaces
+from app.routers import assistant, artifacts, assessments, llm, production_runs, stages, sources, wiki, workspaces
 
 configure_logging()
 settings = get_settings()
@@ -60,6 +60,7 @@ app.include_router(wiki.router)
 app.include_router(artifacts.router)
 app.include_router(assessments.router)
 app.include_router(llm.router)
+app.include_router(assistant.router)
 
 
 @app.get("/health")

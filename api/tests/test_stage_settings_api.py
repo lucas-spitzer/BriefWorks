@@ -70,7 +70,7 @@ def test_get_reflects_stored_override() -> None:
     repo = FakeStageSettingsRepo(
         rows=[
             {
-                "stage_action": "extract_knowledge",
+                "stage_action": "wiki_structuring",
                 "provider": "openai",
                 "model": "gpt-5.4",
                 "reasoning_effort": "high",
@@ -81,13 +81,13 @@ def test_get_reflects_stored_override() -> None:
 
     response = asyncio.run(get_stage_settings(_workspace(), repo))  # type: ignore[arg-type]
 
-    extract = next(s for s in response.settings if s.stage_action == "extract_knowledge")
-    assert extract.is_overridden is True
-    assert extract.provider == "openai"
-    assert extract.model == "gpt-5.4"
-    assert extract.reasoning_effort == "high"
-    assert extract.reasoning_tokens == 2048
-    assert extract.default_provider == "anthropic"
+    override = next(s for s in response.settings if s.stage_action == "wiki_structuring")
+    assert override.is_overridden is True
+    assert override.provider == "openai"
+    assert override.model == "gpt-5.4"
+    assert override.reasoning_effort == "high"
+    assert override.reasoning_tokens == 2048
+    assert override.default_provider == "openai"
 
 
 def test_put_upserts_and_normalizes() -> None:
@@ -95,7 +95,7 @@ def test_put_upserts_and_normalizes() -> None:
     payload = StageSettingUpdate(provider="Anthropic", model=" claude-opus-4-8 ")
 
     result = asyncio.run(
-        put_stage_setting("extract_knowledge", payload, _workspace(), repo),  # type: ignore[arg-type]
+        put_stage_setting("wiki_structuring", payload, _workspace(), repo),  # type: ignore[arg-type]
     )
 
     assert repo.upserted[0]["provider"] == "anthropic"

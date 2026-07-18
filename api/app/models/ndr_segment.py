@@ -11,5 +11,6 @@ class NdrSegmentResponse(BaseModel):
     sequence_index: int
     kind: str
     text: str
+    md: str | None = None
     locator: dict[str, Any]
     created_at: datetime

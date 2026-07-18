@@ -82,10 +82,11 @@ def test_blueprint_passes_essential_filter_and_count_band(monkeypatch) -> None:
     ]
 
     output, execution = ScenarioGenStage().run(
-        source_metadata={"extract": {"chapters": _chapters()}},
+        source_metadata={},
         concepts=concepts,
         concept_batches=[],
         learning_objectives=[],
+        chapters=_chapters(),
     )
 
     assert execution["generation_mode"] == "blueprint"
@@ -119,10 +120,11 @@ def test_blueprint_with_no_essential_concepts_returns_empty(monkeypatch) -> None
     ]
 
     output, execution = ScenarioGenStage().run(
-        source_metadata={"extract": {"chapters": _chapters()}},
+        source_metadata={},
         concepts=concepts,
         concept_batches=[],
         learning_objectives=[],
+        chapters=_chapters(),
     )
 
     assert output.scenarios == []

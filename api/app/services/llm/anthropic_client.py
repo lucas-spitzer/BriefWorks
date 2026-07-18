@@ -96,6 +96,14 @@ def _first_text(response: Any) -> str:
     return "".join(parts)
 
 
+def _text_blocks(response: Any) -> list[str]:
+    return [
+        getattr(block, "text", "") or ""
+        for block in getattr(response, "content", None) or []
+        if getattr(block, "type", None) == "text"
+    ]
+
+
 def _salvage_items_object(raw: str) -> dict[str, Any] | None:
     """Best-effort recovery when the model returns truncated JSON."""
     items_key = raw.find('"items"')
@@ -335,5 +343,75 @@ class AnthropicClient:
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
                 "total_tokens": input_tokens + output_tokens,
+            },
+        )
+
+    def complete_json_with_web_search(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        max_searches: int = 5,
+    ) -> LLMCompletionResult:
+        resolved_model = model or self.model
+
+        # No assistant prefill here: prefilling "{" would force the model to
+        # answer immediately instead of issuing web_search tool calls first.
+        request: dict[str, Any] = {
+            "model": resolved_model,
+            "max_tokens": self.max_tokens,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user_prompt}],
+            "tools": [
+                {
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": max(1, max_searches),
+                },
+            ],
+        }
+
+        if self.temperature is not None:
+            request["temperature"] = self.temperature
+
+        request.update(
+            _anthropic_reasoning_kwargs(
+                resolved_model,
+                self.reasoning,
+                max_tokens=self.max_tokens,
+            ),
+        )
+
+        response = self.client.messages.create(**request)
+
+        # The model interleaves commentary text between searches; the JSON
+        # answer is the last text block. Fall back to the concatenated text
+        # (with repair) when the last block alone doesn't parse.
+        content: dict[str, Any] | None = None
+        for block_text in reversed(_text_blocks(response)):
+            parsed = _try_parse_with_repair(block_text.strip())
+            if parsed is not None:
+                content = parsed
+                break
+
+        if content is None:
+            content = _parse_json_object(_first_text(response))
+
+        usage = getattr(response, "usage", None)
+        input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+        server_tool_use = getattr(usage, "server_tool_use", None)
+        web_search_requests = int(getattr(server_tool_use, "web_search_requests", 0) or 0)
+
+        return LLMCompletionResult(
+            content=content,
+            model=str(getattr(response, "model", resolved_model)),
+            provider=self.provider,
+            token_usage={
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": input_tokens + output_tokens,
+                "web_search_requests": web_search_requests,
             },
         )

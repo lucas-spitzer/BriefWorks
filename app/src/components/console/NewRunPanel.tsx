@@ -3,6 +3,7 @@ import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { sourceTitle } from '../../lib/consoleMappers'
 import {
   ASSESSMENT_ARTIFACT_OPTIONS,
+  KNOWLEDGE_ARTIFACT_OPTIONS,
   NARRATION_ARTIFACT_OPTIONS,
 } from '../../lib/workspaceApi'
 import { ErrorBanner } from './ErrorBanner'
@@ -15,7 +16,8 @@ interface NewRunPanelProps {
 export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
   const { sources, createProductionRun } = useWorkspaceData()
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
-  const [narrationTarget, setNarrationTarget] = useState<string | null>(null)
+  const [selectedNarration, setSelectedNarration] = useState<string[]>([])
+  const [selectedKnowledge, setSelectedKnowledge] = useState<string[]>([])
   const [selectedAssessments, setSelectedAssessments] = useState<string[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -26,12 +28,20 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
     )
   }
 
-  const selectNarration = (value: string) => {
-    setNarrationTarget((current) => (current === value ? null : value))
+  const toggleNarration = (value: string) => {
+    setSelectedNarration((current) =>
+      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
+    )
   }
 
   const toggleAssessment = (value: string) => {
     setSelectedAssessments((current) =>
+      current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
+    )
+  }
+
+  const toggleKnowledge = (value: string) => {
+    setSelectedKnowledge((current) =>
       current.includes(value) ? current.filter((item) => item !== value) : [...current, value],
     )
   }
@@ -43,9 +53,8 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
     }
 
     const targetArtifacts: string[] = []
-    if (narrationTarget) {
-      targetArtifacts.push(narrationTarget)
-    }
+    targetArtifacts.push(...selectedNarration)
+    targetArtifacts.push(...selectedKnowledge)
     targetArtifacts.push(...selectedAssessments)
 
     setIsSubmitting(true)
@@ -98,8 +107,22 @@ export function NewRunPanel({ onClose, onCreated }: NewRunPanelProps) {
                 <button
                   key={option.value}
                   type="button"
-                  className={`bw-console__chip${narrationTarget === option.value ? ' is-active' : ''}`}
-                  onClick={() => selectNarration(option.value)}
+                  className={`bw-console__chip${selectedNarration.includes(option.value) ? ' is-active' : ''}`}
+                  onClick={() => toggleNarration(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+
+            <p className="bw-console__field-label">Knowledge</p>
+            <div className="bw-console__chips" style={{ marginBottom: 20 }}>
+              {KNOWLEDGE_ARTIFACT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`bw-console__chip${selectedKnowledge.includes(option.value) ? ' is-active' : ''}`}
+                  onClick={() => toggleKnowledge(option.value)}
                 >
                   {option.label}
                 </button>

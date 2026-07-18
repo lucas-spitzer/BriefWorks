@@ -5,7 +5,9 @@ import re
 from app.intellex.models import ParsedDocument, ParsedLine
 
 _PREFACE_HEADING_RE = re.compile(
-    r"^(preface|foreword|introduction|executive\s+summary|purpose)\b",
+    r"^(preface|foreword|introduction|executive\s+summary|purpose"
+    r"|abstract|summary|overview|scope"
+    r"|about\s+this\s+(document|publication|report|paper|manual|guide|book|standard))\b",
     re.IGNORECASE,
 )
 _TOC_HEADING_RE = re.compile(

@@ -127,6 +127,12 @@ def test_chunk_builds_one_chapter_row_per_chapter_with_heading_first() -> None:
     assert sum(1 for s in segments if s["kind"] == "heading") == 5
     # Segment text is plain (markdown emphasis flattened).
     assert all("*" not in s["text"] for s in segments)
+    # Sections capture each level-2 heading plus its body segments.
+    sections = chapters[0]["sections"]
+    assert [s["title"] for s in sections] == ["WAR DEFINED", "FRICTION"]
+    assert sections[0]["level"] == 2
+    assert sections[0]["heading_segment_id"] == sections[0]["segment_ids"][0]
+    assert all(sid in chapters[0]["segment_ids"] for sid in sections[0]["segment_ids"])
 
 
 def test_epub_render_emits_three_types_and_preserves_emphasis() -> None:

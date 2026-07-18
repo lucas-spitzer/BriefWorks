@@ -47,3 +47,25 @@ class OpenAILLMClient:
             provider=self.provider,
             token_usage=result.token_usage,
         )
+
+    def complete_json_with_web_search(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        max_searches: int = 5,
+    ) -> LLMCompletionResult:
+        result = self._client.complete_json_with_web_search(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model=model,
+            max_searches=max_searches,
+        )
+
+        return LLMCompletionResult(
+            content=result.content,
+            model=result.model,
+            provider=self.provider,
+            token_usage=result.token_usage,
+        )

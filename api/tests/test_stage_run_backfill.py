@@ -83,21 +83,3 @@ def test_backfill_fields_for_mathesys_llm_token_usage() -> None:
     assert fields["api_usage"]["totals"]["output_tokens"] == 3_000
 
 
-def test_backfill_fields_include_elevenlabs_tts_from_artifacts() -> None:
-    fields = backfill_fields_for_stage_run(
-        {
-            "stage_id": "elevenlabs-audio",
-            "model": "deterministic-passthrough",
-            "token_usage": {},
-        },
-        artifact_manifests=[
-            {
-                "model_id": "eleven_v3",
-                "character_count": 10_000,
-                "tts_request_count": 4,
-            },
-        ],
-    )
-
-    assert fields["cost_usd"] > 0
-    assert fields["api_usage"]["totals"]["elevenlabs_tokens"] == 10_000

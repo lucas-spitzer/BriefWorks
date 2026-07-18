@@ -47,6 +47,34 @@ class WikiEntryRepository:
             },
         )
 
+    async def get_many(self, wiki_entry_ids: list[str]) -> list[dict[str, Any]]:
+        if not wiki_entry_ids:
+            return []
+
+        return await self.db.select_many(
+            "wiki_entries",
+            filters={"id": f"in.({','.join(wiki_entry_ids)})"},
+            limit=len(wiki_entry_ids),
+        )
+
+    async def insert_many(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if not rows:
+            return []
+
+        return await self.db.insert("wiki_entries", rows)
+
+    async def update(
+        self,
+        wiki_entry_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        rows = await self.db.update(
+            "wiki_entries",
+            filters={"id": f"eq.{wiki_entry_id}"},
+            payload=payload,
+        )
+        return rows[0]
+
     async def list_disputes_for_workspace(
         self,
         workspace_id: str,

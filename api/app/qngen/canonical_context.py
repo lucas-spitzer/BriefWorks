@@ -147,14 +147,43 @@ class ChapterBlueprint(BaseModel):
     objectives: list[ObjectiveBlueprint] = Field(default_factory=list)
 
 
+def chapters_from_document_chapters(
+    chapter_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Blueprint chapter blocks from the persisted ``document_chapters`` table.
+
+    Replaces the ``source_metadata["extract"]["chapters"]`` block the retired
+    extraction stage used to persist: chapter structure now comes straight from
+    the structuring/chunk stages. Objectives are empty — with a manually
+    curated wiki, questions key off curated concepts grouped by chapter rather
+    than extracted objectives.
+    """
+    chapters: list[dict[str, Any]] = []
+
+    for row in chapter_rows:
+        chapters.append(
+            {
+                "chapter_id": str(row.get("id") or ""),
+                "chapter_title": str(row.get("title") or "Untitled"),
+                "sequence_index": int(row.get("sequence_index") or 0),
+                "segment_ids": [
+                    str(segment_id) for segment_id in row.get("segment_ids") or []
+                ],
+                "objectives": [],
+            },
+        )
+
+    return chapters
+
+
 def build_chapter_blueprint(
     chapters: list[dict[str, Any]],
     concepts: list[ConceptCard],
 ) -> list[ChapterBlueprint]:
     """Join persisted chapter structure with this source's concepts.
 
-    ``chapters`` is the ``source_metadata["extract"]["chapters"]`` block. Each
-    concept is attached to every chapter whose ``segment_ids`` overlap its
+    ``chapters`` is the block produced by ``chapters_from_document_chapters``.
+    Each concept is attached to every chapter whose ``segment_ids`` overlap its
     evidence. Returns chapters ordered by ``sequence_index``.
 
     A concept may appear under more than one chapter when its evidence spans

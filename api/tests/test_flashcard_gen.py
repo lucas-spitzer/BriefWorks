@@ -69,10 +69,11 @@ def test_blueprint_passes_importance_floor_and_count_band(monkeypatch) -> None:
     )
 
     output, execution = FlashcardGenStage().run(
-        source_metadata={"extract": {"chapters": _chapters()}},
+        source_metadata={},
         concepts=[concept],
         concept_batches=[],
         learning_objectives=[],
+        chapters=_chapters(),
     )
 
     assert execution["generation_mode"] == "blueprint"

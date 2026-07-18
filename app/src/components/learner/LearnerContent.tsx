@@ -1,0 +1,34 @@
+import { DiscussionsView } from './DiscussionsView'
+import { FlashcardsView } from './FlashcardsView'
+import { LibraryView } from './LibraryView'
+import { QuizView } from './QuizView'
+import { ReaderView } from './ReaderView'
+import { ScenarioView } from './ScenarioView'
+import type { LearnerPage, LearnerScope } from './types'
+
+type LearnerContentProps = {
+  page: LearnerPage
+  sourceId?: string | null
+  seg?: number | null
+  scope: LearnerScope
+  onOpen: (page: LearnerPage, scope: LearnerScope) => void
+}
+
+export function LearnerContent({ page, sourceId = null, seg = null, scope, onOpen }: LearnerContentProps) {
+  return (
+    <div className="learner learner--integrated">
+      <div className="learner__main">
+        {page === 'library' && <LibraryView onOpen={onOpen} />}
+        {page === 'reader' && <ReaderView sourceId={sourceId} seg={seg} onOpen={onOpen} />}
+        {page === 'flashcards' && (
+          <FlashcardsView sourceId={scope.sourceId} targetId={scope.targetId} />
+        )}
+        {page === 'quiz' && <QuizView sourceId={scope.sourceId} />}
+        {page === 'scenarios' && (
+          <ScenarioView sourceId={scope.sourceId} targetId={scope.targetId} />
+        )}
+        {page === 'discussions' && <DiscussionsView sourceId={scope.sourceId} />}
+      </div>
+    </div>
+  )
+}

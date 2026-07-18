@@ -5,6 +5,20 @@ import { ConsoleViewToggle } from './ConsoleViewToggle'
 import { ErrorBanner } from './ErrorBanner'
 import type { ConsoleView } from './types'
 
+function AssessmentCardFoot({ createdAt, difficulty }: { createdAt: string; difficulty: string }) {
+  return (
+    <div className="bw-console__artifact-foot">
+      <span className="seg">{formatDate(createdAt)}</span>
+      <span className="seg">{difficulty}</span>
+      <span className="seg">
+        <button type="button" className="bw-console__statepill bw-state--download">
+          Open
+        </button>
+      </span>
+    </div>
+  )
+}
+
 export function ConsoleAssessments() {
   const { flashcards, quizzes, scenarios, isLoading, error } = useWorkspaceData()
   const [query, setQuery] = useState('')
@@ -59,8 +73,8 @@ export function ConsoleAssessments() {
           <div className="bw-console__empty">Loading assessments…</div>
         ) : totalCount === 0 ? (
           <div className="bw-console__empty">
-            No assessments yet. Run a production pipeline with review targets after
-            Extract Knowledge has produced canonical wiki entries.
+            No assessments yet. Curate wiki entries on the Wiki page, then run a
+            production pipeline with review targets against that source.
           </div>
         ) : (
           <>
@@ -98,11 +112,7 @@ export function ConsoleAssessments() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{card.front}</div>
                         <p style={{ fontSize: '0.84rem', color: '#b6c4cb', marginTop: 8 }}>{card.back}</p>
                         <div className="bw-console__card-fill" aria-hidden="true" />
-                        <div className="bw-console__artifact-foot">
-                          <span className="seg">{card.subtype ?? 'basic'}</span>
-                          <span className="seg">{card.difficulty}</span>
-                          <span className="seg">{formatDate(card.created_at)}</span>
-                        </div>
+                        <AssessmentCardFoot createdAt={card.created_at} difficulty={card.difficulty} />
                       </div>
                     ))}
                   </div>
@@ -144,10 +154,7 @@ export function ConsoleAssessments() {
                           {quiz.explanation ?? quiz.correct_answer}
                         </p>
                         <div className="bw-console__card-fill" aria-hidden="true" />
-                        <div className="bw-console__artifact-foot">
-                          <span className="seg">{quiz.subtype ?? quiz.question_type}</span>
-                          <span className="seg">{quiz.difficulty}</span>
-                        </div>
+                        <AssessmentCardFoot createdAt={quiz.created_at} difficulty={quiz.difficulty} />
                       </div>
                     ))}
                   </div>
@@ -189,11 +196,7 @@ export function ConsoleAssessments() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{scenario.title}</div>
                         <p style={{ fontSize: '0.84rem', color: '#b6c4cb', marginTop: 8 }}>{scenario.prompt}</p>
                         <div className="bw-console__card-fill" aria-hidden="true" />
-                        <div className="bw-console__artifact-foot">
-                          <span className="seg">{scenario.subtype ?? 'decision_prompt'}</span>
-                          <span className="seg">{scenario.difficulty}</span>
-                          <span className="seg">{formatDate(scenario.created_at)}</span>
-                        </div>
+                        <AssessmentCardFoot createdAt={scenario.created_at} difficulty={scenario.difficulty} />
                       </div>
                     ))}
                   </div>

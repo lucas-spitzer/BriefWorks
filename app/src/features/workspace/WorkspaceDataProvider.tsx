@@ -192,6 +192,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       uploadArtifact,
       createProductionRun,
       downloadArtifact,
+      refresh,
     }),
     [
       sources,
@@ -209,6 +210,7 @@ export function WorkspaceDataProvider({ children }: WorkspaceDataProviderProps) 
       uploadArtifact,
       createProductionRun,
       downloadArtifact,
+      refresh,
     ],
   )
 

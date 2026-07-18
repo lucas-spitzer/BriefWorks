@@ -27,9 +27,9 @@ class FlashcardGenStage:
         concepts: list[ConceptCard],
         concept_batches: list[list[ConceptCard]],
         learning_objectives: list[dict[str, Any]],
+        chapters: list[dict[str, Any]] | None = None,
     ) -> tuple[FlashcardGenOutput, dict[str, Any]]:
-        chapters_meta = (source_metadata.get("extract") or {}).get("chapters") or []
-        blueprint = build_chapter_blueprint(chapters_meta, concepts)
+        blueprint = build_chapter_blueprint(chapters or [], concepts)
 
         raw_items: list[dict[str, Any]] = []
         execution: dict[str, Any] = {}

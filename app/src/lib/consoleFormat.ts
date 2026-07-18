@@ -25,9 +25,9 @@ export function documentTypeLabel(type: string): string {
 }
 
 export const artifactKindLabels: Record<string, string> = {
-  eleven_reader_script: 'ElevenReader EBook',
-  speechify_audio: 'Speechify Audio',
-  elevenlabs_audio: 'ElevenLabs Audio',
+  electronic_book: 'Electronic Book',
+  wiki_json: 'Wiki JSON Export',
+  narration_audio: 'Audio Narration',
   lesson: 'Lesson Module',
   assessment: 'Assessment Bank',
   concept_map: 'Concept Map',
@@ -37,10 +37,9 @@ export const artifactKindLabels: Record<string, string> = {
 }
 
 export const artifactKindShortLabels: Record<string, string> = {
-  eleven_reader_script: 'EBook',
-  speechify_script: 'Script',
-  speechify_audio: 'Audio',
-  elevenlabs_audio: 'Audio',
+  electronic_book: 'EBook',
+  wiki_json: 'Wiki JSON',
+  narration_audio: 'Audio Narration',
   lesson: 'Lesson',
   assessment: 'Assessment',
   concept_map: 'Concept Map',
@@ -115,8 +114,6 @@ export function mimeLabel(mimeType: string): string {
 
 const artifactFormatLabels: Record<string, string> = {
   epub3: 'EPUB',
-  ssml: 'SSML',
-  elevenlabs_json: 'JSON',
 }
 
 export function artifactFormatLabel(format: string): string {

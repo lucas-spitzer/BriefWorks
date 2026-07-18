@@ -127,26 +127,50 @@ class IntellexSettings:
     llama_cloud_api_key: str | None
     llamaparse_tier: str
     source_research_max_chars: int
-    extract_knowledge_deep_importance: tuple[str, ...]
-    extract_chapter_max_chars: int | None
+    web_enrichment_max_searches: int
     eleven_reader_max_pages: int
     prepare_batch_pages: int
-    # Wiki-entry selection bands/thresholds (extraction redesign). Defaults are
-    # permissive (0 = no cap / no gate) so behavior is unchanged until the
-    # scored-selection phases consume them.
-    extract_max_entries_per_chapter: int
-    extract_max_entries_per_document: int
-    extract_min_confidence: float
-    extract_min_selection_score: float
-    # Comparative importance calibration: top fraction → essential, next
-    # fraction → supporting, remainder → contextual (document-wide ranking).
-    extract_essential_fraction: float
-    extract_supporting_fraction: float
-    # Embedding-based semantic dedup (off by default — adds per-extraction
-    # embedding API cost). Merges candidates whose vectors exceed the threshold.
-    extract_embedding_dedup: bool
-    extract_embedding_model: str
-    extract_embedding_similarity_threshold: float
+    # Shared vector space for all embedding consumers (RAG retrieval, wiki
+    # authoring evidence linking). 1536 dims = text-embedding-3-small,
+    # matching the pgvector columns from migration 31.
+    embedding_model: str
+
+
+@dataclass(frozen=True)
+class WikiAuthoringSettings:
+    # Manual knowledge curation (see docs/internal/plans/wiki-authoring-contract.md).
+    max_notes_chars: int
+    # Evidence linking: entries embed "{label} — {definition}" and match against
+    # the source's ndr_segments. Stricter than the assistant's recall threshold —
+    # linking is a precision problem.
+    evidence_top_k: int
+    evidence_threshold: float
+    evidence_weak_floor: float
+    # Advisory duplicate detection against existing wiki entries.
+    dedup_similarity_threshold: float
+
+
+@dataclass(frozen=True)
+class AssistantSettings:
+    # RAG retrieval tuning for the Reader assistant (discussions + scenarios).
+    chat_model: str
+    match_threshold: float
+    segment_count: int
+    wiki_count: int
+
+
+@dataclass(frozen=True)
+class NarrationSettings:
+    # ElevenLabs synthesized narration for the Reader (generate-narration stage).
+    api_key: str | None
+    voice_id: str
+    model_id: str
+    output_format: str
+    request_timeout_seconds: int
+    max_retries: int
+    # Per-segment character ceiling; paragraphs beyond this are skipped rather
+    # than split, so word-timing indexes always cover whole segments.
+    max_segment_chars: int
 
 
 @dataclass(frozen=True)
@@ -161,34 +185,15 @@ class QnGenSettings:
 
 
 @dataclass(frozen=True)
-class ElevenLabsSettings:
-    api_key: str | None
-    voice_id: str
-    model_id: str
-    max_chars: int
-    chunk_chars: int
-    request_timeout_seconds: int
-    max_retries: int
-    price_per_token: float
-
-
-@dataclass(frozen=True)
-class SpeechifySettings:
-    api_key: str | None
-    voice_id: str
-    model: str
-    max_chars: int
-
-
-@dataclass(frozen=True)
 class Settings:
     supabase: SupabaseSettings
     infra: InfrastructureSettings
     llm: LLMSettings
     intellex: IntellexSettings
+    wiki_authoring: WikiAuthoringSettings
+    assistant: AssistantSettings
+    narration: NarrationSettings
     qngen: QnGenSettings
-    elevenlabs: ElevenLabsSettings
-    speechify: SpeechifySettings
 
     # Backward-compatible flat accessors for existing call sites.
     @property
@@ -242,15 +247,6 @@ class Settings:
 
 @lru_cache
 def _get_settings_cached() -> Settings:
-    deep_importance = tuple(
-        value.strip()
-        for value in parse_csv_env("EXTRACT_KNOWLEDGE_DEEP_IMPORTANCE", "essential,supporting")
-    )
-    extract_chapter_raw = os.getenv("EXTRACT_CHAPTER_MAX_CHARS")
-    extract_chapter_max_chars = (
-        int(extract_chapter_raw) if extract_chapter_raw and extract_chapter_raw.strip() else None
-    )
-
     return Settings(
         supabase=SupabaseSettings(
             url=get_required_env("SUPABASE_URL").rstrip("/"),
@@ -281,21 +277,39 @@ def _get_settings_cached() -> Settings:
             llama_cloud_api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
             llamaparse_tier=os.getenv("LLAMAPARSE_TIER", "agentic"),
             source_research_max_chars=int(os.getenv("SOURCE_RESEARCH_MAX_CHARS", "16000")),
-            extract_knowledge_deep_importance=deep_importance,
-            extract_chapter_max_chars=extract_chapter_max_chars,
+            web_enrichment_max_searches=int(os.getenv("WEB_ENRICHMENT_MAX_SEARCHES", "5")),
             eleven_reader_max_pages=int(os.getenv("ELEVEN_READER_MAX_PAGES", "500")),
             prepare_batch_pages=int(os.getenv("PREPARE_BATCH_PAGES", "15")),
-            extract_max_entries_per_chapter=int(os.getenv("EXTRACT_MAX_ENTRIES_PER_CHAPTER", "0")),
-            extract_max_entries_per_document=int(os.getenv("EXTRACT_MAX_ENTRIES_PER_DOCUMENT", "0")),
-            extract_min_confidence=float(os.getenv("EXTRACT_MIN_CONFIDENCE", "0.0")),
-            extract_min_selection_score=float(os.getenv("EXTRACT_MIN_SELECTION_SCORE", "0.0")),
-            extract_essential_fraction=float(os.getenv("EXTRACT_ESSENTIAL_FRACTION", "0.2")),
-            extract_supporting_fraction=float(os.getenv("EXTRACT_SUPPORTING_FRACTION", "0.4")),
-            extract_embedding_dedup=_bool_env("EXTRACT_EMBEDDING_DEDUP", False),
-            extract_embedding_model=os.getenv("EXTRACT_EMBEDDING_MODEL", "text-embedding-3-small"),
-            extract_embedding_similarity_threshold=float(
-                os.getenv("EXTRACT_EMBEDDING_SIMILARITY_THRESHOLD", "0.86"),
+            # EXTRACT_EMBEDDING_MODEL honored as a fallback so existing .env
+            # files keep working after the extraction-era rename.
+            embedding_model=os.getenv(
+                "EMBEDDING_MODEL",
+                os.getenv("EXTRACT_EMBEDDING_MODEL", "text-embedding-3-small"),
             ),
+        ),
+        wiki_authoring=WikiAuthoringSettings(
+            max_notes_chars=int(os.getenv("WIKI_AUTHORING_MAX_NOTES_CHARS", "24000")),
+            evidence_top_k=int(os.getenv("WIKI_AUTHORING_EVIDENCE_TOP_K", "3")),
+            evidence_threshold=float(os.getenv("WIKI_AUTHORING_EVIDENCE_THRESHOLD", "0.45")),
+            evidence_weak_floor=float(os.getenv("WIKI_AUTHORING_EVIDENCE_WEAK_FLOOR", "0.3")),
+            dedup_similarity_threshold=float(
+                os.getenv("WIKI_AUTHORING_DEDUP_SIMILARITY_THRESHOLD", "0.85"),
+            ),
+        ),
+        assistant=AssistantSettings(
+            chat_model=os.getenv("ASSISTANT_CHAT_MODEL", DEFAULT_OPENAI_MODEL),
+            match_threshold=float(os.getenv("ASSISTANT_MATCH_THRESHOLD", "0.3")),
+            segment_count=int(os.getenv("ASSISTANT_SEGMENT_COUNT", "8")),
+            wiki_count=int(os.getenv("ASSISTANT_WIKI_COUNT", "6")),
+        ),
+        narration=NarrationSettings(
+            api_key=os.getenv("ELEVENLABS_API_KEY"),
+            voice_id=os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
+            model_id=os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
+            output_format=os.getenv("ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128"),
+            request_timeout_seconds=int(os.getenv("ELEVENLABS_REQUEST_TIMEOUT_SECONDS", "600")),
+            max_retries=int(os.getenv("ELEVENLABS_MAX_RETRIES", "3")),
+            max_segment_chars=int(os.getenv("ELEVENLABS_MAX_SEGMENT_CHARS", "9500")),
         ),
         qngen=QnGenSettings(
             concept_batch_size=int(os.getenv("QNGEN_CONCEPT_BATCH_SIZE", "8")),
@@ -305,22 +319,6 @@ def _get_settings_cached() -> Settings:
             flashcards_per_chapter_max=int(os.getenv("QNGEN_FLASHCARDS_PER_CHAPTER_MAX", "8")),
             scenarios_per_chapter_min=int(os.getenv("QNGEN_SCENARIOS_PER_CHAPTER_MIN", "1")),
             scenarios_per_chapter_max=int(os.getenv("QNGEN_SCENARIOS_PER_CHAPTER_MAX", "3")),
-        ),
-        elevenlabs=ElevenLabsSettings(
-            api_key=os.getenv("ELEVENLABS_API_KEY"),
-            voice_id=os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
-            model_id=os.getenv("ELEVENLABS_MODEL_ID", "eleven_v3"),
-            max_chars=int(os.getenv("ELEVENLABS_MAX_CHARS", "200000")),
-            chunk_chars=int(os.getenv("ELEVENLABS_CHUNK_CHARS", "2500")),
-            request_timeout_seconds=int(os.getenv("ELEVENLABS_REQUEST_TIMEOUT_SECONDS", "600")),
-            max_retries=int(os.getenv("ELEVENLABS_MAX_RETRIES", "3")),
-            price_per_token=float(os.getenv("ELEVENLABS_PRICE_PER_TOKEN", "0.00018333")),
-        ),
-        speechify=SpeechifySettings(
-            api_key=os.getenv("SPEECHIFY_API_KEY"),
-            voice_id=os.getenv("SPEECHIFY_VOICE_ID", "george"),
-            model=os.getenv("SPEECHIFY_MODEL", "simba-english"),
-            max_chars=int(os.getenv("SPEECHIFY_MAX_CHARS", "200000")),
         ),
     )
 

@@ -2,34 +2,37 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
 from app.config import get_settings
 from app.intellex.ingest import parse_artifact_path, structured_pages_artifact_path
 from app.intellex.models import ParsedDocument
-from app.intellex.stages.extract_chapter_knowledge import ExtractChapterKnowledgeStage
 from app.intellex.stages.parse_document import ParseStage
-from app.intellex.stages.promotion import merge_research_into_source_metadata
+from app.intellex.stages.promotion import (
+    merge_research_into_source_metadata,
+    merge_web_enrichment_into_source_metadata,
+)
 from app.intellex.stages.source_research import SourceResearchStage
-from app.intellex.stages.wiki_promotion import promote_concepts_to_wiki, resolve_prerequisites
+from app.intellex.stages.web_enrichment import WebEnrichmentStage
 from app.intellex.source_readiness import source_intellex_complete
+from app.services.api_pricing import cost_web_search_usage
 from app.intellex.wiki_slug import normalize_slug
-from app.mathesys.stages.elevenlabs_structured_text import ElevenLabsStructuredTextStage
-from app.mathesys.stages.speechify_api_ssml import SpeechifyApiSsmlStage
+from app.mathesys.stages.wiki_export import build_wiki_export
 from app.qngen.assessment_promotion import (
     promote_flashcards,
     promote_quizzes,
     promote_scenarios,
 )
-from app.qngen.canonical_context import batch_concepts, build_source_concepts
+from app.qngen.canonical_context import (
+    batch_concepts,
+    build_source_concepts,
+    chapters_from_document_chapters,
+)
 from app.qngen.stages.flashcard_gen import FlashcardGenStage
 from app.qngen.stages.quiz_gen import QuizGenStage
 from app.qngen.stages.scenario_gen import ScenarioGenStage
-from app.services.elevenlabs_client import ElevenLabsClient
-from app.services.stage_run_billing import stage_run_completion_fields, tts_call_from_manifest
-from app.services.speechify_client import SpeechifyClient
+from app.services.stage_run_billing import stage_run_completion_fields
 from app.worker.db import WorkerDatabase
 from app.worker.storage import WorkerStorage
 from app.worker.structuring_executors import StructureStageExecutor
@@ -43,7 +46,7 @@ def utc_now_iso() -> str:
 
 class SourceResearchStageExecutor:
     STAGE_ID = "source-research"
-    STAGE_VERSION = "2.0"
+    STAGE_VERSION = "2.1"
     MODULE = "intellex"
 
     def __init__(
@@ -117,6 +120,117 @@ class SourceResearchStageExecutor:
                         "metadata_namespace": "research",
                     },
                     **stage_run_completion_fields(execution),
+                    "completed_at": utc_now_iso(),
+                },
+            )
+            return stage_run_id
+        except Exception as exc:
+            logger.exception("Stage run %s failed", stage_run_id)
+            self.db.update_stage_run(
+                stage_run_id,
+                {
+                    "status": "failed",
+                    "error": str(exc),
+                    "completed_at": utc_now_iso(),
+                },
+            )
+            raise
+
+
+class WebEnrichmentStageExecutor:
+    STAGE_ID = "web-enrichment"
+    STAGE_VERSION = "1.0"
+    MODULE = "intellex"
+
+    def __init__(
+        self,
+        db: WorkerDatabase | None = None,
+        stage: WebEnrichmentStage | None = None,
+    ) -> None:
+        self.db = db or WorkerDatabase()
+        self.stage = stage or WebEnrichmentStage()
+
+    def run_for_source(
+        self,
+        *,
+        production_run_id: str,
+        workspace_id: str,
+        source: dict[str, Any],
+    ) -> str:
+        source_id = source["id"]
+        existing_metadata = source.get("source_metadata") or {}
+        if not isinstance(existing_metadata, dict):
+            existing_metadata = {}
+
+        research = existing_metadata.get("research")
+        if not isinstance(research, dict) or not research.get("researched_at"):
+            raise RuntimeError(
+                f"Source {source_id} has no research metadata; "
+                "source-research must run before web-enrichment.",
+            )
+
+        stage_run = self.db.create_stage_run(
+            {
+                "production_run_id": production_run_id,
+                "workspace_id": workspace_id,
+                "stage_id": self.STAGE_ID,
+                "stage_version": self.STAGE_VERSION,
+                "module": self.MODULE,
+                "status": "running",
+                "inputs": {
+                    "source_id": source_id,
+                    "filename": source.get("filename"),
+                    "title": research.get("title"),
+                    "identifier": research.get("identifier"),
+                },
+                "started_at": utc_now_iso(),
+            },
+        )
+        stage_run_id = stage_run["id"]
+
+        try:
+            output, execution = self.stage.run(
+                filename=str(source.get("filename") or ""),
+                research=research,
+            )
+            enriched_at = utc_now_iso()
+
+            updated_metadata = merge_web_enrichment_into_source_metadata(
+                existing_metadata,
+                output,
+                enriched_at=enriched_at,
+            )
+
+            self.db.update_source(
+                source_id,
+                {
+                    "source_metadata": updated_metadata,
+                },
+            )
+            source["source_metadata"] = updated_metadata
+
+            search_count = int(execution.get("search_count") or 0)
+            extra_calls = (
+                [
+                    cost_web_search_usage(
+                        provider=str(execution.get("provider") or "anthropic"),
+                        search_count=search_count,
+                    ),
+                ]
+                if search_count
+                else None
+            )
+
+            self.db.update_stage_run(
+                stage_run_id,
+                {
+                    "status": "completed",
+                    "output": output.model_dump(),
+                    "promoted": {
+                        "source_ids": [source_id],
+                        "metadata_namespace": "web_enrichment",
+                    },
+                    **stage_run_completion_fields(execution, extra_calls=extra_calls),
                     "completed_at": utc_now_iso(),
                 },
             )
@@ -252,18 +366,24 @@ class ParseStageExecutor:
             raise
 
 
-class ExtractChapterKnowledgeStageExecutor:
-    STAGE_ID = "extract-knowledge"
-    STAGE_VERSION = "2.1"
-    MODULE = "intellex"
+class ExportWikiJsonStageExecutor:
+    """Snapshot the source's curated canonical wiki entries to a JSON artifact.
+
+    Deterministic (no LLM): the curation already happened in the wiki authoring
+    flow; this stage makes that knowledge a downloadable Mathesys output.
+    """
+
+    STAGE_ID = "export-wiki-json"
+    STAGE_VERSION = "1.0"
+    MODULE = "mathesys"
 
     def __init__(
         self,
         db: WorkerDatabase | None = None,
-        stage: ExtractChapterKnowledgeStage | None = None,
+        storage: WorkerStorage | None = None,
     ) -> None:
         self.db = db or WorkerDatabase()
-        self.stage = stage or ExtractChapterKnowledgeStage()
+        self.storage = storage or WorkerStorage()
 
     def run_for_source(
         self,
@@ -273,20 +393,7 @@ class ExtractChapterKnowledgeStageExecutor:
         source: dict[str, Any],
     ) -> str:
         source_id = source["id"]
-        segments = self.db.list_ndr_segments_for_source(source_id)
-        chapter_rows = self.db.list_document_chapters_for_source(source_id)
-
-        if not segments:
-            raise RuntimeError(f"No NDR segments found for source {source_id}.")
-        if not chapter_rows:
-            raise RuntimeError(f"No document chapters found for source {source_id}.")
-
-        segment_index = {str(segment["id"]): segment for segment in segments}
-        existing_entries = self.db.list_wiki_entries_for_workspace(workspace_id)
-        existing_labels = [
-            str(entry["preferred_label"])
-            for entry in existing_entries
-        ]
+        wiki_entries = self.db.list_wiki_entries_for_workspace(workspace_id)
 
         stage_run = self.db.create_stage_run(
             {
@@ -298,8 +405,13 @@ class ExtractChapterKnowledgeStageExecutor:
                 "status": "running",
                 "inputs": {
                     "source_id": source_id,
-                    "chapter_count": len(chapter_rows),
-                    "segment_count": len(segments),
+                    "entry_count": len(
+                        [
+                            entry
+                            for entry in wiki_entries
+                            if entry.get("status") == "canonical"
+                        ],
+                    ),
                 },
                 "started_at": utc_now_iso(),
             },
@@ -307,133 +419,75 @@ class ExtractChapterKnowledgeStageExecutor:
         stage_run_id = stage_run["id"]
 
         try:
-            source_metadata = source.get("source_metadata") or {}
-            if not isinstance(source_metadata, dict):
-                source_metadata = {}
-
-            output, execution = self.stage.run(
-                source_metadata=source_metadata,
-                chapter_rows=chapter_rows,
-                segments=segments,
-                existing_labels=existing_labels,
-            )
-
-            inserts, updates, disputes = promote_concepts_to_wiki(
+            export = build_wiki_export(
+                wiki_entries=wiki_entries,
                 workspace_id=workspace_id,
                 source_id=source_id,
-                stage_run_id=stage_run_id,
-                stage_id=self.STAGE_ID,
-                stage_version=self.STAGE_VERSION,
-                concepts=output.items,
-                segment_index=segment_index,
-                existing_entries=existing_entries,
+                source_filename=source.get("filename"),
             )
+            file_bytes = json.dumps(export, indent=2, ensure_ascii=False).encode("utf-8")
 
-            created_rows = self.db.insert_wiki_entries(inserts)
-
-            for update in updates:
-                wiki_id = update.pop("id")
-                self.db.update_wiki_entry(wiki_id, update)
-
-            if disputes:
-                self.db.insert_wiki_disputes(disputes)
-
-            all_rows = self.db.list_wiki_entries_for_workspace(workspace_id)
-            slug_to_row = {str(row["canonical_slug"]): row for row in all_rows}
-
-            for row in created_rows:
-                slug_to_row[str(row["canonical_slug"])] = row
-
-            prerequisite_updates = resolve_prerequisites(
-                concepts=output.items,
-                wiki_rows=list(slug_to_row.values()),
+            source_slug = normalize_slug(
+                str(source.get("filename") or "source").rsplit(".", 1)[0],
             )
-
-            for update in prerequisite_updates:
-                wiki_id = update.pop("id")
-                self.db.update_wiki_entry(wiki_id, update)
-
-            wiki_entry_ids = []
-            for concept in output.items:
-                slug = normalize_slug(concept.term_label)
-                if slug in slug_to_row:
-                    wiki_entry_ids.append(str(slug_to_row[slug]["id"]))
-                    continue
-                kind_slug = f"{slug}--{concept.entry_kind}"
-                if kind_slug in slug_to_row:
-                    wiki_entry_ids.append(str(slug_to_row[kind_slug]["id"]))
-
-            item_counts = {
-                "term": sum(1 for item in output.items if item.entry_kind == "term"),
-                "concept": sum(1 for item in output.items if item.entry_kind == "concept"),
-                "insight": sum(1 for item in output.items if item.entry_kind == "insight"),
+            filename = f"{source_slug}-wiki.json"
+            manifest = {
+                "export_version": export["briefworks_wiki_export"],
+                "entry_count": export["entry_count"],
+                "entry_kind_counts": export["entry_kind_counts"],
+                "scope_counts": export["scope_counts"],
             }
+
+            artifact_row = self.db.create_artifact(
+                {
+                    "workspace_id": workspace_id,
+                    "source_id": source_id,
+                    "production_run_id": production_run_id,
+                    "artifact_type": "wiki_json",
+                    "format": "json",
+                    "filename": filename,
+                    "storage_path": "pending",
+                    "file_size_bytes": 0,
+                    "manifest": manifest,
+                    "origin": {
+                        "stage_run_id": stage_run_id,
+                        "stage_id": self.STAGE_ID,
+                        "stage_version": self.STAGE_VERSION,
+                    },
+                },
+            )
+            artifact_id = artifact_row["id"]
+            storage_path = f"workspaces/{workspace_id}/artifacts/{artifact_id}/{filename}"
+
+            self.storage.upload(storage_path, file_bytes, content_type="application/json")
+
+            self.db.update_artifact(
+                artifact_id,
+                {
+                    "storage_path": storage_path,
+                    "file_size_bytes": len(file_bytes),
+                },
+            )
 
             self.db.update_stage_run(
                 stage_run_id,
                 {
                     "status": "completed",
                     "output": {
-                        "chapters": [
+                        "files": [
                             {
-                                "chapter_id": chapter.chapter_id,
-                                "chapter_title": chapter.chapter_title,
-                                "sequence_index": chapter.sequence_index,
-                                "item_count": len(chapter.items),
-                                "objective_count": len(chapter.learning_objectives),
-                            }
-                            for chapter in output.chapters
+                                "artifact_id": artifact_id,
+                                "filename": filename,
+                                "storage_path": storage_path,
+                            },
                         ],
-                        "item_counts": item_counts,
-                        "objective_count": len(output.learning_objectives),
-                        "learning_objectives": [
-                            obj.model_dump() for obj in output.learning_objectives
-                        ],
-                        "items": [item.model_dump() for item in output.items],
+                        "entry_count": export["entry_count"],
+                        "entry_kind_counts": export["entry_kind_counts"],
                     },
-                    "promoted": {
-                        "wiki_entry_ids": wiki_entry_ids,
-                        "dispute_ids": [],
-                        "disputes_logged": len(disputes),
-                    },
-                    **stage_run_completion_fields(execution),
+                    "promoted": {"artifact_ids": [artifact_id]},
                     "completed_at": utc_now_iso(),
                 },
             )
-
-            extracted_at = utc_now_iso()
-            updated_metadata = {
-                **source_metadata,
-                "extract": {
-                    "extracted_at": extracted_at,
-                    "chapter_count": len(chapter_rows),
-                    "item_counts": item_counts,
-                    "objective_count": len(output.learning_objectives),
-                    "learning_objectives": [
-                        obj.model_dump() for obj in output.learning_objectives
-                    ],
-                    "chapters": [
-                        {
-                            "chapter_id": chapter.chapter_id,
-                            "chapter_title": chapter.chapter_title,
-                            "sequence_index": chapter.sequence_index,
-                            "segment_ids": chapter.segment_ids,
-                            "objectives": [
-                                obj.model_dump() for obj in chapter.learning_objectives
-                            ],
-                        }
-                        for chapter in output.chapters
-                    ],
-                },
-            }
-            self.db.update_source(
-                source_id,
-                {
-                    "source_metadata": updated_metadata,
-                },
-            )
-            source["source_metadata"] = updated_metadata
-
             return stage_run_id
         except Exception as exc:
             logger.exception("Stage run %s failed", stage_run_id)
@@ -446,341 +500,6 @@ class ExtractChapterKnowledgeStageExecutor:
                 },
             )
             raise
-
-
-def _serialize_narration_volume(volume: dict[str, Any]) -> tuple[bytes, str, str]:
-    if "epub_bytes" in volume:
-        return volume["epub_bytes"], "application/epub+zip", "epub"
-
-    if "ssml" in volume:
-        payload = str(volume["ssml"]).encode("utf-8")
-        return payload, "application/ssml+xml", "ssml"
-
-    if "structured_text" in volume:
-        payload = json.dumps(volume["structured_text"], indent=2).encode("utf-8")
-        return payload, "application/json", "json"
-
-    raise RuntimeError("Narration volume is missing output bytes.")
-
-
-def _run_mathesys_narration_stage(
-    *,
-    db: WorkerDatabase,
-    storage: WorkerStorage,
-    stage: Any,
-    stage_id: str,
-    stage_version: str,
-    artifact_type: str,
-    artifact_format: str,
-    production_run_id: str,
-    workspace_id: str,
-    source: dict[str, Any],
-    extra_manifest: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
-    synthesize_volume: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
-    include_wiki: bool = True,
-) -> str:
-    source_id = source["id"]
-    segments = db.list_ndr_segments_for_source(source_id)
-    chapter_rows = db.list_document_chapters_for_source(source_id)
-
-    if not segments:
-        raise RuntimeError(f"No NDR segments found for source {source_id}.")
-
-    wiki_entries: list[dict[str, Any]] = []
-
-    if include_wiki:
-        wiki_entries = [
-            entry
-            for entry in db.list_wiki_entries_for_workspace(workspace_id)
-            if entry.get("status") == "canonical"
-        ]
-
-    stage_inputs: dict[str, Any] = {
-        "source_id": source_id,
-        "segment_count": len(segments),
-    }
-
-    if include_wiki:
-        stage_inputs["wiki_entry_count"] = len(wiki_entries)
-    else:
-        stage_inputs["chapter_count"] = len(chapter_rows)
-
-    stage_run = db.create_stage_run(
-        {
-            "production_run_id": production_run_id,
-            "workspace_id": workspace_id,
-            "stage_id": stage_id,
-            "stage_version": stage_version,
-            "module": "mathesys",
-            "status": "running",
-            "inputs": stage_inputs,
-            "started_at": utc_now_iso(),
-        },
-    )
-    stage_run_id = stage_run["id"]
-
-    try:
-        source_metadata = source.get("source_metadata") or {}
-        if not isinstance(source_metadata, dict):
-            source_metadata = {}
-
-        volumes, execution = stage.run(
-            source_metadata=source_metadata,
-            segments=segments,
-            wiki_entries=wiki_entries,
-            chapter_rows=chapter_rows,
-        )
-
-        artifact_ids: list[str] = []
-        artifact_files: list[dict[str, Any]] = []
-        tts_calls: list[dict[str, Any]] = []
-
-        for volume in volumes:
-            synthesized = synthesize_volume(volume) if synthesize_volume else None
-
-            if synthesized is not None:
-                file_bytes = synthesized["audio_bytes"]
-                content_type = "audio/mpeg"
-                extension = "mp3"
-                resolved_format = "mp3"
-            else:
-                file_bytes, content_type, extension = _serialize_narration_volume(volume)
-                resolved_format = artifact_format
-
-            filename = f"{normalize_slug(volume['title'])}.{extension}"
-            manifest = {
-                "pages_approx": volume["pages_approx"],
-                "part": volume["part"],
-                "parts_total": volume["parts_total"],
-                "wiki_ids_cited": execution["wiki_ids_cited"],
-                "segment_ids_used": execution["segment_ids_used"],
-                "transformations": execution["transformations"],
-                "warnings": execution.get("warnings") or [],
-                "validation": volume.get("validation"),
-                "prepare": execution.get("prepare"),
-            }
-
-            if extra_manifest:
-                manifest.update(extra_manifest(volume))
-
-            if synthesized is not None:
-                synthesized_manifest = synthesized.get("manifest") or {}
-                manifest.update(synthesized_manifest)
-                tts_call = tts_call_from_manifest(synthesized_manifest)
-
-                if tts_call is not None:
-                    tts_calls.append(tts_call)
-
-            artifact_row = db.create_artifact(
-                {
-                    "workspace_id": workspace_id,
-                    "source_id": source_id,
-                    "production_run_id": production_run_id,
-                    "artifact_type": artifact_type,
-                    "format": resolved_format,
-                    "filename": filename,
-                    "storage_path": "pending",
-                    "file_size_bytes": 0,
-                    "manifest": manifest,
-                    "origin": {
-                        "stage_run_id": stage_run_id,
-                        "stage_id": stage_id,
-                        "stage_version": stage_version,
-                    },
-                },
-            )
-            artifact_id = artifact_row["id"]
-            storage_path = f"workspaces/{workspace_id}/artifacts/{artifact_id}/{filename}"
-
-            storage.upload(storage_path, file_bytes, content_type=content_type)
-
-            db.update_artifact(
-                artifact_id,
-                {
-                    "storage_path": storage_path,
-                    "file_size_bytes": len(file_bytes),
-                },
-            )
-
-            artifact_ids.append(artifact_id)
-            artifact_files.append(
-                {
-                    "artifact_id": artifact_id,
-                    "filename": filename,
-                    "storage_path": storage_path,
-                    "pages_approx": volume["pages_approx"],
-                    "part": volume["part"],
-                    "parts_total": volume["parts_total"],
-                },
-            )
-
-        db.update_stage_run(
-            stage_run_id,
-            {
-                "status": "completed",
-                "output": {
-                    "files": artifact_files,
-                    "wiki_ids_cited": execution["wiki_ids_cited"],
-                    "segment_ids_used": execution["segment_ids_used"],
-                    "transformations": execution["transformations"],
-                    "warnings": execution.get("warnings") or [],
-                },
-                "promoted": {
-                    "artifact_ids": artifact_ids,
-                },
-                **stage_run_completion_fields(execution, extra_calls=tts_calls or None),
-                "completed_at": utc_now_iso(),
-            },
-        )
-        return stage_run_id
-    except Exception as exc:
-        logger.exception("Stage run %s failed", stage_run_id)
-        db.update_stage_run(
-            stage_run_id,
-            {
-                "status": "failed",
-                "error": str(exc),
-                "completed_at": utc_now_iso(),
-            },
-        )
-        raise
-
-
-class SpeechifyApiSsmlStageExecutor:
-    STAGE_ID = "speechify-audio"
-    STAGE_VERSION = "1.0"
-    MODULE = "mathesys"
-
-    def __init__(
-        self,
-        db: WorkerDatabase | None = None,
-        storage: WorkerStorage | None = None,
-        stage: SpeechifyApiSsmlStage | None = None,
-        client: SpeechifyClient | None = None,
-    ) -> None:
-        self.db = db or WorkerDatabase()
-        self.storage = storage or WorkerStorage()
-        self.stage = stage or SpeechifyApiSsmlStage()
-        self.client = client or SpeechifyClient()
-
-    def _synthesize_volume(self, volume: dict[str, Any]) -> dict[str, Any] | None:
-        # Speechify MP3 synthesis is gated behind the API key. Without it we
-        # store the .ssml artifact and flag that audio is pending.
-        if not self.client.enabled:
-            return None
-
-        ssml = str(volume.get("ssml") or "").strip()
-
-        if not ssml:
-            return None
-
-        result = self.client.synthesize_ssml(ssml)
-
-        return {
-            "audio_bytes": result["audio_bytes"],
-            "manifest": {
-                "voice_id": result["voice_id"],
-                "model": result["model"],
-                "character_count": result["character_count"],
-            },
-        }
-
-    def run_for_source(
-        self,
-        *,
-        production_run_id: str,
-        workspace_id: str,
-        source: dict[str, Any],
-    ) -> str:
-        audio_pending = not self.client.enabled
-
-        return _run_mathesys_narration_stage(
-            db=self.db,
-            storage=self.storage,
-            stage=self.stage,
-            stage_id=self.STAGE_ID,
-            stage_version=self.STAGE_VERSION,
-            artifact_type="speechify_audio",
-            artifact_format="ssml",
-            production_run_id=production_run_id,
-            workspace_id=workspace_id,
-            source=source,
-            extra_manifest=lambda volume: {
-                "section_count": volume.get("section_count"),
-                "estimated_character_count": volume.get("estimated_character_count"),
-                **(
-                    {"audio_note": "MP3 pending Speechify API key"}
-                    if audio_pending
-                    else {}
-                ),
-            },
-            synthesize_volume=self._synthesize_volume,
-        )
-
-
-class ElevenLabsStructuredTextStageExecutor:
-    STAGE_ID = "elevenlabs-audio"
-    STAGE_VERSION = "1.0"
-    MODULE = "mathesys"
-
-    def __init__(
-        self,
-        db: WorkerDatabase | None = None,
-        storage: WorkerStorage | None = None,
-        stage: ElevenLabsStructuredTextStage | None = None,
-        client: ElevenLabsClient | None = None,
-    ) -> None:
-        self.db = db or WorkerDatabase()
-        self.storage = storage or WorkerStorage()
-        self.stage = stage or ElevenLabsStructuredTextStage()
-        self.client = client or ElevenLabsClient()
-
-    def _synthesize_volume(self, volume: dict[str, Any]) -> dict[str, Any] | None:
-        # Without an API key we keep the structured-text JSON artifact so the
-        # run still succeeds; the audio can be regenerated once a key is set.
-        if not self.client.enabled:
-            return None
-
-        text = str((volume.get("structured_text") or {}).get("text") or "").strip()
-
-        if not text:
-            return None
-
-        result = self.client.synthesize_long_text(text)
-
-        return {
-            "audio_bytes": result["audio_bytes"],
-            "manifest": {
-                "voice_id": result["voice_id"],
-                "model_id": result["model_id"],
-                "character_count": result["character_count"],
-                "tts_request_count": result["request_count"],
-            },
-        }
-
-    def run_for_source(
-        self,
-        *,
-        production_run_id: str,
-        workspace_id: str,
-        source: dict[str, Any],
-    ) -> str:
-        return _run_mathesys_narration_stage(
-            db=self.db,
-            storage=self.storage,
-            stage=self.stage,
-            stage_id=self.STAGE_ID,
-            stage_version=self.STAGE_VERSION,
-            artifact_type="elevenlabs_audio",
-            artifact_format="elevenlabs_json",
-            production_run_id=production_run_id,
-            workspace_id=workspace_id,
-            source=source,
-            extra_manifest=lambda volume: {
-                "model_id": (volume.get("structured_text") or {}).get("model_id"),
-            },
-            synthesize_volume=self._synthesize_volume,
-        )
 
 
 class FlashcardGenStageExecutor:
@@ -940,21 +659,16 @@ def _run_qngen_stage(
         source_id,
         StructureStageExecutor.STAGE_ID,
     )
-    has_extract_stage_run = db.has_completed_stage_run_for_source(
-        source_id,
-        ExtractChapterKnowledgeStageExecutor.STAGE_ID,
-    )
     has_document_chapters = db.has_document_chapters_for_source(source_id)
     if not source_intellex_complete(
         source,
         has_segments=True,
         has_document_chapters=has_document_chapters,
         has_structure_stage_run=has_structure_stage_run,
-        has_extract_stage_run=has_extract_stage_run,
     ):
         raise RuntimeError(
             f"Source {source_id} is not intellex-complete. "
-            "Run parse through extract-knowledge before generating assessments.",
+            "Run ingest before generating assessments.",
         )
 
     wiki_entries = db.list_wiki_entries_for_workspace(workspace_id)
@@ -966,8 +680,9 @@ def _run_qngen_stage(
 
     if not concepts:
         raise RuntimeError(
-            f"No canonical wiki concepts with evidence found for source {source_id}. "
-            "Run extract-knowledge first.",
+            f"No canonical wiki entries with evidence found for source {source_id}. "
+            "Curate wiki entries (Wiki → Add knowledge, with evidence links) "
+            "before generating assessments.",
         )
 
     settings = get_settings()
@@ -1002,20 +717,20 @@ def _run_qngen_stage(
         if not isinstance(source_metadata, dict):
             source_metadata = {}
 
-        extract_meta = source_metadata.get("extract") or {}
-        learning_objectives = (
-            extract_meta.get("learning_objectives")
-            if isinstance(extract_meta, dict)
-            else []
-        )
-        if not isinstance(learning_objectives, list):
-            learning_objectives = []
+        # Chapter structure comes straight from document_chapters (persisted by
+        # the structuring/chunk stages), so QnGen's chapter blueprint has no
+        # dependency on the retired extraction stage. Objectives are empty for
+        # curated sources; the blueprint runner tolerates that and stages fall
+        # back to concept fan-out when the blueprint yields nothing.
+        chapter_rows = db.list_document_chapters_for_source(source_id)
+        chapters = chapters_from_document_chapters(chapter_rows)
 
         output, execution = stage.run(
             source_metadata=source_metadata,
             concepts=concepts,
             concept_batches=concept_batches,
-            learning_objectives=learning_objectives,
+            learning_objectives=[],
+            chapters=chapters,
         )
         output_data = output.model_dump()
         items = output_data[output_key]

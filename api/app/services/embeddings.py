@@ -23,7 +23,7 @@ class OpenAIEmbeddingClient:
         if not resolved_key:
             raise RuntimeError("Missing required environment variable: OPENAI_API_KEY")
 
-        self.model = model or settings.intellex.extract_embedding_model
+        self.model = model or settings.intellex.embedding_model
         self.client = OpenAI(api_key=resolved_key)
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -35,3 +35,8 @@ class OpenAIEmbeddingClient:
 
 def get_embedding_client() -> EmbeddingClient:
     return OpenAIEmbeddingClient()
+
+
+def to_pgvector_literal(embedding: list[float]) -> str:
+    """Format a vector for a pgvector column / function arg (e.g. '[0.1,0.2]')."""
+    return "[" + ",".join(repr(value) for value in embedding) + "]"

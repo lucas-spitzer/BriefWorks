@@ -2,12 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.services.api_pricing import (
-    cost_elevenlabs_usage,
-    cost_llamaparse_usage,
-    cost_llm_usage,
-    cost_speechify_usage,
-)
+from app.services.api_pricing import cost_llamaparse_usage, cost_llm_usage
 
 
 def _token_count(usage: dict[str, Any], *keys: str) -> int:
@@ -67,11 +62,6 @@ def build_api_usage(
         "input_tokens": sum(int(call.get("input_tokens") or 0) for call in calls),
         "output_tokens": sum(int(call.get("output_tokens") or 0) for call in calls),
         "character_count": sum(int(call.get("character_count") or 0) for call in calls),
-        "elevenlabs_tokens": sum(
-            int(call.get("token_count") or call.get("character_count") or 0)
-            for call in calls
-            if call.get("provider") == "elevenlabs"
-        ),
         "search_count": sum(int(call.get("search_count") or 0) for call in calls),
         "credit_count": sum(int(call.get("credit_count") or 0) for call in calls),
         "cost_usd": _sum_call_costs(calls),
@@ -81,28 +71,6 @@ def build_api_usage(
         "calls": calls,
         "totals": totals,
     }
-
-
-def tts_call_from_manifest(manifest: dict[str, Any]) -> dict[str, Any] | None:
-    character_count = manifest.get("character_count")
-
-    if not isinstance(character_count, int) or character_count <= 0:
-        return None
-
-    if manifest.get("model_id") is not None or manifest.get("tts_request_count") is not None:
-        return cost_elevenlabs_usage(
-            model_id=str(manifest.get("model_id") or manifest.get("model") or "unknown"),
-            character_count=character_count,
-            request_count=int(manifest.get("tts_request_count") or 1),
-        )
-
-    if manifest.get("model") is not None:
-        return cost_speechify_usage(
-            model=str(manifest.get("model")),
-            character_count=character_count,
-        )
-
-    return None
 
 
 def stage_run_completion_fields(

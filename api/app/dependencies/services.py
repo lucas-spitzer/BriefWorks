@@ -5,9 +5,16 @@ from fastapi import Depends
 from app.config import Settings, get_settings
 from app.repositories.artifacts import ArtifactRepository
 from app.repositories.assessments import AssessmentRepository
+from app.repositories.narration_segments import NarrationSegmentRepository
 from app.repositories.ndr_segments import NdrSegmentRepository
 from app.repositories.wiki_entries import WikiEntryRepository
+from app.repositories.wiki_ingest_batches import WikiIngestBatchRepository
+from app.repositories.document_chapters import DocumentChapterRepository
+from app.services.wiki_authoring import WikiAuthoringService
 from app.repositories.production_runs import ProductionRunRepository
+from app.repositories.retrieval import RetrievalRepository
+from app.services.assistant import AssistantService
+from app.services.retrieval import RetrievalService
 from app.repositories.stage_runs import StageRunRepository
 from app.repositories.stages import StageRepository
 from app.repositories.sources import SourceRepository
@@ -71,6 +78,18 @@ def get_ndr_segment_repository(
     return NdrSegmentRepository(db)
 
 
+def get_narration_segment_repository(
+    db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
+) -> NarrationSegmentRepository:
+    return NarrationSegmentRepository(db)
+
+
+def get_document_chapter_repository(
+    db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
+) -> DocumentChapterRepository:
+    return DocumentChapterRepository(db)
+
+
 def get_wiki_entry_repository(
     db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
 ) -> WikiEntryRepository:
@@ -87,3 +106,53 @@ def get_assessment_repository(
     db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
 ) -> AssessmentRepository:
     return AssessmentRepository(db)
+
+
+def get_retrieval_repository(
+    db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
+) -> RetrievalRepository:
+    return RetrievalRepository(db)
+
+
+def get_retrieval_service(
+    repository: Annotated[RetrievalRepository, Depends(get_retrieval_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RetrievalService:
+    return RetrievalService(
+        repository,
+        threshold=settings.assistant.match_threshold,
+        segment_count=settings.assistant.segment_count,
+        wiki_count=settings.assistant.wiki_count,
+    )
+
+
+def get_wiki_ingest_batch_repository(
+    db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
+) -> WikiIngestBatchRepository:
+    return WikiIngestBatchRepository(db)
+
+
+def get_wiki_authoring_service(
+    wiki_entries: Annotated[WikiEntryRepository, Depends(get_wiki_entry_repository)],
+    batches: Annotated[WikiIngestBatchRepository, Depends(get_wiki_ingest_batch_repository)],
+    retrieval: Annotated[RetrievalRepository, Depends(get_retrieval_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WikiAuthoringService:
+    return WikiAuthoringService(
+        wiki_entries=wiki_entries,
+        batches=batches,
+        retrieval=retrieval,
+        settings=settings,
+    )
+
+
+def get_assistant_service(
+    retrieval: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    assessments: Annotated[AssessmentRepository, Depends(get_assessment_repository)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> AssistantService:
+    return AssistantService(
+        retrieval=retrieval,
+        assessments=assessments,
+        chat_model=settings.assistant.chat_model,
+    )

@@ -2,6 +2,7 @@ import { ConsoleShell } from '../components/console/ConsoleShell'
 import { WorkspaceGate } from '../components/WorkspaceGate'
 import { WorkspaceDataProvider } from '../features/workspace/WorkspaceDataProvider'
 import '../console.css'
+import '../learner.css'
 
 export function ConsolePage() {
   return (

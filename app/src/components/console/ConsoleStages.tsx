@@ -16,7 +16,6 @@ import {
   stageRunCredits,
   stageRunDisplayName,
   stageRunDurationSec,
-  stageRunElevenLabsTokens,
   stageRunSummary,
   stageRunTokens,
 } from '../../lib/consoleMappers'
@@ -26,22 +25,15 @@ import { ErrorBanner } from './ErrorBanner'
 import { moduleLabel } from './moduleLabel'
 import type { ConsoleView } from './types'
 
-interface ConsoleStagesProps {
-  onGoToOps: () => void
-}
-
 function formatTokenUsage(stageRun: Parameters<typeof stageRunTokens>[0]): string {
   const tokens = stageRunTokens(stageRun)
   const total = tokens.in + tokens.out
   if (total > 0) return `${(total / 1000).toFixed(1)}K`
 
-  const elevenlabsTokens = stageRunElevenLabsTokens(stageRun)
-  if (elevenlabsTokens > 0) return `${(elevenlabsTokens / 1000).toFixed(1)}K EL`
-
   return '—'
 }
 
-export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
+export function ConsoleStages() {
   const { productionRuns, stageRunsByRunId, sources, isLoading, error } = useWorkspaceData()
   const [query, setQuery] = useState('')
   const [view, setView] = useState<ConsoleView>('grid')
@@ -82,9 +74,6 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
           <h2>API Requests</h2>
         </div>
         <ConsoleViewToggle view={view} onChange={setView} />
-        <button className="bw-console__cta" onClick={onGoToOps}>
-          + New run
-        </button>
       </header>
       <div className="bw-console__scroll">
         {error ? <ErrorBanner message={error} /> : null}
@@ -185,8 +174,6 @@ export function ConsoleStages({ onGoToOps }: ConsoleStagesProps) {
                     <span>{formatDuration(stageRunDurationSec(stageRun))}</span>
                     {tokens.in + tokens.out > 0 ? (
                       <span>{((tokens.in + tokens.out) / 1000).toFixed(1)}K tok</span>
-                    ) : stageRunElevenLabsTokens(stageRun) > 0 ? (
-                      <span>{(stageRunElevenLabsTokens(stageRun) / 1000).toFixed(1)}K EL tok</span>
                     ) : null}
                     {credits > 0 ? <span>{formatCredits(credits)} cr</span> : null}
                     {costUsd > 0 ? <span>{formatCostUsd(costUsd)}</span> : null}

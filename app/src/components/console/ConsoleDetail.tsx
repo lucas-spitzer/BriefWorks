@@ -2,7 +2,6 @@ import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { useLiveTick } from '../../hooks/useLiveTick'
 import {
   artifactFormatLabel,
-  artifactKindLabel,
   formatCostUsd,
   formatDuration,
   statusLabel,
@@ -16,6 +15,8 @@ import {
   productionRunDurationSec,
   productionRunLabel,
   productionRunProgress,
+  productionRunTargetLabel,
+  narrationSegmentProgress,
 } from '../../lib/consoleMappers'
 import type { ProductionRun } from '../../lib/workspaceApi'
 import { pipelineStepModuleLabel } from './moduleLabel'
@@ -34,7 +35,7 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
     run.status === 'running' ||
     stageRuns.some((stageRun) => stageRun.status === 'queued' || stageRun.status === 'running')
   useLiveTick(hasLiveDuration)
-  const progress = productionRunProgress(run)
+  const progress = productionRunProgress(run, stageRuns)
   const durationSec = productionRunDurationSec(run)
   const runCost = productionRunCostUsd(run, stageRuns)
 
@@ -50,7 +51,7 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
           {statusLabel(run.status)} · {formatDuration(durationSec)} · {progress}% complete
           {runCost > 0 ? ` · ${formatCostUsd(runCost)}` : ''}
           {run.target_artifacts.length
-            ? ` · target ${run.target_artifacts.map((kind) => artifactKindLabel(kind)).join(', ')}`
+            ? ` · ${productionRunTargetLabel(run.target_artifacts)}`
             : ' · Upload'}
         </div>
 
@@ -72,6 +73,21 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
 
         {run.pipeline.map((step) => {
           const displayStatus = pipelineStepDisplayStatus(step, run.pipeline, stageRuns, run.status)
+          const activeStageRun =
+            step.stage_id
+              ? stageRuns.find(
+                  (stageRun) =>
+                    stageRun.stage_id === step.stage_id &&
+                    (stageRun.status === 'running' || stageRun.status === 'queued'),
+                )
+              : undefined
+          const narrationProgress =
+            step.step === 'generate-narration' && activeStageRun
+              ? narrationSegmentProgress(activeStageRun)
+              : null
+          const narrationPct = narrationProgress
+            ? Math.min(100, Math.round((narrationProgress.done / narrationProgress.total) * 100))
+            : 0
           return (
             <div className="bw-console__step" key={step.step}>
               <span className={`bw-console__step-dot bw-console__step-dot--${displayStatus}`}>
@@ -87,6 +103,11 @@ export function ConsoleDetail({ run }: ConsoleDetailProps) {
                 <div className="desc">
                   {pipelineStepDetail(step, run.pipeline, stageRuns, run.status)}
                 </div>
+                {narrationProgress ? (
+                  <div className="bw-console__progress bw-console__progress--step" title={`${narrationProgress.done}/${narrationProgress.total} segments`}>
+                    <span style={{ width: `${narrationPct}%` }} />
+                  </div>
+                ) : null}
               </div>
             </div>
           )

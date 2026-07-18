@@ -38,47 +38,6 @@ def _needs_backfill(row: dict) -> bool:
     return has_token_usage or not has_api_usage
 
 
-def _artifact_manifests_for_stage_run(
-    db: WorkerDatabase,
-    row: dict,
-) -> list[dict]:
-    output = row.get("output") or {}
-
-    if isinstance(output, str):
-        output = json.loads(output)
-
-    if not isinstance(output, dict):
-        return []
-
-    files = output.get("files")
-
-    if not isinstance(files, list):
-        return []
-
-    manifests: list[dict] = []
-
-    for file_row in files:
-        if not isinstance(file_row, dict):
-            continue
-
-        artifact_id = file_row.get("artifact_id")
-
-        if not isinstance(artifact_id, str):
-            continue
-
-        artifact = db.get_artifact(artifact_id)
-
-        if not isinstance(artifact, dict):
-            continue
-
-        manifest = artifact.get("manifest")
-
-        if isinstance(manifest, dict):
-            manifests.append(manifest)
-
-    return manifests
-
-
 def backfill_stage_runs(
     db: WorkerDatabase,
     rows: list[dict],
@@ -92,10 +51,7 @@ def backfill_stage_runs(
         if not _needs_backfill(row):
             continue
 
-        billing = backfill_fields_for_stage_run(
-            row,
-            artifact_manifests=_artifact_manifests_for_stage_run(db, row),
-        )
+        billing = backfill_fields_for_stage_run(row)
         updated_runs.append(
             {
                 "id": row["id"],

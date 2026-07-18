@@ -3,9 +3,8 @@
 Strips front/back matter chapters and per-segment clutter (page numbers, TOC
 dot-leaders, running headers/footers, figure/table captions, bare
 citation/footnote markers, boilerplate) from NDR segments before they are
-grouped into chapters and narrated. The goal is for every downstream audio
-output (EPUB EBook, SSML, ElevenLabs structured text) to contain only the
-actual body content a listener wants to hear.
+grouped into chapters and narrated. The goal is for every downstream EBook
+output to contain only the actual body content a listener wants to hear.
 """
 
 from __future__ import annotations

@@ -2,13 +2,15 @@
 
 In the new pipeline the chapter/section structure is already known before
 chunking, so this single deterministic step produces both the NDR segments
-(consumed by source-research-adjacent steps and extract-knowledge) and the
-document_chapters rows (consumed by extract-knowledge), taking over the chapter
-grouping that the removed deconstruct-document step used to do via an LLM.
+(consumed by the Reader, retrieval, and wiki-authoring evidence linking) and
+the document_chapters rows (consumed by Create EBook and QnGen's chapter
+blueprint), taking over the chapter grouping that the removed
+deconstruct-document step used to do via an LLM.
 
 ndr_segments carry PLAIN text (markdown emphasis flattened) so they stay clean
-for downstream LLM extraction; the markdown-faithful copy lives in the persisted
-Structure artifact, which the Create EBook stage renders for italics/bold.
+for downstream LLM consumption; the markdown-faithful copy lives in the
+persisted Structure artifact, which the Create EBook stage renders for
+italics/bold.
 
 Each top-level chapter becomes one document_chapters row (level 1) whose
 segment_ids are, in order: the chapter-title heading, intro paragraphs, then for
@@ -35,12 +37,29 @@ def flatten_markdown(md: str) -> str:
     return text.strip()
 
 
-def _segment(seq: int, kind: str, text: str, page: int | None) -> dict[str, Any]:
+def display_markdown(md: str) -> str | None:
+    """Normalize a paragraph's markdown for the Reader's `md` column.
+
+    Applies the same sup-stripping and whitespace collapsing as
+    flatten_markdown but KEEPS the emphasis markers, so both copies tokenize
+    to the same word count (narration alignment relies on that). Returns None
+    when the markdown adds nothing over the flattened text, so the column only
+    stores paragraphs that actually carry emphasis.
+    """
+    text = _SUP_TAG_RE.sub("", md)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text if text != flatten_markdown(md) else None
+
+
+def _segment(
+    seq: int, kind: str, text: str, page: int | None, md: str | None = None
+) -> dict[str, Any]:
     return {
         "id": str(uuid.uuid4()),
         "sequence_index": seq,
         "kind": kind,
         "text": text,
+        "md": md,
         "locator": {"page": page},
     }
 
@@ -68,13 +87,16 @@ def build_segments_and_chapters(
             text = flatten_markdown(para.md)
             if not text:
                 continue
-            row = _segment(seq, "paragraph", text, para.page)
+            row = _segment(seq, "paragraph", text, para.page, display_markdown(para.md))
             seq += 1
             segments.append(row)
             chapter_segment_ids.append(row["id"])
 
+        chapter_sections: list[dict[str, Any]] = []
+
         for section in chapter.sections:
             sec_head = _segment(seq, "heading", section.title, section.page)
+            section_segment_ids = [sec_head["id"]]
             seq += 1
             segments.append(sec_head)
             chapter_segment_ids.append(sec_head["id"])
@@ -82,10 +104,21 @@ def build_segments_and_chapters(
                 text = flatten_markdown(para.md)
                 if not text:
                     continue
-                row = _segment(seq, "paragraph", text, para.page)
+                row = _segment(seq, "paragraph", text, para.page, display_markdown(para.md))
                 seq += 1
                 segments.append(row)
                 chapter_segment_ids.append(row["id"])
+                section_segment_ids.append(row["id"])
+
+            chapter_sections.append(
+                {
+                    "title": section.title,
+                    "level": 2,
+                    "sequence_index": sec_head["sequence_index"],
+                    "heading_segment_id": sec_head["id"],
+                    "segment_ids": section_segment_ids,
+                }
+            )
 
         chapters.append(
             {
@@ -96,6 +129,7 @@ def build_segments_and_chapters(
                 "title": chapter.title,
                 "level": 1,
                 "segment_ids": chapter_segment_ids,
+                "sections": chapter_sections,
             }
         )
 

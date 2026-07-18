@@ -1,7 +1,7 @@
 from app.intellex.source_readiness import source_intellex_complete
 
 
-def _ready_source(*, with_extract_metadata: bool = True) -> dict:
+def _ready_source() -> dict:
     metadata = {
         "parse": {
             "parsed_at": "2026-06-08T00:00:00+00:00",
@@ -26,13 +26,6 @@ def _ready_source(*, with_extract_metadata: bool = True) -> dict:
         },
     }
 
-    if with_extract_metadata:
-        metadata["extract"] = {
-            "extracted_at": "2026-06-08T00:00:07+00:00",
-            "chapter_count": 4,
-            "item_counts": {"term": 2, "concept": 4, "insight": 1},
-        }
-
     return {
         "id": "src-1",
         "storage_path": "workspaces/ws/sources/src-1/file.pdf",
@@ -47,27 +40,20 @@ def test_source_intellex_complete_when_all_metadata_present() -> None:
         has_segments=True,
         has_document_chapters=False,
         has_structure_stage_run=False,
-        has_extract_stage_run=False,
     )
 
 
-def test_source_intellex_complete_without_extract_metadata_uses_stage_run() -> None:
+def test_source_intellex_complete_does_not_require_extraction() -> None:
+    # Knowledge extraction was removed from ingest: a source with no extract
+    # metadata and no extract stage run is still intellex-complete.
+    source = _ready_source()
+    assert "extract" not in source["source_metadata"]
+
     assert source_intellex_complete(
-        _ready_source(with_extract_metadata=False),
+        source,
         has_segments=True,
         has_document_chapters=True,
         has_structure_stage_run=True,
-        has_extract_stage_run=True,
-    )
-
-
-def test_source_intellex_complete_requires_extract() -> None:
-    assert not source_intellex_complete(
-        _ready_source(with_extract_metadata=False),
-        has_segments=True,
-        has_document_chapters=True,
-        has_structure_stage_run=True,
-        has_extract_stage_run=False,
     )
 
 
@@ -77,7 +63,6 @@ def test_source_intellex_complete_requires_segments() -> None:
         has_segments=False,
         has_document_chapters=True,
         has_structure_stage_run=True,
-        has_extract_stage_run=True,
     )
 
 
@@ -90,7 +75,6 @@ def test_source_intellex_complete_requires_normalize() -> None:
         has_segments=True,
         has_document_chapters=True,
         has_structure_stage_run=True,
-        has_extract_stage_run=True,
     )
 
 
@@ -103,7 +87,6 @@ def test_source_intellex_complete_requires_trim() -> None:
         has_segments=True,
         has_document_chapters=True,
         has_structure_stage_run=True,
-        has_extract_stage_run=True,
     )
 
 
@@ -116,7 +99,6 @@ def test_source_intellex_complete_requires_validate() -> None:
         has_segments=True,
         has_document_chapters=True,
         has_structure_stage_run=True,
-        has_extract_stage_run=True,
     )
 
 
@@ -129,5 +111,4 @@ def test_source_structure_falls_back_to_stage_run_without_metadata() -> None:
         has_segments=True,
         has_document_chapters=True,
         has_structure_stage_run=True,
-        has_extract_stage_run=True,
     )

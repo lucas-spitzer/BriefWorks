@@ -13,11 +13,6 @@ class TokenRates:
     output_per_million: float
 
 
-@dataclass(frozen=True)
-class CharacterRates:
-    per_thousand: float
-
-
 def _float_env(name: str, default: float) -> float:
     raw = os.getenv(name)
 
@@ -65,15 +60,16 @@ DEFAULT_ANTHROPIC_RATES = TokenRates(
     output_per_million=_float_env("ANTHROPIC_DEFAULT_OUTPUT_PER_M", 15.00),
 )
 
-# ElevenLabs subscription credits are billed per character; we call them tokens in
-# the console. Default: $220 / 1.2M credits per year ≈ $0.00018333 per token.
-ELEVENLABS_PRICE_PER_TOKEN = _float_env("ELEVENLABS_PRICE_PER_TOKEN", 0.00018333)
-
-SPEECHIFY_RATES = CharacterRates(
-    per_thousand=_float_env("SPEECHIFY_PRICE_PER_1K_CHARS", 0.10),
-)
-
 LLAMAPARSE_PRICE_PER_CREDIT = _float_env("LLAMAPARSE_PRICE_PER_CREDIT", 0.00125)
+
+# Server-side web search is billed per search on top of tokens ($10 / 1k
+# searches at both providers' list price).
+ANTHROPIC_WEB_SEARCH_PRICE_PER_SEARCH = _float_env("ANTHROPIC_WEB_SEARCH_PRICE_PER_SEARCH", 0.01)
+OPENAI_WEB_SEARCH_PRICE_PER_SEARCH = _float_env("OPENAI_WEB_SEARCH_PRICE_PER_SEARCH", 0.01)
+
+# ElevenLabs bills TTS per character; the default approximates the Creator
+# tier's effective rate. Override to match your subscription.
+ELEVENLABS_PRICE_PER_CHARACTER = _float_env("ELEVENLABS_PRICE_PER_CHARACTER", 0.00018333)
 
 
 def _round_usd(value: float) -> float:
@@ -176,36 +172,18 @@ def cost_llm_usage(
     )
 
 
-def cost_elevenlabs_usage(
-    *,
-    model_id: str | None,
-    character_count: int,
-    request_count: int = 1,
-) -> dict[str, Any]:
-    total = character_count * ELEVENLABS_PRICE_PER_TOKEN
+def cost_web_search_usage(*, provider: str, search_count: int) -> dict[str, Any]:
+    rate = (
+        ANTHROPIC_WEB_SEARCH_PRICE_PER_SEARCH
+        if provider == "anthropic"
+        else OPENAI_WEB_SEARCH_PRICE_PER_SEARCH
+    )
 
     return {
-        "provider": "elevenlabs",
-        "model": model_id or "unknown",
-        "token_count": character_count,
-        "character_count": character_count,
-        "request_count": request_count,
-        "cost_usd": _round_usd(total),
-    }
-
-
-def cost_speechify_usage(
-    *,
-    model: str | None,
-    character_count: int,
-) -> dict[str, Any]:
-    total = (character_count / 1_000) * SPEECHIFY_RATES.per_thousand
-
-    return {
-        "provider": "speechify",
-        "model": model or "unknown",
-        "character_count": character_count,
-        "cost_usd": _round_usd(total),
+        "provider": provider,
+        "model": "web_search",
+        "search_count": search_count,
+        "cost_usd": _round_usd(search_count * rate),
     }
 
 
@@ -215,5 +193,16 @@ def cost_llamaparse_usage(*, credit_count: int) -> dict[str, Any]:
     return {
         "provider": "llamaparse",
         "credit_count": credit_count,
+        "cost_usd": _round_usd(total),
+    }
+
+
+def cost_elevenlabs_usage(*, model: str | None, character_count: int) -> dict[str, Any]:
+    total = character_count * ELEVENLABS_PRICE_PER_CHARACTER
+
+    return {
+        "provider": "elevenlabs",
+        "model": model or "unknown",
+        "character_count": character_count,
         "cost_usd": _round_usd(total),
     }

@@ -14,11 +14,14 @@
 }
 
 .bw-gallery--full {
-  min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .bw-gallery--full .bw-console {
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
 }
 
 /* shared status semantics — color is paired with text/icons in markup */
@@ -46,7 +49,9 @@
   font-family: var(--bw-plex);
   display: grid;
   grid-template-columns: 76px 1fr;
+  height: 100%;
   min-height: 100vh;
+  overflow: hidden;
   background: #0a1b25;
   color: #e7eef1;
 }
@@ -59,12 +64,25 @@
   align-items: center;
   padding: var(--space-5) 0;
   gap: var(--space-2);
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
 }
 .bw-console__rail-mark {
   width: 40px; height: 40px; border-radius: 10px;
   background: var(--color-scarlet); color: var(--color-white);
   display: grid; place-items: center; font-family: var(--bw-grotesk);
   font-weight: 700; margin-bottom: var(--space-5);
+  border: 0; cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: background-color 160ms ease, transform 120ms ease;
+}
+.bw-console__rail-mark:hover {
+  filter: brightness(1.08);
+}
+.bw-console__rail-mark.is-learner {
+  background: var(--color-gold);
+  color: var(--color-white);
 }
 .bw-console__rail-btn {
   width: 44px; height: 44px; border-radius: 10px;
@@ -104,9 +122,16 @@
   margin-top: 2px;
 }
 
-.bw-console__main { display: flex; flex-direction: column; min-width: 0; }
+.bw-console__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 
 .bw-console__header {
+  flex-shrink: 0;
   display: flex; align-items: center; gap: var(--space-4);
   padding: var(--space-5) var(--space-6);
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
@@ -145,7 +170,12 @@
 .bw-console__cta--ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,0.2); }
 .bw-console__cta--ghost:hover { background: rgba(255,255,255,0.08); }
 
-.bw-console__scroll { padding: var(--space-6); overflow: auto; }
+.bw-console__scroll {
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-6);
+  overflow: auto;
+}
 
 .bw-console__metrics {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -220,6 +250,11 @@
   margin-top: 8px; overflow: hidden; width: 160px;
 }
 .bw-console__progress span { display: block; height: 100%; background: var(--color-gold); }
+.bw-console__progress--step {
+  width: 100%;
+  max-width: 240px;
+  margin-top: 6px;
+}
 
 /* detail / drill-down */
 .bw-console__detail { padding: 18px; }
@@ -371,13 +406,44 @@
   line-height: 1.5;
 }
 
+.bw-console__card-filename {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  text-align: left;
+  font-size: 0.84rem;
+  color: #b6c4cb;
+  margin-top: var(--space-3);
+  line-height: 1.5;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.bw-console__card-filename:hover {
+  color: #f0e2b4;
+  text-decoration: underline;
+}
+
+.bw-console__card-filename--list {
+  display: block;
+  font-family: var(--bw-mono);
+  font-size: 0.68rem;
+  color: #8aa1ab;
+  margin-top: 2px;
+}
+
 .bw-console__artifact-foot .bw-console__statepill {
   border: 0;
-  cursor: pointer;
   appearance: none;
 }
 
-.bw-console__artifact-foot .bw-console__statepill:hover {
+.bw-console__artifact-foot .bw-console__statepill.bw-state--download {
+  cursor: pointer;
+}
+
+.bw-console__artifact-foot .bw-console__statepill.bw-state--download:hover {
   background: rgba(132, 117, 78, 0.4);
   color: #f0e2b4;
 }
@@ -599,4 +665,224 @@
   .bw-console__select { min-width: 0; width: 100%; }
   .bw-console__reasoning { width: 100%; justify-content: space-between; }
   .bw-console__select--sm { flex: 1; }
+}
+
+/* ---- learner mode (integrated shell) -------------------------------------- */
+.bw-console--learner {
+  background: #fbfaf7;
+}
+
+.bw-console--learner .bw-console__main {
+  background: #fbfaf7;
+  color: #1a1a18;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.bw-console--learner .bw-console__rail-btn.is-active {
+  background: rgba(132, 117, 78, 0.22);
+  box-shadow: inset 2px 0 0 var(--color-gold);
+}
+
+.bw-console--learner .learner--integrated {
+  width: 100%;
+  min-height: 100%;
+  background: transparent;
+  color: inherit;
+}
+
+.bw-console--learner .learner--integrated .learner__main {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--space-7) clamp(var(--space-5), 4vw, var(--space-8));
+  min-height: 100%;
+}
+
+
+
+/* --- Wiki authoring (Knowledge Wiki page) --------------------------------- */
+
+.bw-wiki__input {
+  width: 100%;
+  background: #0a1b25;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #fff;
+  font-family: var(--bw-plex);
+  font-size: 0.86rem;
+  padding: 9px 12px;
+}
+.bw-wiki__input:focus-visible { outline: 3px solid var(--color-gold); outline-offset: 2px; }
+.bw-wiki__input--label { flex: 1 1 200px; font-weight: 600; }
+
+.bw-wiki__textarea {
+  width: 100%;
+  background: #0a1b25;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  color: #fff;
+  font-family: var(--bw-plex);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  padding: 10px 12px;
+  resize: vertical;
+}
+.bw-wiki__textarea:focus-visible { outline: 3px solid var(--color-gold); outline-offset: 2px; }
+.bw-wiki__textarea--definition { margin-top: 8px; }
+
+.bw-wiki__select { min-width: 130px; }
+
+.bw-wiki__review-row {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+.bw-wiki__review-row.is-excluded { opacity: 0.45; }
+
+.bw-wiki__review-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bw-wiki__include { display: flex; align-items: center; }
+.bw-wiki__include input { width: 16px; height: 16px; accent-color: var(--color-gold); }
+
+/* Deep link from a committed entry's evidence into the Reader. */
+.bw-wiki__reader-link {
+  color: #9cc2ff;
+  text-decoration: none;
+  font-size: 0.8rem;
+}
+
+.bw-wiki__reader-link:hover {
+  text-decoration: underline;
+}
+
+.bw-wiki__pill {
+  font-family: var(--bw-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #b6c4cb;
+  white-space: nowrap;
+}
+.bw-wiki__pill--term { border-color: rgba(110, 168, 254, 0.5); color: #9cc2ff; }
+.bw-wiki__pill--concept { border-color: rgba(132, 117, 78, 0.7); color: #d8c48d; }
+.bw-wiki__pill--insight { border-color: rgba(147, 219, 181, 0.5); color: #93dbb5; }
+.bw-wiki__pill--new { border-color: rgba(147, 219, 181, 0.5); color: #93dbb5; }
+.bw-wiki__pill--merge { border-color: rgba(110, 168, 254, 0.5); color: #9cc2ff; }
+.bw-wiki__pill--conflict { border-color: rgba(240, 148, 131, 0.6); color: #f0a493; }
+.bw-wiki__pill--ev-linked { border-color: rgba(147, 219, 181, 0.5); color: #93dbb5; }
+.bw-wiki__pill--ev-weak { border-color: rgba(216, 196, 141, 0.6); color: #d8c48d; }
+.bw-wiki__pill--ev-unlinked { border-color: rgba(255, 255, 255, 0.16); color: #8aa1ab; }
+
+.bw-wiki__meta {
+  font-size: 0.78rem;
+  color: #8aa1ab;
+  margin-top: 8px;
+}
+.bw-wiki__meta a { color: #9cc2ff; }
+.bw-wiki__meta--conflict { color: #f0a493; }
+.bw-wiki__meta--excerpt { font-style: italic; }
+
+.bw-wiki__fragments {
+  border: 1px dashed rgba(216, 196, 141, 0.4);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-top: 4px;
+}
+
+.bw-wiki__notice {
+  color: #93dbb5;
+  font-size: 0.84rem;
+  margin-top: 10px;
+}
+
+.bw-wiki__row--muted { opacity: 0.5; }
+
+.bw-wiki__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.bw-wiki__action {
+  appearance: none;
+  font-family: var(--bw-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease;
+}
+
+.bw-wiki__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bw-wiki__action:focus-visible {
+  outline: 3px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+.bw-wiki__action--edit {
+  color: #d8c48a;
+  background: transparent;
+  border-color: rgba(132, 117, 78, 0.55);
+}
+
+.bw-wiki__action--edit:hover:not(:disabled) {
+  background: rgba(132, 117, 78, 0.18);
+  border-color: rgba(132, 117, 78, 0.9);
+  color: #f0e2b4;
+}
+
+.bw-wiki__action--deprecate {
+  color: #ff9a9a;
+  background: transparent;
+  border-color: rgba(148, 0, 0, 0.45);
+}
+
+.bw-wiki__action--deprecate:hover:not(:disabled) {
+  background: rgba(148, 0, 0, 0.22);
+  border-color: var(--color-scarlet);
+  color: #ffb8b8;
+}
+
+.bw-wiki__action--save {
+  color: #d8c48a;
+  background: rgba(132, 117, 78, 0.28);
+  border-color: rgba(132, 117, 78, 0.55);
+}
+
+.bw-wiki__action--save:hover:not(:disabled) {
+  background: rgba(132, 117, 78, 0.4);
+  color: #f0e2b4;
+}
+
+.bw-wiki__action--cancel {
+  color: #9fb2bb;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.bw-wiki__action--cancel:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
 }

@@ -137,6 +137,12 @@ export function sourceConfidence(source: Source): number | null {
   return values.reduce((sum, value) => sum + value, 0) / values.length
 }
 
+export function productionRunTargetLabel(targetArtifacts: string[]): string {
+  return targetArtifacts.length > 0
+    ? targetArtifacts.map((artifact) => artifactKindLabel(artifact)).join(', ')
+    : 'Upload'
+}
+
 export function productionRunLabel(run: ProductionRun, sources: Source[]): string {
   const titles = run.source_ids
     .map((id) => sources.find((s) => s.id === id))
@@ -144,18 +150,31 @@ export function productionRunLabel(run: ProductionRun, sources: Source[]): strin
     .map((s) => sourceTitle(s))
 
   const sourcePart = titles.length ? titles.join(', ') : `${run.source_ids.length} source(s)`
-  const targetPart =
-    run.target_artifacts.length > 0
-      ? run.target_artifacts.map((artifact) => artifactKindLabel(artifact)).join(', ')
-      : 'Upload'
-  return `${sourcePart} → ${targetPart}`
+  return `${sourcePart} → ${productionRunTargetLabel(run.target_artifacts)}`
 }
 
-export function productionRunProgress(run: ProductionRun): number {
+export function productionRunProgress(
+  run: ProductionRun,
+  stageRuns: StageRun[] = [],
+): number {
   const steps = run.pipeline
   if (!steps.length) return 0
   const completed = steps.filter((step) => step.status === 'completed').length
-  return Math.round((completed / steps.length) * 100)
+  let units = completed
+
+  const activeNarration = stageRuns.find(
+    (stageRun) =>
+      stageRun.stage_id === 'generate-narration' &&
+      (stageRun.status === 'running' || stageRun.status === 'queued'),
+  )
+  const narrationProgress = activeNarration
+    ? narrationSegmentProgress(activeNarration)
+    : null
+  if (narrationProgress) {
+    units += Math.min(1, narrationProgress.done / narrationProgress.total)
+  }
+
+  return Math.round((units / steps.length) * 100)
 }
 
 export function productionRunDurationSec(run: ProductionRun): number {
@@ -171,11 +190,24 @@ export function stageRunDurationSec(stageRun: StageRun): number {
   return Math.max(0, Math.round((end - start) / 1000))
 }
 
+export function narrationSegmentProgress(
+  stageRun: StageRun,
+): { done: number; total: number } | null {
+  const output = stageRun.output
+  if (!output) return null
+  const done = Number(output.segments_done)
+  const total = Number(output.segments_total)
+  if (!Number.isFinite(done) || !Number.isFinite(total) || total <= 0) return null
+  return { done, total }
+}
+
 export function stageRunSummary(stageRun: StageRun): string {
   if (stageRun.error) return 'Execution failed.'
   if (stageRun.output && typeof stageRun.output.summary === 'string') {
     return stageRun.output.summary
   }
+  const progress = narrationSegmentProgress(stageRun)
+  if (progress) return `${progress.done}/${progress.total} segments`
   if (stageRun.status === 'completed') return 'Completed successfully.'
   if (stageRun.status === 'running') return 'In progress…'
   if (stageRun.status === 'queued') return 'Queued.'
@@ -191,30 +223,22 @@ export function stageRunTokens(stageRun: StageRun): { in: number; out: number } 
   }
 }
 
-export function stageRunApiUsageTotals(
-  stageRun: StageRun,
-): { costUsd: number; elevenlabsTokens: number } {
+export function stageRunApiUsageTotals(stageRun: StageRun): { costUsd: number } {
   const usage = stageRun.api_usage
 
   if (!usage || typeof usage !== 'object' || Array.isArray(usage)) {
-    return { costUsd: 0, elevenlabsTokens: 0 }
+    return { costUsd: 0 }
   }
 
   const totals = (usage as { totals?: Record<string, unknown> }).totals
 
   if (!totals || typeof totals !== 'object') {
-    return { costUsd: 0, elevenlabsTokens: 0 }
+    return { costUsd: 0 }
   }
 
   const costUsd = typeof totals.cost_usd === 'number' ? totals.cost_usd : 0
-  const elevenlabsTokens =
-    typeof totals.elevenlabs_tokens === 'number'
-      ? totals.elevenlabs_tokens
-      : typeof totals.character_count === 'number'
-        ? totals.character_count
-        : 0
 
-  return { costUsd, elevenlabsTokens }
+  return { costUsd }
 }
 
 export function stageRunCostUsd(stageRun: StageRun): number {
@@ -225,10 +249,6 @@ export function stageRunCostUsd(stageRun: StageRun): number {
   }
 
   return stageRunApiUsageTotals(stageRun).costUsd
-}
-
-export function stageRunElevenLabsTokens(stageRun: StageRun): number {
-  return stageRunApiUsageTotals(stageRun).elevenlabsTokens
 }
 
 export function productionRunCostUsd(
@@ -250,6 +270,26 @@ export function sumWorkspaceCostUsd(
   )
 }
 
+// Single source of truth for pipeline-step display names, shared by the
+// production-run step list (pipelineStepLabel) and the API-request log
+// (stageRunDisplayName / apiRequestStageLabel) so both views always agree.
+const PIPELINE_STEP_LABELS: Record<string, string> = {
+  store: 'Store Source',
+  parse: 'Parse Document',
+  'normalize-document': 'Normalize',
+  'trim-document-boundaries': 'Trim Document',
+  'structure-document': 'Structure',
+  'validate-structure': 'Validate',
+  chunk: 'Chunk Document',
+  'source-research': 'Source Research',
+  'create-ebook': 'Create EBook',
+  'generate-narration': 'Generate Narration',
+  'export-wiki-json': 'Export Wiki JSON',
+  'generate-flashcards': 'Generate Flashcards',
+  'generate-questions': 'Generate Questions',
+  'generate-scenarios': 'Generate Scenarios',
+}
+
 export function stageRunDisplayName(stageRun: StageRun): string {
   return apiRequestStageLabel(stageRun.stage_id) ?? stageRun.stage_id
     .split('-')
@@ -257,18 +297,19 @@ export function stageRunDisplayName(stageRun: StageRun): string {
     .join(' ')
 }
 
-const API_REQUEST_STAGES: Record<string, { label: string; tool: string }> = {
-  parse: { label: 'Parse', tool: 'LlamaParse' },
-  'normalize-document': { label: 'Normalize', tool: 'Local' },
-  'trim-document-boundaries': { label: 'Trim', tool: 'Local' },
-  'structure-document': { label: 'Structure', tool: 'Local' },
-  'validate-structure': { label: 'Validate', tool: 'Local' },
-  'source-research': { label: 'Source Research', tool: 'OpenAI' },
-  'extract-knowledge': { label: 'Extract Knowledge', tool: 'Claude' },
-  'create-ebook': { label: 'Create EBook', tool: 'Local' },
-  'generate-flashcards': { label: 'Generate Flashcards', tool: 'Claude' },
-  'generate-questions': { label: 'Generate Questions', tool: 'Claude' },
-  'generate-scenarios': { label: 'Generate Scenarios', tool: 'Claude' },
+const API_REQUEST_STAGES: Record<string, { tool: string }> = {
+  parse: { tool: 'LlamaParse' },
+  'normalize-document': { tool: 'Local' },
+  'trim-document-boundaries': { tool: 'Local' },
+  'structure-document': { tool: 'Local' },
+  'validate-structure': { tool: 'Local' },
+  'source-research': { tool: 'OpenAI' },
+  'create-ebook': { tool: 'Local' },
+  'generate-narration': { tool: 'ElevenLabs' },
+  'export-wiki-json': { tool: 'Local' },
+  'generate-flashcards': { tool: 'Claude' },
+  'generate-questions': { tool: 'Claude' },
+  'generate-scenarios': { tool: 'Claude' },
 }
 
 const API_PROVIDER_LABELS: Record<string, string> = {
@@ -277,7 +318,6 @@ const API_PROVIDER_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Claude',
   elevenlabs: 'ElevenLabs',
-  speechify: 'Speechify',
 }
 
 function apiUsageRecord(stageRun: StageRun): Record<string, unknown> | null {
@@ -299,7 +339,7 @@ function providerToolLabel(provider: unknown): string | null {
 }
 
 export function apiRequestStageLabel(stageId: string): string | null {
-  return API_REQUEST_STAGES[stageId]?.label ?? null
+  return API_REQUEST_STAGES[stageId] ? (PIPELINE_STEP_LABELS[stageId] ?? stageId) : null
 }
 
 export function stageRunApiToolLabel(stageRun: StageRun): string {
@@ -353,11 +393,19 @@ export function isApiRequestStageRun(stageRun: StageRun): boolean {
   if (!API_REQUEST_STAGES[stageRun.stage_id]) return false
   if (stageRun.model === 'deterministic-passthrough') return false
 
+  // Narration is billed via ElevenLabs characters, not LLM tokens — surface
+  // in-flight runs so the API log can show live "N/M segments" progress.
+  if (
+    stageRun.stage_id === 'generate-narration' &&
+    (stageRun.status === 'running' || stageRun.status === 'queued')
+  ) {
+    return true
+  }
+
   const tokens = stageRunTokens(stageRun)
   if (tokens.in + tokens.out > 0) return true
   if (stageRunApiCalls(stageRun).length > 0) return true
   if (stageRunCredits(stageRun) > 0) return true
-  if (stageRunElevenLabsTokens(stageRun) > 0) return true
 
   const model = (stageRun.model ?? '').trim().toLowerCase()
   if (model && model !== 'unknown') return true
@@ -374,10 +422,13 @@ export function flattenApiRequests(
 }
 
 export function pipelineStepLabel(step: PipelineStep): string {
-  return step.step
-    .split('-')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
+  return (
+    PIPELINE_STEP_LABELS[step.step] ??
+    step.step
+      .split('-')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ')
+  )
 }
 
 export type PipelineStepDisplayStatus = 'completed' | 'running' | 'failed' | 'queued'
@@ -446,10 +497,9 @@ export function artifactModule(artifact: Artifact): string {
   const manifest = artifact.manifest
   if (typeof manifest.module === 'string') return manifest.module
   if (
-    artifact.artifact_type === 'eleven_reader_script' ||
-    artifact.artifact_type === 'speechify_script' ||
-    artifact.artifact_type === 'speechify_audio' ||
-    artifact.artifact_type === 'elevenlabs_audio' ||
+    artifact.artifact_type === 'electronic_book' ||
+    artifact.artifact_type === 'narration_audio' ||
+    artifact.artifact_type === 'wiki_json' ||
     artifact.artifact_type === 'uploaded'
   ) {
     return 'mathesys'

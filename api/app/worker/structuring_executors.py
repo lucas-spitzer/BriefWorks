@@ -360,7 +360,7 @@ class CreateEbookStageExecutor(_ExecutorBase):
                     "workspace_id": workspace_id,
                     "source_id": source["id"],
                     "production_run_id": production_run_id,
-                    "artifact_type": "eleven_reader_script",
+                    "artifact_type": "electronic_book",
                     "format": "epub3",
                     "filename": filename,
                     "storage_path": "pending",

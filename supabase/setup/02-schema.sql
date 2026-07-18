@@ -184,6 +184,7 @@ create table public.document_chapters (
   title text not null,
   level integer not null default 1,
   segment_ids uuid[] not null,
+  sections jsonb not null default '[]',
   created_at timestamptz not null default now(),
   constraint document_chapters_source_sequence_key
     unique (source_id, sequence_index)
@@ -268,10 +269,8 @@ create table public.artifacts (
   constraint artifacts_type_check
     check (
       artifact_type in (
-        'eleven_reader_script',
-        'speechify_script',
-        'speechify_audio',
-        'elevenlabs_audio'
+        'electronic_book',
+        'wiki_json'
       )
     )
 );

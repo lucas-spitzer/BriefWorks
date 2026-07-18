@@ -53,7 +53,7 @@ values
     'trim-document-boundaries',
     '1.0',
     'intellex',
-    'Trim Document Boundaries',
+    'Trim Document',
     'Detect and trim front/back matter before the first chapter and after back-matter markers.',
     array['text'],
     '{"type":"object","properties":{"source_id":{"type":"string"},"element_count":{"type":"integer"}}}'::jsonb,
@@ -417,8 +417,20 @@ values
 
 update public.stages
 set is_active = false
-where stage_id in ('prepare-document', 'deconstruct-document', 'elevenreader-ebook');
+where stage_id in (
+  'prepare-document',
+  'deconstruct-document',
+  'elevenreader-ebook',
+  'speechify-audio',
+  'elevenlabs-audio'
+);
 
 update public.stages
 set is_active = false
-where stage_id in ('prepare-document', 'deconstruct-document', 'elevenreader-ebook');
+where stage_id in (
+  'prepare-document',
+  'deconstruct-document',
+  'elevenreader-ebook',
+  'speechify-audio',
+  'elevenlabs-audio'
+);

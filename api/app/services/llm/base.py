@@ -45,3 +45,18 @@ class LLMClient(Protocol):
         Implementations must coerce the model's output into a ``dict`` or raise.
         """
         ...
+
+    def complete_json_with_web_search(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        model: str | None = None,
+        max_searches: int = 5,
+    ) -> LLMCompletionResult:
+        """Return a JSON-object completion where the model may issue web searches.
+
+        ``token_usage`` additionally carries ``web_search_requests`` so the
+        billing layer can price searches separately from tokens.
+        """
+        ...

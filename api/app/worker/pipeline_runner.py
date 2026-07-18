@@ -7,7 +7,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.intellex.models import ParsedDocument
-from app.intellex.source_readiness import source_intellex_complete
+from app.intellex.source_readiness import (
+    source_intellex_complete,
+    source_web_enrichment_complete,
+)
 from app.intellex.structuring.chunk import build_segments_and_chapters
 from app.intellex.structuring.models import Book, Element
 from app.services.llm import (
@@ -16,15 +19,15 @@ from app.services.llm import (
     set_workspace_overrides,
 )
 from app.worker.db import WorkerDatabase
+from app.worker.narration_executor import NarrationStageExecutor
 from app.worker.stage_executor import (
-    ElevenLabsStructuredTextStageExecutor,
-    ExtractChapterKnowledgeStageExecutor,
+    ExportWikiJsonStageExecutor,
     FlashcardGenStageExecutor,
     ParseStageExecutor,
     QuizGenStageExecutor,
     ScenarioGenStageExecutor,
     SourceResearchStageExecutor,
-    SpeechifyApiSsmlStageExecutor,
+    WebEnrichmentStageExecutor,
 )
 from app.worker.storage import WorkerStorage
 from app.worker.structuring_executors import (
@@ -106,15 +109,15 @@ class PipelineRunner:
         db: WorkerDatabase | None = None,
         storage: WorkerStorage | None = None,
         source_research: SourceResearchStageExecutor | None = None,
+        web_enrichment: WebEnrichmentStageExecutor | None = None,
         parse: ParseStageExecutor | None = None,
         normalize: NormalizeStageExecutor | None = None,
         trim: TrimBoundariesStageExecutor | None = None,
         structure: StructureStageExecutor | None = None,
         validate: PdfStructureValidationStageExecutor | None = None,
-        extract_chapter_knowledge: ExtractChapterKnowledgeStageExecutor | None = None,
         create_ebook: CreateEbookStageExecutor | None = None,
-        speechify_api_ssml: SpeechifyApiSsmlStageExecutor | None = None,
-        elevenlabs_structured_text: ElevenLabsStructuredTextStageExecutor | None = None,
+        generate_narration: NarrationStageExecutor | None = None,
+        export_wiki_json: ExportWikiJsonStageExecutor | None = None,
         flashcard_gen: FlashcardGenStageExecutor | None = None,
         quiz_gen: QuizGenStageExecutor | None = None,
         scenario_gen: ScenarioGenStageExecutor | None = None,
@@ -122,22 +125,20 @@ class PipelineRunner:
         self.db = db or WorkerDatabase()
         self.storage = storage or WorkerStorage()
         self.source_research = source_research or SourceResearchStageExecutor(self.db)
+        self.web_enrichment = web_enrichment or WebEnrichmentStageExecutor(self.db)
         self.parse = parse or ParseStageExecutor(self.db, self.storage)
         self.normalize = normalize or NormalizeStageExecutor(self.db, self.storage)
         self.trim = trim or TrimBoundariesStageExecutor(self.db, self.storage)
         self.structure = structure or StructureStageExecutor(self.db, self.storage)
         self.validate = validate or PdfStructureValidationStageExecutor(self.db, self.storage)
-        self.extract_chapter_knowledge = (
-            extract_chapter_knowledge or ExtractChapterKnowledgeStageExecutor(self.db)
-        )
         self.create_ebook = create_ebook or CreateEbookStageExecutor(self.db, self.storage)
-        self.speechify_api_ssml = speechify_api_ssml or SpeechifyApiSsmlStageExecutor(
+        self.generate_narration = generate_narration or NarrationStageExecutor(
             self.db,
             self.storage,
         )
-        self.elevenlabs_structured_text = (
-            elevenlabs_structured_text
-            or ElevenLabsStructuredTextStageExecutor(self.db, self.storage)
+        self.export_wiki_json = export_wiki_json or ExportWikiJsonStageExecutor(
+            self.db,
+            self.storage,
         )
         self.flashcard_gen = flashcard_gen or FlashcardGenStageExecutor(self.db)
         self.quiz_gen = quiz_gen or QuizGenStageExecutor(self.db)
@@ -427,7 +428,7 @@ class PipelineRunner:
             ),
         )
 
-    def run_extract_chapter_knowledge_step(
+    def run_web_enrichment_step(
         self,
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
@@ -435,14 +436,14 @@ class PipelineRunner:
         stage_run_ids: list[str] = []
         reused = 0
 
+        # Runs even for intellex-complete sources: enrichment only needs the
+        # research block, so older sources get backfilled on their next run.
         for source in context.sources:
-            source_id = source["id"]
-
-            if source_id in context.intellex_complete_source_ids:
+            if source_web_enrichment_complete(source):
                 reused += 1
                 continue
 
-            stage_run_id = self.extract_chapter_knowledge.run_for_source(
+            stage_run_id = self.web_enrichment.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
                 source=source,
@@ -454,7 +455,7 @@ class PipelineRunner:
 
         return mark_step(
             pipeline,
-            "extract-knowledge",
+            "web-enrichment",
             status="completed",
             stage_run_id=last_stage_run_id,
             detail=step_detail(
@@ -464,12 +465,38 @@ class PipelineRunner:
             ),
         )
 
+    def run_export_wiki_json_step(
+        self,
+        context: PipelineContext,
+        pipeline: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return self._run_mathesys_narration_step(
+            context,
+            pipeline,
+            target_artifact="wiki_json",
+            step_name="export-wiki-json",
+            executor=self.export_wiki_json,
+        )
+
+    def run_generate_narration_step(
+        self,
+        context: PipelineContext,
+        pipeline: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return self._run_mathesys_narration_step(
+            context,
+            pipeline,
+            target_artifact="narration_audio",
+            step_name="generate-narration",
+            executor=self.generate_narration,
+        )
+
     def run_create_ebook_step(
         self,
         context: PipelineContext,
         pipeline: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        if "eleven_reader_script" not in context.target_artifacts:
+        if "electronic_book" not in context.target_artifacts:
             return pipeline
 
         stage_run_ids: list[str] = []
@@ -489,32 +516,6 @@ class PipelineRunner:
             status="completed",
             stage_run_id=last_stage_run_id,
             detail=f"{len(stage_run_ids)} stage run(s)",
-        )
-
-    def run_speechify_api_ssml_step(
-        self,
-        context: PipelineContext,
-        pipeline: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        return self._run_mathesys_narration_step(
-            context,
-            pipeline,
-            target_artifact="speechify_audio",
-            step_name="speechify-audio",
-            executor=self.speechify_api_ssml,
-        )
-
-    def run_elevenlabs_structured_text_step(
-        self,
-        context: PipelineContext,
-        pipeline: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        return self._run_mathesys_narration_step(
-            context,
-            pipeline,
-            target_artifact="elevenlabs_audio",
-            step_name="elevenlabs-audio",
-            executor=self.elevenlabs_structured_text,
         )
 
     def _run_mathesys_narration_step(
@@ -652,17 +653,12 @@ class PipelineRunner:
                 source_id,
                 StructureStageExecutor.STAGE_ID,
             )
-            has_extract_stage_run = self.db.has_completed_stage_run_for_source(
-                source_id,
-                ExtractChapterKnowledgeStageExecutor.STAGE_ID,
-            )
 
             if source_intellex_complete(
                 source,
                 has_segments=has_segments,
                 has_document_chapters=has_document_chapters,
                 has_structure_stage_run=has_structure_stage_run,
-                has_extract_stage_run=has_extract_stage_run,
             ):
                 context.intellex_complete_source_ids.add(source_id)
 
@@ -703,16 +699,16 @@ class PipelineRunner:
             pipeline = self.run_source_research_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
-            pipeline = self.run_extract_chapter_knowledge_step(context, pipeline)
+            pipeline = self.run_web_enrichment_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
             pipeline = self.run_create_ebook_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
-            pipeline = self.run_speechify_api_ssml_step(context, pipeline)
+            pipeline = self.run_generate_narration_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
-            pipeline = self.run_elevenlabs_structured_text_step(context, pipeline)
+            pipeline = self.run_export_wiki_json_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
             pipeline = self.run_generate_flashcards_step(context, pipeline)

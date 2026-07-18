@@ -18,6 +18,14 @@ def source_research_complete(source: dict[str, Any]) -> bool:
     return isinstance(research, dict) and bool(research.get("researched_at"))
 
 
+def source_web_enrichment_complete(source: dict[str, Any]) -> bool:
+    # Deliberately NOT part of source_intellex_complete: enrichment only needs
+    # the research block, so already-ingested sources get backfilled without
+    # re-running parse/structure/chunk.
+    enrichment = _source_metadata(source).get("web_enrichment")
+    return isinstance(enrichment, dict) and bool(enrichment.get("enriched_at"))
+
+
 def source_normalize_complete(source: dict[str, Any]) -> bool:
     normalize = _source_metadata(source).get("normalize")
     return isinstance(normalize, dict) and bool(normalize.get("normalized_at"))
@@ -55,27 +63,19 @@ def source_chunk_complete(source: dict[str, Any], *, has_segments: bool) -> bool
     return isinstance(parse_meta, dict) and bool(parse_meta.get("chunked_at"))
 
 
-def source_extract_complete(
-    source: dict[str, Any],
-    *,
-    has_completed_stage_run: bool,
-) -> bool:
-    extract = _source_metadata(source).get("extract")
-    if isinstance(extract, dict) and extract.get("extracted_at"):
-        return True
-
-    return has_completed_stage_run
-
-
 def source_intellex_complete(
     source: dict[str, Any],
     *,
     has_segments: bool,
     has_document_chapters: bool,
     has_structure_stage_run: bool,
-    has_extract_stage_run: bool,
 ) -> bool:
-    """A source is intellex-complete once the structure-based ingest has fully run."""
+    """A source is intellex-complete once the structure-based ingest has fully run.
+
+    Knowledge extraction is no longer part of ingest — wiki entries are curated
+    manually afterwards — so ingest completeness ends at chunked segments and
+    persisted chapters.
+    """
     return (
         bool(source.get("storage_path"))
         and source_parse_complete(source)
@@ -89,8 +89,4 @@ def source_intellex_complete(
         )
         and source_validate_complete(source)
         and source_chunk_complete(source, has_segments=has_segments)
-        and source_extract_complete(
-            source,
-            has_completed_stage_run=has_extract_stage_run,
-        )
     )

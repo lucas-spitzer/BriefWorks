@@ -91,16 +91,18 @@ export function ConsoleArtifacts() {
                   return (
                   <tr key={artifact.id}>
                     <td>
-                      <button
-                        type="button"
-                        className="bw-console__listname"
-                        onClick={() => void handleDownload(artifact.id)}
-                      >
+                      <div className="bw-console__listname">
                         <span>
                           <div className="t">{artifactCardTitle(artifact, source)}</div>
-                          <div className="s">{artifact.filename}</div>
+                          <button
+                            type="button"
+                            className="bw-console__card-filename bw-console__card-filename--list"
+                            onClick={() => void handleDownload(artifact.id)}
+                          >
+                            {artifact.filename}
+                          </button>
                         </span>
-                      </button>
+                      </div>
                     </td>
                     <td>{artifactKindShortLabel(artifact.artifact_type)}</td>
                     <td>{moduleLabel(artifactModule(artifact))}</td>
@@ -129,18 +131,20 @@ export function ConsoleArtifacts() {
                       {artifactCardTitle(artifact, source)}
                     </div>
                   </div>
-                  <p className="bw-console__card-desc">{artifact.filename}</p>
+                  <button
+                    type="button"
+                    className="bw-console__card-filename"
+                    onClick={() => void handleDownload(artifact.id)}
+                  >
+                    {artifact.filename}
+                  </button>
                   <div className="bw-console__card-fill" aria-hidden="true" />
                   <div className="bw-console__artifact-foot">
                     <span className="seg">{formatBytes(artifact.file_size_bytes)}</span>
                     <span className="seg">{artifactFormatLabel(artifact.format)}</span>
                     <span className="seg">
-                      <button
-                        type="button"
-                        className="bw-console__statepill bw-state--download"
-                        onClick={() => void handleDownload(artifact.id)}
-                      >
-                        Download
+                      <button type="button" className="bw-console__statepill bw-state--download">
+                        Open
                       </button>
                     </span>
                   </div>

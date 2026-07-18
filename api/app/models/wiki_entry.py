@@ -1,7 +1,27 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+
+class WikiEntryCreate(BaseModel):
+    """Single manual entry, no LLM (quick add)."""
+
+    preferred_label: str = Field(min_length=1)
+    definition: str = Field(min_length=1)
+    entry_kind: Literal["term", "concept", "insight"] = "concept"
+    importance: Literal["essential", "supporting", "contextual"] = "supporting"
+    aliases: list[str] = Field(default_factory=list)
+    pronunciation: str | None = None
+
+
+class WikiEntryUpdate(BaseModel):
+    preferred_label: str | None = None
+    definition: str | None = None
+    entry_kind: Literal["term", "concept", "insight"] | None = None
+    importance: Literal["essential", "supporting", "contextual"] | None = None
+    aliases: list[str] | None = None
+    pronunciation: str | None = None
 
 
 class WikiEntryResponse(BaseModel):

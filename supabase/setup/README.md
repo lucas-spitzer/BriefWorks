@@ -64,21 +64,31 @@ After running setup, replace the placeholder owner email in `approved_users` wit
 
 Stage versions use **major.minor** format only (`1.0`, `2.0` — never `1.0.0`).
 
+To repair a wiped or stale `stages` table on an existing project, re-run `supabase/setup/restore-stages.sql` (idempotent upsert).
+
 | Module | Stage ID | Version |
 |--------|----------|---------|
 | intellex | `parse` | 1.0 |
-| intellex | `source-research` | 1.0 |
-| intellex | `prepare-document` | 1.0, 2.0 |
-| intellex | `deconstruct-document` | 1.0, 2.0 |
-| intellex | `extract-knowledge` | 1.0, 2.0 |
-| mathesys | `elevenreader-ebook` | 1.0, 2.0 |
-| mathesys | `speechify-audio` | 1.0 |
-| mathesys | `elevenlabs-audio` | 1.0 |
-| qngen | `generate-flashcards` | 1.0, 2.0 |
-| qngen | `generate-questions` | 1.0, 2.0 |
-| qngen | `generate-scenarios` | 1.0, 2.0 |
+| intellex | `normalize-document` | 1.0 |
+| intellex | `trim-document-boundaries` | 1.0 |
+| intellex | `structure-document` | 1.0 |
+| intellex | `validate-structure` | 1.0 |
+| intellex | `source-research` | 1.0, 2.0 (inactive), **2.1** (active) |
+| intellex | `web-enrichment` | 1.0 |
+| intellex | `prepare-document` | 1.0, 2.0 (deactivated) |
+| intellex | `deconstruct-document` | 1.0, 2.0 (deactivated) |
+| intellex | `extract-knowledge` | 1.0, 2.1 (deactivated — wiki is curated) |
+| mathesys | `create-ebook` | 1.0 |
+| mathesys | `export-wiki-json` | 1.0 |
+| mathesys | `generate-narration` | 1.0 |
+| mathesys | `elevenreader-ebook` | 1.0, 2.0 (deactivated) |
+| mathesys | `speechify-audio` | 1.0 (deactivated) |
+| mathesys | `elevenlabs-audio` | 1.0 (deactivated) |
+| qngen | `generate-flashcards` | 1.0, **2.1** |
+| qngen | `generate-questions` | 1.0, **2.1** |
+| qngen | `generate-scenarios` | 1.0, **2.1** |
 
-The active pipeline uses `prepare-document` 2.0, `deconstruct-document` 2.0, `extract-knowledge` 2.0, `source-research` 2.0, and `elevenreader-ebook` 2.0. Older stage versions are kept for foreign-key compatibility.
+The active ingest pipeline uses structuring stages + `source-research` 2.1 + `web-enrichment` 1.0. Older stage versions are kept for foreign-key compatibility with historical `stage_runs`.
 
 ## Migrations vs setup
 

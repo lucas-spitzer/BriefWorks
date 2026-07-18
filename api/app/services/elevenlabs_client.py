@@ -1,8 +1,20 @@
+"""ElevenLabs text-to-speech with character-level timing.
+
+Narration is synthesized one ndr_segment (paragraph) at a time via
+POST /v1/text-to-speech/{voice_id}/with-timestamps, which returns the audio
+plus per-character start/end times. Character times are folded into word
+timings using the same whitespace tokenization the Reader applies to the
+segment's plain text, so the frontend can highlight the spoken word by index
+without re-deriving alignment. Prosody continuity across paragraphs comes from
+request stitching (previous_request_ids) plus next_text hints.
+"""
+
 from __future__ import annotations
 
+import base64
 import logging
-import re
 import time
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -11,113 +23,77 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# eleven_v3 accepts up to ~3,000 characters per request. Stay under that so a
-# single oversized paragraph never trips the limit, and so pause tags are never
-# split across requests.
-DEFAULT_CHUNK_CHARS = 2_500
-DEFAULT_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"  # ElevenLabs public "Rachel" voice
-DEFAULT_MODEL_ID = "eleven_v3"
-DEFAULT_MAX_CHARS = 200_000
-DEFAULT_OUTPUT_FORMAT = "mp3_44100_128"
-DEFAULT_REQUEST_TIMEOUT_SECONDS = 600
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_RETRY_BACKOFF_SECONDS = 5
-
-_RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
-
 _API_BASE = "https://api.elevenlabs.io/v1/text-to-speech"
+_RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
+_RETRY_BACKOFF_SECONDS = 5
 
-# Split points, preferring paragraph then sentence boundaries.
-_PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n")
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+# Continuity hints for request stitching across paragraph boundaries. Not all
+# models accept them — eleven_v3 rejects the request with an
+# "unsupported_model" validation error — so they are stripped for those models
+# up front, and stripped reactively if the API rejects them anyway.
+_STITCHING_KEYS = ("previous_request_ids", "previous_text", "next_text")
+_MODELS_WITHOUT_STITCHING_PREFIXES = ("eleven_v3",)
+
+
+def model_supports_stitching(model_id: str) -> bool:
+    normalized = (model_id or "").strip().lower()
+    return not normalized.startswith(_MODELS_WITHOUT_STITCHING_PREFIXES)
 
 
 class ElevenLabsError(RuntimeError):
     pass
 
 
-def _split_into_blocks(text: str) -> list[str]:
-    blocks = [block.strip() for block in _PARAGRAPH_SPLIT_RE.split(text) if block.strip()]
-    return blocks or ([text.strip()] if text.strip() else [])
+@dataclass(frozen=True)
+class WordTiming:
+    index: int
+    word: str
+    start: float
+    end: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"i": self.index, "w": self.word, "s": self.start, "e": self.end}
 
 
-def _split_long_block(block: str, *, max_chars: int) -> list[str]:
-    if len(block) <= max_chars:
-        return [block]
-
-    pieces: list[str] = []
-    current = ""
-
-    for sentence in _SENTENCE_SPLIT_RE.split(block):
-        candidate = f"{current} {sentence}".strip() if current else sentence
-
-        if len(candidate) <= max_chars:
-            current = candidate
-            continue
-
-        if current:
-            pieces.append(current)
-
-        # A single sentence longer than the limit is hard-wrapped on whitespace
-        # so we never cut through the middle of a "[pause]" style tag.
-        if len(sentence) > max_chars:
-            pieces.extend(_hard_wrap(sentence, max_chars=max_chars))
-            current = ""
-        else:
-            current = sentence
-
-    if current:
-        pieces.append(current)
-
-    return pieces
+@dataclass(frozen=True)
+class NarrationResult:
+    audio: bytes
+    words: list[WordTiming]
+    duration_seconds: float
+    request_id: str | None
+    character_cost: int
 
 
-def _hard_wrap(text: str, *, max_chars: int) -> list[str]:
-    pieces: list[str] = []
-    current = ""
+def words_from_alignment(
+    characters: list[str],
+    start_times: list[float],
+    end_times: list[float],
+) -> list[WordTiming]:
+    """Group per-character timings into words on whitespace boundaries.
 
-    for word in text.split(" "):
-        candidate = f"{current} {word}".strip() if current else word
-
-        if len(candidate) <= max_chars:
-            current = candidate
-        else:
-            if current:
-                pieces.append(current)
-            current = word
-
-    if current:
-        pieces.append(current)
-
-    return pieces
-
-
-def chunk_text(text: str, *, max_chars: int = DEFAULT_CHUNK_CHARS) -> list[str]:
-    """Split narration text into <= max_chars chunks on safe boundaries.
-
-    Never splits inside a "[tag]" because chunking happens on paragraph and
-    sentence boundaries (and word boundaries as a last resort), and ElevenLabs
-    audio tags never span those boundaries in our emitter output.
+    The characters array reconstructs the exact text sent, so grouping
+    non-whitespace runs mirrors `text.split()` — word N here is word N in the
+    Reader's token stream.
     """
-
-    chunks: list[str] = []
+    words: list[WordTiming] = []
     current = ""
+    word_start = 0.0
 
-    for block in _split_into_blocks(text):
-        for piece in _split_long_block(block, max_chars=max_chars):
-            candidate = f"{current}\n\n{piece}".strip() if current else piece
-
-            if len(candidate) <= max_chars:
-                current = candidate
-            else:
-                if current:
-                    chunks.append(current)
-                current = piece
+    for char, start, end in zip(characters, start_times, end_times, strict=False):
+        if char.isspace():
+            if current:
+                words.append(WordTiming(len(words), current, word_start, prev_end))
+                current = ""
+            continue
+        if not current:
+            word_start = start
+        current += char
+        prev_end = end
 
     if current:
-        chunks.append(current)
+        words.append(WordTiming(len(words), current, word_start, prev_end))
 
-    return chunks
+    return words
 
 
 class ElevenLabsClient:
@@ -127,27 +103,25 @@ class ElevenLabsClient:
         api_key: str | None = None,
         voice_id: str | None = None,
         model_id: str | None = None,
-        max_chars: int | None = None,
-        chunk_chars: int | None = None,
+        output_format: str | None = None,
         request_timeout_seconds: int | None = None,
         max_retries: int | None = None,
-        output_format: str = DEFAULT_OUTPUT_FORMAT,
     ) -> None:
-        settings = get_settings().elevenlabs
+        settings = get_settings().narration
         self.api_key = api_key if api_key is not None else settings.api_key
         self.voice_id = voice_id or settings.voice_id
         self.model_id = model_id or settings.model_id
-        self.max_chars = max_chars or settings.max_chars
-        self.chunk_chars = chunk_chars or settings.chunk_chars
-        self.request_timeout_seconds = request_timeout_seconds or settings.request_timeout_seconds
+        self.output_format = output_format or settings.output_format
+        self.request_timeout_seconds = (
+            request_timeout_seconds or settings.request_timeout_seconds
+        )
         self.max_retries = max_retries or settings.max_retries
-        self.output_format = output_format
 
     @property
     def enabled(self) -> bool:
         return bool(self.api_key)
 
-    def _request_timeout(self) -> httpx.Timeout:
+    def _timeout(self) -> httpx.Timeout:
         return httpx.Timeout(
             connect=30.0,
             read=float(self.request_timeout_seconds),
@@ -155,109 +129,128 @@ class ElevenLabsClient:
             pool=30.0,
         )
 
-    def synthesize(self, text: str, *, client: httpx.Client | None = None) -> bytes:
+    def synthesize_with_timestamps(
+        self,
+        text: str,
+        *,
+        previous_request_ids: list[str] | None = None,
+        previous_text: str | None = None,
+        next_text: str | None = None,
+        client: httpx.Client | None = None,
+    ) -> NarrationResult:
         if not self.api_key:
             raise ElevenLabsError("ELEVENLABS_API_KEY is not configured.")
 
-        last_error: Exception | None = None
+        body: dict[str, Any] = {"text": text, "model_id": self.model_id}
+        if model_supports_stitching(self.model_id):
+            if previous_request_ids:
+                body["previous_request_ids"] = previous_request_ids[-3:]
+            elif previous_text:
+                body["previous_text"] = previous_text
+            if next_text:
+                body["next_text"] = next_text
+
+        if client is not None:
+            return self._post(client, body, text)
+        with httpx.Client(timeout=self._timeout()) as owned:
+            return self._post(owned, body, text)
+
+    def _post(self, client: httpx.Client, body: dict[str, Any], text: str) -> NarrationResult:
+        last_error: str | None = None
 
         for attempt in range(self.max_retries):
             try:
-                if client is None:
-                    with httpx.Client(timeout=self._request_timeout()) as owned_client:
-                        return self._post_synthesis(owned_client, text)
-
-                return self._post_synthesis(client, text)
+                response = client.post(
+                    f"{_API_BASE}/{self.voice_id}/with-timestamps",
+                    params={"output_format": self.output_format},
+                    headers={"xi-api-key": self.api_key or ""},
+                    json=body,
+                )
             except (httpx.ReadTimeout, httpx.ConnectTimeout) as exc:
-                last_error = exc
+                last_error = f"timeout: {exc}"
                 if attempt >= self.max_retries - 1:
                     break
-
-                wait_seconds = DEFAULT_RETRY_BACKOFF_SECONDS * (2**attempt)
-                logger.warning(
-                    "ElevenLabs synthesis timed out on attempt %d/%d; retrying in %ds",
-                    attempt + 1,
-                    self.max_retries,
-                    wait_seconds,
-                )
-                time.sleep(wait_seconds)
-
-        raise ElevenLabsError(
-            f"ElevenLabs synthesis timed out after {self.max_retries} attempt(s).",
-        ) from last_error
-
-    def _post_synthesis(self, client: httpx.Client, text: str) -> bytes:
-        last_response: httpx.Response | None = None
-
-        for attempt in range(self.max_retries):
-            response = client.post(
-                f"{_API_BASE}/{self.voice_id}",
-                params={"output_format": self.output_format},
-                headers={
-                    "xi-api-key": self.api_key or "",
-                    "accept": "audio/mpeg",
-                },
-                json={"text": text, "model_id": self.model_id},
-            )
-            last_response = response
+                self._backoff(attempt, last_error)
+                continue
 
             if response.status_code < 400:
-                return response.content
+                return self._parse(response, text)
+
+            last_error = f"{response.status_code}: {response.text.strip()[:500]}"
+
+            # The model rejected the continuity hints (e.g. a model outside the
+            # known no-stitching list): drop them and retry immediately —
+            # narration quality degrades slightly at the boundary, but the run
+            # keeps going.
+            if (
+                response.status_code == 400
+                and "unsupported_model" in response.text
+                and any(key in body for key in _STITCHING_KEYS)
+            ):
+                for key in _STITCHING_KEYS:
+                    body.pop(key, None)
+                logger.warning(
+                    "ElevenLabs model %s rejected request-stitching hints; "
+                    "retrying without them.",
+                    self.model_id,
+                )
+                continue
 
             if response.status_code not in _RETRYABLE_STATUS_CODES:
                 break
-
             if attempt >= self.max_retries - 1:
                 break
+            self._backoff(attempt, last_error)
 
-            wait_seconds = DEFAULT_RETRY_BACKOFF_SECONDS * (2**attempt)
-            logger.warning(
-                "ElevenLabs synthesis returned %d on attempt %d/%d; retrying in %ds",
-                response.status_code,
-                attempt + 1,
-                self.max_retries,
-                wait_seconds,
-            )
-            time.sleep(wait_seconds)
-
-        detail = (last_response.text.strip() if last_response else "") or "unknown error"
-        status_code = last_response.status_code if last_response else 0
         raise ElevenLabsError(
-            f"ElevenLabs synthesis failed ({status_code}): {detail}",
+            f"ElevenLabs synthesis failed after {self.max_retries} attempt(s): {last_error}",
         )
 
-    def synthesize_long_text(self, text: str) -> dict[str, Any]:
-        """Chunk text, synthesize each chunk, and concatenate the MP3 bytes.
+    def _backoff(self, attempt: int, reason: str) -> None:
+        wait_seconds = _RETRY_BACKOFF_SECONDS * (2**attempt)
+        logger.warning(
+            "ElevenLabs synthesis attempt %d/%d failed (%s); retrying in %ds",
+            attempt + 1,
+            self.max_retries,
+            reason,
+            wait_seconds,
+        )
+        time.sleep(wait_seconds)
 
-        Returns the joined audio plus metadata for the artifact manifest.
-        """
+    def _parse(self, response: httpx.Response, text: str) -> NarrationResult:
+        payload = response.json()
+        audio_b64 = payload.get("audio_base64")
+        if not audio_b64:
+            raise ElevenLabsError("ElevenLabs response missing audio_base64.")
+        audio = base64.b64decode(audio_b64)
 
-        total_chars = len(text)
+        alignment = payload.get("alignment") or payload.get("normalized_alignment") or {}
+        characters = alignment.get("characters") or []
+        starts = alignment.get("character_start_times_seconds") or []
+        ends = alignment.get("character_end_times_seconds") or []
+        words = words_from_alignment(characters, starts, ends)
 
-        if total_chars > self.max_chars:
-            raise ElevenLabsError(
-                f"Narration text is {total_chars} characters, which exceeds the "
-                f"ELEVENLABS_MAX_CHARS budget of {self.max_chars}. Raise the budget "
-                "intentionally for large jobs.",
+        expected = len(text.split())
+        if words and len(words) != expected:
+            logger.warning(
+                "ElevenLabs alignment produced %d words for a %d-word segment; "
+                "highlighting may drift within this paragraph.",
+                len(words),
+                expected,
             )
 
-        chunks = chunk_text(text, max_chars=self.chunk_chars)
-        audio = bytearray()
+        duration = ends[-1] if ends else (words[-1].end if words else 0.0)
 
-        with httpx.Client(timeout=self._request_timeout()) as client:
-            for index, chunk in enumerate(chunks, start=1):
-                logger.info(
-                    "ElevenLabs synthesizing chunk %d/%d (%d chars)",
-                    index,
-                    len(chunks),
-                    len(chunk),
-                )
-                audio.extend(self.synthesize(chunk, client=client))
+        raw_cost = response.headers.get("character-cost")
+        try:
+            character_cost = int(float(raw_cost)) if raw_cost else len(text)
+        except ValueError:
+            character_cost = len(text)
 
-        return {
-            "audio_bytes": bytes(audio),
-            "voice_id": self.voice_id,
-            "model_id": self.model_id,
-            "character_count": total_chars,
-            "request_count": len(chunks),
-        }
+        return NarrationResult(
+            audio=audio,
+            words=words,
+            duration_seconds=float(duration),
+            request_id=response.headers.get("request-id"),
+            character_cost=character_cost,
+        )

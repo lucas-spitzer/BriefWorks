@@ -30,7 +30,7 @@ ANTHROPIC_API_KEY
 LLAMA_CLOUD_API_KEY
 ```
 
-Infrastructure variables have defaults (see `.env.example`). Optional Mathesys audio keys enable MP3 synthesis for the corresponding stage.
+Infrastructure variables have defaults (see `.env.example`).
 
 ### Environment variables by pipeline step
 
@@ -41,13 +41,9 @@ Infrastructure variables have defaults (see `.env.example`). Optional Mathesys a
 | `source-research` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SOURCE_RESEARCH_MAX_CHARS` | OpenAI JSON extraction |
 | `extract-knowledge` | `ANTHROPIC_API_KEY`, `LLM_EXTRACT_KNOWLEDGE_PROVIDER`, `LLM_EXTRACT_KNOWLEDGE_MODEL`, `EXTRACT_MAX_ENTRIES_PER_{CHAPTER,DOCUMENT}`, `EXTRACT_MIN_{CONFIDENCE,SELECTION_SCORE}`, `EXTRACT_{ESSENTIAL,SUPPORTING}_FRACTION`, `EXTRACT_EMBEDDING_DEDUP`, `EXTRACT_EMBEDDING_{MODEL,SIMILARITY_THRESHOLD}` | LLM factory action + wiki-entry selection bands (0 = no cap/gate) + comparative importance fractions + optional embedding dedup |
 | `generate-flashcards` / `generate-questions` / `generate-scenarios` | `LLM_QNGEN_DRAFT_*`, `LLM_QNGEN_CRITIQUE_*`, `QNGEN_CONCEPT_BATCH_SIZE`, `QNGEN_MAX_REPAIR_TURNS`, `QNGEN_FLASHCARDS_PER_CHAPTER_{MIN,MAX}`, `QNGEN_SCENARIOS_PER_CHAPTER_{MIN,MAX}` | Blueprint-driven generation (per-chapter count bands) + draft + critique + grounding-repair passes |
-| `elevenlabs-audio` | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_*` | Omit key to skip MP3 |
-| `speechify-audio` | `SPEECHIFY_API_KEY`, `SPEECHIFY_*` | Omit key for SSML-only |
 | `create-ebook` | `ELEVEN_READER_MAX_PAGES` | Deterministic EPUB build |
 
 LLM routing for each action is configured via `LLM_<ACTION>_PROVIDER` and `LLM_<ACTION>_MODEL` pairs. Defaults and supported actions live in [`app/config.py`](app/config.py) (`LLM_ACTION_DEFAULTS`).
-
-Set `ELEVENLABS_API_KEY` and choose `ELEVENLABS_VOICE_ID` from your ElevenLabs voice library to produce ElevenLabs Audio MP3s. Speechify Audio synthesizes MP3s once `SPEECHIFY_API_KEY` is set; until then it stores clean SSML for later synthesis.
 
 `SUPABASE_ANON_KEY` may be used instead of `SUPABASE_PUBLISHABLE_KEY` for older Supabase projects.
 
@@ -202,26 +198,25 @@ Example production run body:
 ```json
 {
   "source_ids": ["uuid"],
-  "target_artifacts": ["eleven_reader_script", "flashcards", "quizzes", "scenarios"]
+  "target_artifacts": ["electronic_book", "flashcards", "quizzes", "scenarios"]
 }
 ```
 
-`target_artifacts` is optional. An empty list runs Intellex ingest only (`store` through `extract-knowledge`).
+`target_artifacts` is optional. An empty list runs Intellex ingest only.
 
 Supported `target_artifacts` values:
 
-- `eleven_reader_script` — Mathesys create-ebook (chapter-based EPUB per source)
-- `speechify_audio` — Mathesys Speechify Audio (MP3 via API; SSML when no key)
-- `elevenlabs_audio` — Mathesys ElevenLabs Audio (MP3 via API)
+- `electronic_book` — Mathesys create-ebook (chapter-based EPUB per source)
+- `wiki_json` — Mathesys export-wiki-json (curated wiki snapshot per source)
 - `flashcards` — QnGen generate-flashcards
 - `quizzes` — QnGen generate-questions
 - `scenarios` — QnGen generate-scenarios
 
 Full pipeline worker behavior:
 
-- always completes Intellex ingest (`store`, `parse`, `normalize-document`, `trim-document-boundaries`, `structure-document`, `validate-structure`, `chunk`, `source-research`, `extract-knowledge`); reuses prior ingest/Intellex results when a source was already processed
-- optionally runs Mathesys narration stages and QnGen stages based on `target_artifacts`
-- promotes Wiki concepts, artifacts, and assessment entities
+- always completes Intellex ingest (`store`, `parse`, `normalize-document`, `trim-document-boundaries`, `structure-document`, `validate-structure`, `chunk`, `source-research`); reuses prior ingest/Intellex results when a source was already processed
+- optionally runs Mathesys stages and QnGen stages based on `target_artifacts`
+- promotes artifacts and assessment entities; wiki entries are curated manually via the wiki authoring flow, not by the pipeline
 - marks production run `completed` when finished
 
 ## Tests

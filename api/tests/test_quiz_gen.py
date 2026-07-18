@@ -30,41 +30,37 @@ def _quiz_item(concept: ConceptCard) -> dict:
     }
 
 
-def _source_metadata() -> dict:
-    return {
-        "extract": {
-            "chapters": [
+def _chapters() -> list[dict]:
+    return [
+        {
+            "chapter_id": "ch-1",
+            "chapter_title": "Foundations",
+            "sequence_index": 1,
+            "segment_ids": ["seg-1"],
+            "objectives": [
                 {
-                    "chapter_id": "ch-1",
-                    "chapter_title": "Foundations",
-                    "sequence_index": 1,
-                    "segment_ids": ["seg-1"],
-                    "objectives": [
-                        {
-                            "objective_id": "obj-1",
-                            "statement": "Define war",
-                            "bloom_level": "understand",
-                            "concept_labels": ["War"],
-                        },
-                    ],
-                },
-                {
-                    "chapter_id": "ch-2",
-                    "chapter_title": "Maneuver",
-                    "sequence_index": 2,
-                    "segment_ids": ["seg-3"],
-                    "objectives": [
-                        {
-                            "objective_id": "obj-2",
-                            "statement": "Explain tempo",
-                            "bloom_level": "understand",
-                            "concept_labels": ["Tempo"],
-                        },
-                    ],
+                    "objective_id": "obj-1",
+                    "statement": "Define war",
+                    "bloom_level": "understand",
+                    "concept_labels": ["War"],
                 },
             ],
         },
-    }
+        {
+            "chapter_id": "ch-2",
+            "chapter_title": "Maneuver",
+            "sequence_index": 2,
+            "segment_ids": ["seg-3"],
+            "objectives": [
+                {
+                    "objective_id": "obj-2",
+                    "statement": "Explain tempo",
+                    "bloom_level": "understand",
+                    "concept_labels": ["Tempo"],
+                },
+            ],
+        },
+    ]
 
 
 def test_blueprint_path_generates_objective_driven_questions(monkeypatch) -> None:
@@ -93,10 +89,11 @@ def test_blueprint_path_generates_objective_driven_questions(monkeypatch) -> Non
     )
 
     output, execution = QuizGenStage().run(
-        source_metadata=_source_metadata(),
+        source_metadata={},
         concepts=concepts,
         concept_batches=[],
         learning_objectives=[],
+        chapters=_chapters(),
     )
 
     assert execution["generation_mode"] == "blueprint"
@@ -127,10 +124,11 @@ def test_falls_back_to_legacy_when_blueprint_yields_nothing(monkeypatch) -> None
     monkeypatch.setattr(quiz_gen_module, "run_skill_generation", fake_run_skill_generation)
 
     output, execution = QuizGenStage().run(
-        source_metadata=_source_metadata(),
+        source_metadata={},
         concepts=[concept],
         concept_batches=[[concept]],
         learning_objectives=[],
+        chapters=_chapters(),
     )
 
     assert legacy_called == [True]

@@ -31,11 +31,22 @@ export interface WikiEntry {
   preferred_label: string
   definition: string
   entry_kind: string
+  importance: string
   status: string
   canonical_slug: string
   aliases: string[]
+  prerequisites: string[]
   pronunciation: string | null
+  evidence: {
+    source_id?: string
+    segment_id?: string | null
+    sequence_index?: number | null
+    page?: number | null
+    reader_link?: string | null
+  }[]
+  origin: Record<string, unknown>
   created_at: string
+  updated_at: string
 }
 
 export interface Artifact {
@@ -54,6 +65,8 @@ export interface Artifact {
 
 export interface Flashcard {
   id: string
+  source_id?: string | null
+  production_run_id?: string | null
   item_id?: string | null
   subtype?: string | null
   front: string
@@ -65,6 +78,8 @@ export interface Flashcard {
 
 export interface Quiz {
   id: string
+  source_id?: string | null
+  production_run_id?: string | null
   item_id?: string | null
   subtype?: string | null
   question: string
@@ -78,6 +93,8 @@ export interface Quiz {
 
 export interface Scenario {
   id: string
+  source_id?: string | null
+  production_run_id?: string | null
   item_id?: string | null
   subtype?: string | null
   title: string
@@ -132,9 +149,10 @@ export interface StageRun {
   completed_at: string | null
 }
 
-// A production run produces at most one narration artifact, chosen here.
+// Reading/listening outputs; any combination may be generated.
 export const NARRATION_ARTIFACT_OPTIONS = [
-  { value: 'eleven_reader_script', label: 'ElevenReader EBook' },
+  { value: 'electronic_book', label: 'Electronic Book' },
+  { value: 'narration_audio', label: 'Audio Narration' },
 ] as const
 
 // Assessment outputs are selected individually; any combination may be generated.
@@ -142,6 +160,11 @@ export const ASSESSMENT_ARTIFACT_OPTIONS = [
   { value: 'flashcards', label: 'Flashcards' },
   { value: 'quizzes', label: 'Quizzes' },
   { value: 'scenarios', label: 'Scenarios' },
+] as const
+
+// Knowledge outputs: the curated wiki snapshotted as a downloadable JSON artifact.
+export const KNOWLEDGE_ARTIFACT_OPTIONS = [
+  { value: 'wiki_json', label: 'Wiki JSON Export' },
 ] as const
 
 export async function listWorkspaces(): Promise<Workspace[]> {

@@ -1,17 +1,30 @@
 import { useMemo, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { formatDate } from '../../lib/consoleFormat'
+import type { LearnerPage, LearnerScope } from '../learner/types'
 import { ConsoleViewToggle } from './ConsoleViewToggle'
 import { ErrorBanner } from './ErrorBanner'
 import type { ConsoleView } from './types'
 
-function AssessmentCardFoot({ createdAt, difficulty }: { createdAt: string; difficulty: string }) {
+function AssessmentCardFoot({
+  createdAt,
+  difficulty,
+  onOpen,
+}: {
+  createdAt: string
+  difficulty: string
+  onOpen: () => void
+}) {
   return (
     <div className="bw-console__artifact-foot">
       <span className="seg">{formatDate(createdAt)}</span>
       <span className="seg">{difficulty}</span>
       <span className="seg">
-        <button type="button" className="bw-console__statepill bw-state--download">
+        <button
+          type="button"
+          className="bw-console__statepill bw-state--download"
+          onClick={onOpen}
+        >
           Open
         </button>
       </span>
@@ -19,7 +32,11 @@ function AssessmentCardFoot({ createdAt, difficulty }: { createdAt: string; diff
   )
 }
 
-export function ConsoleAssessments() {
+export function ConsoleAssessments({
+  onOpen,
+}: {
+  onOpen: (page: LearnerPage, scope: LearnerScope) => void
+}) {
   const { flashcards, quizzes, scenarios, isLoading, error } = useWorkspaceData()
   const [query, setQuery] = useState('')
   const [view, setView] = useState<ConsoleView>('grid')
@@ -112,7 +129,16 @@ export function ConsoleAssessments() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{card.front}</div>
                         <p style={{ fontSize: '0.84rem', color: '#b6c4cb', marginTop: 8 }}>{card.back}</p>
                         <div className="bw-console__card-fill" aria-hidden="true" />
-                        <AssessmentCardFoot createdAt={card.created_at} difficulty={card.difficulty} />
+                        <AssessmentCardFoot
+                          createdAt={card.created_at}
+                          difficulty={card.difficulty}
+                          onOpen={() =>
+                            onOpen('flashcards', {
+                              sourceId: card.source_id ?? null,
+                              targetId: card.id,
+                            })
+                          }
+                        />
                       </div>
                     ))}
                   </div>
@@ -154,7 +180,16 @@ export function ConsoleAssessments() {
                           {quiz.explanation ?? quiz.correct_answer}
                         </p>
                         <div className="bw-console__card-fill" aria-hidden="true" />
-                        <AssessmentCardFoot createdAt={quiz.created_at} difficulty={quiz.difficulty} />
+                        <AssessmentCardFoot
+                          createdAt={quiz.created_at}
+                          difficulty={quiz.difficulty}
+                          onOpen={() =>
+                            onOpen('quiz', {
+                              sourceId: quiz.source_id ?? null,
+                              targetId: quiz.id,
+                            })
+                          }
+                        />
                       </div>
                     ))}
                   </div>
@@ -196,7 +231,16 @@ export function ConsoleAssessments() {
                         <div style={{ fontWeight: 600, color: '#fff' }}>{scenario.title}</div>
                         <p style={{ fontSize: '0.84rem', color: '#b6c4cb', marginTop: 8 }}>{scenario.prompt}</p>
                         <div className="bw-console__card-fill" aria-hidden="true" />
-                        <AssessmentCardFoot createdAt={scenario.created_at} difficulty={scenario.difficulty} />
+                        <AssessmentCardFoot
+                          createdAt={scenario.created_at}
+                          difficulty={scenario.difficulty}
+                          onOpen={() =>
+                            onOpen('scenarios', {
+                              sourceId: scenario.source_id ?? null,
+                              targetId: scenario.id,
+                            })
+                          }
+                        />
                       </div>
                     ))}
                   </div>

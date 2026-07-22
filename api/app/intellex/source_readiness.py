@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# Bumped when classify / structure-body semantics change so already-ingested
+# sources re-run normalize→chunk without re-parsing or re-researching.
+CURRENT_STRUCTURE_VERSION = "1.2"
+
 
 def _source_metadata(source: dict[str, Any]) -> dict[str, Any]:
     metadata = source.get("source_metadata") or {}
@@ -36,18 +40,18 @@ def source_trim_complete(source: dict[str, Any]) -> bool:
     return isinstance(trim, dict) and bool(trim.get("trimmed_at"))
 
 
-def source_structure_complete(
-    source: dict[str, Any],
-    *,
-    has_document_chapters: bool,
-    has_completed_stage_run: bool,
-) -> bool:
-    structure = _source_metadata(source).get("structure")
-    if isinstance(structure, dict):
-        if structure.get("structured_at") and structure.get("chapter_count", 0) > 0:
-            return True
+def source_structure_complete(source: dict[str, Any]) -> bool:
+    """Return whether structure output matches the current structure logic.
 
-    return has_document_chapters or has_completed_stage_run
+    A missing or outdated `structure.stage_version` means the source must
+    restructure even if chapters or a prior stage run already exist.
+    """
+    structure = _source_metadata(source).get("structure")
+    if not isinstance(structure, dict):
+        return False
+    if not (structure.get("structured_at") and structure.get("chapter_count", 0) > 0):
+        return False
+    return structure.get("stage_version") == CURRENT_STRUCTURE_VERSION
 
 
 def source_validate_complete(source: dict[str, Any]) -> bool:
@@ -63,13 +67,7 @@ def source_chunk_complete(source: dict[str, Any], *, has_segments: bool) -> bool
     return isinstance(parse_meta, dict) and bool(parse_meta.get("chunked_at"))
 
 
-def source_intellex_complete(
-    source: dict[str, Any],
-    *,
-    has_segments: bool,
-    has_document_chapters: bool,
-    has_structure_stage_run: bool,
-) -> bool:
+def source_intellex_complete(source: dict[str, Any], *, has_segments: bool) -> bool:
     """A source is intellex-complete once the structure-based ingest has fully run.
 
     Knowledge extraction is no longer part of ingest — wiki entries are curated
@@ -82,11 +80,7 @@ def source_intellex_complete(
         and source_research_complete(source)
         and source_normalize_complete(source)
         and source_trim_complete(source)
-        and source_structure_complete(
-            source,
-            has_document_chapters=has_document_chapters,
-            has_completed_stage_run=has_structure_stage_run,
-        )
+        and source_structure_complete(source)
         and source_validate_complete(source)
         and source_chunk_complete(source, has_segments=has_segments)
     )

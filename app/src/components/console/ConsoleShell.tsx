@@ -38,7 +38,8 @@ export function ConsoleShell() {
   const readerMatch = matchPath('/app/reader/:sourceId', location.pathname)
   const routedSourceId = readerMatch?.params.sourceId ?? null
   const segParam = searchParams.get('seg')
-  const seg = segParam != null && segParam !== '' ? Number.parseInt(segParam, 10) : null
+  const parsedSeg = segParam != null && segParam !== '' ? Number.parseInt(segParam, 10) : NaN
+  const seg = Number.isFinite(parsedSeg) ? parsedSeg : null
 
   const isLearner = routedSourceId ? true : mode === 'learner'
   const activeLearnerPage: LearnerPage = routedSourceId ? 'reader' : learnerPage
@@ -134,7 +135,7 @@ export function ConsoleShell() {
             {consolePage === 'stages' ? <ConsoleStages /> : null}
             {consolePage === 'artifacts' ? <ConsoleArtifacts /> : null}
             {consolePage === 'wiki' ? <ConsoleWiki /> : null}
-            {consolePage === 'assessments' ? <ConsoleAssessments /> : null}
+            {consolePage === 'assessments' ? <ConsoleAssessments onOpen={openLearner} /> : null}
             {consolePage === 'workspace' ? <ConsoleWorkspaces /> : null}
             {consolePage === 'settings' ? <ConsoleStageSettings /> : null}
           </>

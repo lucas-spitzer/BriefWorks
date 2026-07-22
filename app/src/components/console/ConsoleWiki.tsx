@@ -1,16 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '../../features/workspace/workspaceContext'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { ApiError } from '../../lib/apiClient'
 import { formatDate } from '../../lib/consoleFormat'
 import { sourceTitle } from '../../lib/consoleMappers'
 import {
+  OPEN_INGEST_STATUSES,
   commitIngestBatch,
   createIngestBatch,
+  createIngestBatchFromFiles,
   deprecateWikiEntry,
   discardIngestBatch,
   getIngestBatch,
   listIngestBatches,
+  structureIngestBatch,
   updateIngestBatch,
   updateWikiEntry,
   type WikiIngestBatch,
@@ -21,6 +24,8 @@ import { ErrorBanner } from './ErrorBanner'
 
 const ENTRY_KINDS = ['term', 'concept', 'insight'] as const
 const IMPORTANCE_LEVELS = ['essential', 'supporting', 'contextual'] as const
+const NOTE_FILE_ACCEPT =
+  '.md,.txt,.markdown,.pdf,.docx,.png,.jpg,.jpeg,.heic,.heif,.webp,.tif,.tiff,.gif,.bmp'
 
 const RESOLUTION_HINTS: Record<string, string> = {
   new: 'New entry',
@@ -37,7 +42,7 @@ function EvidencePill({ status }: { status: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Add knowledge: notes dump form
+// Add knowledge: paste notes or upload note files
 // ---------------------------------------------------------------------------
 
 function AddKnowledgePanel({
@@ -49,7 +54,10 @@ function AddKnowledgePanel({
 }) {
   const { activeWorkspace } = useWorkspace()
   const { sources } = useWorkspaceData()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [mode, setMode] = useState<'paste' | 'files'>('files')
   const [notes, setNotes] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [chapterHint, setChapterHint] = useState('')
   const [title, setTitle] = useState('')
@@ -58,8 +66,9 @@ function AddKnowledgePanel({
 
   const handleSubmit = async () => {
     if (!activeWorkspace) return
-    if (!notes.trim()) {
-      setError('Paste some notes first.')
+
+    if (!sourceId) {
+      setError('Select the source these notes belong to.')
       return
     }
 
@@ -67,15 +76,35 @@ function AddKnowledgePanel({
     setError(null)
 
     try {
-      const batch = await createIngestBatch(activeWorkspace.id, {
-        notes,
-        source_id: sourceId,
-        chapter_hint: chapterHint.trim() || null,
-        title: title.trim() || null,
-      })
-      onCreated(batch)
+      if (mode === 'files') {
+        if (files.length === 0) {
+          setError('Choose at least one note file or image.')
+          setIsSubmitting(false)
+          return
+        }
+        const batch = await createIngestBatchFromFiles(activeWorkspace.id, {
+          source_id: sourceId,
+          chapter_hint: chapterHint.trim() || null,
+          title: title.trim() || null,
+          files,
+        })
+        onCreated(batch)
+      } else {
+        if (!notes.trim()) {
+          setError('Paste some notes first.')
+          setIsSubmitting(false)
+          return
+        }
+        const batch = await createIngestBatch(activeWorkspace.id, {
+          notes,
+          source_id: sourceId,
+          chapter_hint: chapterHint.trim() || null,
+          title: title.trim() || null,
+        })
+        onCreated(batch)
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Failed to structure notes.')
+      setError(caught instanceof Error ? caught.message : 'Failed to add knowledge.')
     } finally {
       setIsSubmitting(false)
     }
@@ -91,19 +120,19 @@ function AddKnowledgePanel({
       </div>
       <div style={{ padding: '0 18px 18px' }}>
         <p className="bw-console__field-hint" style={{ marginBottom: 14 }}>
-          Paste your reading notes — terminology, concepts, and insights in any shape.
-          One structuring pass turns them into proposed wiki entries for review;
-          nothing is saved to the wiki until you commit.
+          Attach reading notes to an ingested source. Upload markdown, PDF, DOCX, or photos of
+          handwritten notes — images and docs are transcribed first so you can correct OCR before
+          structuring into wiki entries.
         </p>
 
-        <p className="bw-console__field-label">Source (enables evidence linking)</p>
+        <p className="bw-console__field-label">Source (required)</p>
         <div className="bw-console__chips" style={{ marginBottom: 16 }}>
           {sources.map((source) => (
             <button
               key={source.id}
               type="button"
               className={`bw-console__chip${sourceId === source.id ? ' is-active' : ''}`}
-              onClick={() => setSourceId((current) => (current === source.id ? null : source.id))}
+              onClick={() => setSourceId(source.id)}
             >
               {sourceTitle(source)}
             </button>
@@ -132,16 +161,75 @@ function AddKnowledgePanel({
           </label>
         </div>
 
-        <p className="bw-console__field-label">Notes</p>
-        <textarea
-          className="bw-wiki__textarea"
-          rows={10}
-          placeholder={
-            'Enemy system — Warden: the enemy is a system of interdependent parts…\n\ninsight: strategic paralysis beats attrition…'
-          }
-          value={notes}
-          onChange={(event) => setNotes(event.target.value)}
-        />
+        <div className="bw-console__chips" style={{ marginBottom: 16 }}>
+          <button
+            type="button"
+            className={`bw-console__chip${mode === 'files' ? ' is-active' : ''}`}
+            onClick={() => setMode('files')}
+          >
+            Upload files
+          </button>
+          <button
+            type="button"
+            className={`bw-console__chip${mode === 'paste' ? ' is-active' : ''}`}
+            onClick={() => setMode('paste')}
+          >
+            Paste notes
+          </button>
+        </div>
+
+        {mode === 'files' ? (
+          <>
+            <p className="bw-console__field-label">Note files / images</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={NOTE_FILE_ACCEPT}
+              hidden
+              onChange={(event) => {
+                const next = Array.from(event.target.files || [])
+                event.target.value = ''
+                setFiles(next)
+              }}
+            />
+            <button
+              type="button"
+              className="bw-console__cta bw-console__cta--ghost bw-wiki__file-btn"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {files.length > 0
+                ? `⇪ ${files.length} file${files.length === 1 ? '' : 's'} selected`
+                : '⇪ Choose files'}
+            </button>
+            {files.length > 0 ? (
+              <ul className="bw-console__field-hint" style={{ marginTop: 10, marginBottom: 14, paddingLeft: 18 }}>
+                {files.map((file) => (
+                  <li key={`${file.name}-${file.size}-${file.lastModified}`}>
+                    {file.name} ({Math.round(file.size / 1024)} KB)
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="bw-console__field-hint" style={{ marginTop: 10, marginBottom: 14 }}>
+                .md, .txt, .pdf, .docx, .png, .jpg, .heic, …
+              </p>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="bw-console__field-label">Notes</p>
+            <textarea
+              className="bw-wiki__textarea"
+              rows={10}
+              placeholder={
+                'Enemy system — Warden: the enemy is a system of interdependent parts…\n\ninsight: strategic paralysis beats attrition…'
+              }
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
+          </>
+        )}
 
         {error ? <ErrorBanner message={error} /> : null}
         <button
@@ -150,8 +238,206 @@ function AddKnowledgePanel({
           disabled={isSubmitting}
           onClick={() => void handleSubmit()}
         >
-          {isSubmitting ? 'Structuring…' : 'Structure notes'}
+          {isSubmitting
+            ? mode === 'files'
+              ? 'Uploading…'
+              : 'Structuring…'
+            : mode === 'files'
+              ? 'Upload & transcribe'
+              : 'Structure notes'}
         </button>
+      </div>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Transcription review: edit raw_notes then structure
+// ---------------------------------------------------------------------------
+
+function TranscriptionPanel({
+  batch,
+  onBatchChange,
+  onStructured,
+  onDone,
+}: {
+  batch: WikiIngestBatch
+  onBatchChange: (batch: WikiIngestBatch) => void
+  onStructured: (batch: WikiIngestBatch) => void
+  onDone: () => void
+}) {
+  const { activeWorkspace } = useWorkspace()
+  const [notes, setNotes] = useState(batch.raw_notes)
+  const [isBusy, setIsBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setNotes(batch.raw_notes)
+  }, [batch.id, batch.raw_notes])
+
+  useEffect(() => {
+    if (!activeWorkspace) return
+    if (batch.status !== 'transcribing') return
+
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const latest = await getIngestBatch(activeWorkspace.id, batch.id)
+        if (!cancelled) {
+          onBatchChange(latest)
+        }
+      } catch {
+        // Keep polling; transient network errors are fine.
+      }
+    }
+
+    void tick()
+    const handle = window.setInterval(() => {
+      void tick()
+    }, 2500)
+
+    return () => {
+      cancelled = true
+      window.clearInterval(handle)
+    }
+  }, [activeWorkspace, batch.id, batch.status, onBatchChange])
+
+  const handleSaveNotes = async () => {
+    if (!activeWorkspace) return
+    setIsBusy(true)
+    setError(null)
+    try {
+      const updated = await updateIngestBatch(activeWorkspace.id, batch.id, {
+        raw_notes: notes,
+      })
+      onBatchChange(updated)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Failed to save notes.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  const handleStructure = async () => {
+    if (!activeWorkspace) return
+    setIsBusy(true)
+    setError(null)
+    try {
+      if (notes !== batch.raw_notes) {
+        await updateIngestBatch(activeWorkspace.id, batch.id, { raw_notes: notes })
+      }
+      const structured = await structureIngestBatch(activeWorkspace.id, batch.id)
+      onStructured(structured)
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Failed to structure notes.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  const handleDiscard = async () => {
+    if (!activeWorkspace) return
+    setIsBusy(true)
+    setError(null)
+    try {
+      await discardIngestBatch(activeWorkspace.id, batch.id)
+      onDone()
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Failed to discard batch.')
+    } finally {
+      setIsBusy(false)
+    }
+  }
+
+  const isTranscribing = batch.status === 'transcribing'
+  const canEdit = batch.status === 'transcribed' || batch.status === 'failed'
+
+  return (
+    <section className="bw-console__panel" style={{ marginBottom: 'var(--space-5)' }}>
+      <div className="bw-console__panel-head">
+        <h3>
+          {isTranscribing
+            ? 'Transcribing notes…'
+            : batch.status === 'failed'
+              ? 'Transcription failed'
+              : 'Review transcription'}
+        </h3>
+        <button
+          type="button"
+          className="bw-console__cta bw-console__cta--ghost"
+          disabled={isBusy}
+          onClick={onDone}
+        >
+          Close
+        </button>
+      </div>
+      <div style={{ padding: '0 18px 18px' }}>
+        <p className="bw-console__field-hint" style={{ marginBottom: 12 }}>
+          {batch.title}
+          {batch.attachments?.length
+            ? ` · ${batch.attachments.length} file${batch.attachments.length === 1 ? '' : 's'}`
+            : ''}
+        </p>
+
+        {isTranscribing ? (
+          <p className="bw-console__field-hint" style={{ marginBottom: 14 }}>
+            Parsing uploaded files into markdown. This panel refreshes automatically.
+          </p>
+        ) : null}
+
+        {batch.transcription_error ? (
+          <ErrorBanner message={batch.transcription_error} />
+        ) : null}
+
+        {canEdit ? (
+          <>
+            <p className="bw-console__field-label">Transcribed notes</p>
+            <textarea
+              className="bw-wiki__textarea"
+              rows={12}
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+              disabled={isBusy}
+            />
+            <p className="bw-console__field-hint" style={{ marginTop: 8, marginBottom: 14 }}>
+              Fix OCR mistakes here before structuring. Nothing reaches the wiki until you review
+              the structured entries and commit.
+            </p>
+          </>
+        ) : null}
+
+        {error ? <ErrorBanner message={error} /> : null}
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          {canEdit ? (
+            <>
+              <button
+                type="button"
+                className="bw-console__cta bw-console__cta--ghost"
+                disabled={isBusy}
+                onClick={() => void handleSaveNotes()}
+              >
+                Save notes
+              </button>
+              <button
+                type="button"
+                className="bw-console__cta"
+                disabled={isBusy || !notes.trim()}
+                onClick={() => void handleStructure()}
+              >
+                {isBusy ? 'Structuring…' : 'Structure notes'}
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            className="bw-console__cta bw-console__cta--ghost"
+            disabled={isBusy}
+            onClick={() => void handleDiscard()}
+          >
+            Discard
+          </button>
+        </div>
       </div>
     </section>
   )
@@ -591,17 +877,21 @@ export function ConsoleWiki() {
   const [query, setQuery] = useState('')
   const [showAdd, setShowAdd] = useState(false)
   const [activeBatch, setActiveBatch] = useState<WikiIngestBatch | null>(null)
-  const [draftBatches, setDraftBatches] = useState<WikiIngestBatch[]>([])
+  const [openBatches, setOpenBatches] = useState<WikiIngestBatch[]>([])
 
-  const loadDrafts = useCallback(async () => {
+  const loadOpenBatches = useCallback(async () => {
     if (!activeWorkspace) return
-    const batches = await listIngestBatches(activeWorkspace.id, 'draft')
-    setDraftBatches(batches)
+    const batches = await listIngestBatches(activeWorkspace.id)
+    setOpenBatches(
+      batches.filter((batch) =>
+        OPEN_INGEST_STATUSES.includes(batch.status),
+      ),
+    )
   }, [activeWorkspace])
 
   useEffect(() => {
-    void loadDrafts()
-  }, [loadDrafts])
+    void loadOpenBatches()
+  }, [loadOpenBatches])
 
   const visibleEntries = useMemo(() => {
     const q = query.toLowerCase()
@@ -615,8 +905,15 @@ export function ConsoleWiki() {
 
   const closeReview = () => {
     setActiveBatch(null)
-    void loadDrafts()
+    void loadOpenBatches()
   }
+
+  const showTranscription =
+    activeBatch &&
+    (activeBatch.status === 'transcribing' ||
+      activeBatch.status === 'transcribed' ||
+      activeBatch.status === 'failed' ||
+      activeBatch.status === 'structuring')
 
   return (
     <>
@@ -628,12 +925,13 @@ export function ConsoleWiki() {
         <button
           type="button"
           className="bw-console__cta"
+          style={{ marginLeft: 'auto' }}
           onClick={() => {
             setShowAdd((current) => !current)
             setActiveBatch(null)
           }}
         >
-          Add knowledge
+          + New knowledge
         </button>
       </header>
       <div className="bw-console__scroll">
@@ -645,8 +943,20 @@ export function ConsoleWiki() {
             onCreated={(batch) => {
               setShowAdd(false)
               setActiveBatch(batch)
-              void loadDrafts()
+              void loadOpenBatches()
             }}
+          />
+        ) : null}
+
+        {showTranscription && activeBatch ? (
+          <TranscriptionPanel
+            batch={activeBatch}
+            onBatchChange={setActiveBatch}
+            onStructured={(batch) => {
+              setActiveBatch(batch)
+              void loadOpenBatches()
+            }}
+            onDone={closeReview}
           />
         ) : null}
 
@@ -658,18 +968,23 @@ export function ConsoleWiki() {
           />
         ) : null}
 
-        {!activeBatch && draftBatches.length > 0 ? (
+        {!activeBatch && openBatches.length > 0 ? (
           <section className="bw-console__panel" style={{ marginBottom: 'var(--space-5)' }}>
             <div className="bw-console__panel-head">
-              <h3>Draft batches</h3>
-              <span className="bw-count">{draftBatches.length}</span>
+              <h3>Open batches</h3>
+              <span className="bw-count">{openBatches.length}</span>
             </div>
             <table className="bw-console__table">
               <tbody>
-                {draftBatches.map((batch) => (
+                {openBatches.map((batch) => (
                   <tr key={batch.id}>
                     <td style={{ fontWeight: 600, color: '#fff' }}>{batch.title}</td>
-                    <td>{batch.entries.length} entries</td>
+                    <td>{batch.status}</td>
+                    <td>
+                      {batch.status === 'draft'
+                        ? `${batch.entries.length} entries`
+                        : `${batch.attachments?.length || 0} files`}
+                    </td>
                     <td>{formatDate(batch.created_at)}</td>
                     <td>
                       <button
@@ -677,7 +992,7 @@ export function ConsoleWiki() {
                         className="bw-console__statepill bw-state--download"
                         onClick={() => setActiveBatch(batch)}
                       >
-                        Review
+                        {batch.status === 'draft' ? 'Review' : 'Open'}
                       </button>
                     </td>
                   </tr>
@@ -703,7 +1018,7 @@ export function ConsoleWiki() {
           <div className="bw-console__empty">
             {query
               ? 'No entries match your search.'
-              : 'No wiki entries yet. Read the generated ebook, then paste your notes via “Add knowledge” to curate the wiki that feeds flashcards, quizzes, and scenarios.'}
+              : 'No wiki entries yet. Upload or paste reading notes via “+ New knowledge” to curate the wiki that feeds flashcards, quizzes, and scenarios.'}
           </div>
         ) : (
           <section className="bw-console__panel">

@@ -12,6 +12,11 @@ import {
   formatBytes,
   mimeLabel,
 } from './consoleFormat'
+import {
+  filenameStem,
+  sourceBibliographicTitle,
+  sourceDisplayName,
+} from './sourceDisplay'
 
 function metadataRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
@@ -34,24 +39,9 @@ function metadataString(value: unknown): string | null {
   return trimmed || null
 }
 
-function filenameStem(filename: string): string {
-  const dot = filename.lastIndexOf('.')
-  return dot > 0 ? filename.slice(0, dot) : filename
-}
-
+/** Primary UI label for a source — filename stem. */
 export function sourceTitle(source: Source): string {
-  const research = researchMetadata(source)
-  const identifier = metadataString(research?.identifier)
-  if (identifier) return identifier
-
-  const researchedTitle = metadataString(research?.title)
-  if (researchedTitle) return researchedTitle
-
-  const meta = source.source_metadata
-  const flatTitle = metadataString(meta.title)
-  if (flatTitle) return flatTitle
-
-  return filenameStem(source.filename)
+  return sourceDisplayName(source)
 }
 
 export function sourceDocumentType(source: Source): string | null {
@@ -82,6 +72,11 @@ export function sourceAbstract(source: Source): string | null {
   return metadataString(meta.abstract)
 }
 
+export function sourceIdentifier(source: Source): string | null {
+  const research = researchMetadata(source)
+  return metadataString(research?.identifier)
+}
+
 export function sourcePurpose(source: Source): string | null {
   const research = researchMetadata(source)
   return metadataString(research?.purpose)
@@ -92,23 +87,8 @@ export function sourceAudience(source: Source): string | null {
   return metadataString(research?.target_audience)
 }
 
-export function sourceResearchTitle(source: Source): string {
-  const research = researchMetadata(source)
-  const researchedTitle = metadataString(research?.title)
-  if (researchedTitle) return researchedTitle
-
-  const identifier = metadataString(research?.identifier)
-  if (identifier) return identifier
-
-  const meta = source.source_metadata
-  const flatTitle = metadataString(meta.title)
-  if (flatTitle) return flatTitle
-
-  return filenameStem(source.filename)
-}
-
 export function artifactCardTitle(artifact: Artifact, source: Source | undefined): string {
-  const name = source ? sourceResearchTitle(source) : filenameStem(artifact.filename)
+  const name = source ? sourceDisplayName(source) : filenameStem(artifact.filename)
   return `${name} ${artifactKindShortLabel(artifact.artifact_type)}`
 }
 
@@ -511,6 +491,8 @@ export interface SourceDisplay {
   id: string
   filename: string
   title: string
+  bibliographicTitle: string | null
+  identifier: string | null
   documentType: string | null
   issuingAuthority: string | null
   purpose: string | null
@@ -528,7 +510,9 @@ export function mapSourceDisplay(source: Source): SourceDisplay {
   return {
     id: source.id,
     filename: source.filename,
-    title: sourceTitle(source),
+    title: sourceDisplayName(source),
+    bibliographicTitle: sourceBibliographicTitle(source),
+    identifier: sourceIdentifier(source),
     documentType: sourceDocumentType(source),
     issuingAuthority: sourceIssuingAuthority(source),
     purpose: sourcePurpose(source),

@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.dependencies.auth import require_approved_user
 from app.dependencies.services import (
@@ -76,6 +76,7 @@ async def create_wiki_entry(
             importance=payload.importance,
             aliases=payload.aliases,
             pronunciation=payload.pronunciation,
+            origin=payload.origin,
         )
     except WikiAuthoringError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -195,6 +196,88 @@ async def create_ingest_batch(
     return batch_row_to_response(row)
 
 
+@router.post(
+    "/ingest-batches/from-files",
+    response_model=WikiIngestBatchResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_ingest_batch_from_files(
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
+    user: Annotated[CurrentUser, Depends(require_approved_user)],
+    sources: Annotated[SourceRepository, Depends(get_source_repository)],
+    authoring: Annotated[WikiAuthoringService, Depends(get_wiki_authoring_service)],
+    source_id: Annotated[str, Form()],
+    files: Annotated[list[UploadFile], File()],
+    chapter_hint: Annotated[str | None, Form()] = None,
+    title: Annotated[str | None, Form()] = None,
+) -> WikiIngestBatchResponse:
+    found = await sources.get_many_for_workspace(
+        [source_id],
+        workspace.id,
+        user.id,
+    )
+    if not found:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="source_id is invalid for this workspace.",
+        )
+
+    max_bytes = authoring.settings.wiki_authoring.max_attachment_bytes
+    uploads: list[tuple[str, str | None, bytes]] = []
+    for upload in files:
+        filename = upload.filename
+        if not filename:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file must include a filename.",
+            )
+        # Cap the read so oversized uploads fail without buffering the full body.
+        content = await upload.read(max_bytes + 1)
+        if len(content) > max_bytes:
+            max_megabytes = max_bytes // (1024 * 1024)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Uploaded file '{filename}' exceeds the "
+                    f"{max_megabytes} MB limit."
+                ),
+            )
+        uploads.append((filename, upload.content_type, content))
+
+    try:
+        row = await authoring.create_file_batch(
+            workspace_id=workspace.id,
+            source_id=source_id,
+            chapter_hint=(chapter_hint.strip() if chapter_hint else None),
+            title=(title.strip() if title else None),
+            files=uploads,
+        )
+    except WikiAuthoringError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return batch_row_to_response(row)
+
+
+@router.post(
+    "/ingest-batches/{batch_id}/structure",
+    response_model=WikiIngestBatchResponse,
+)
+async def structure_ingest_batch(
+    batch_id: str,
+    workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
+    _: Annotated[CurrentUser, Depends(require_approved_user)],
+    authoring: Annotated[WikiAuthoringService, Depends(get_wiki_authoring_service)],
+) -> WikiIngestBatchResponse:
+    try:
+        row = await authoring.structure_batch(batch_id, workspace.id)
+    except WikiIngestNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except WikiAuthoringError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return batch_row_to_response(row)
+
+
 @router.get("/ingest-batches", response_model=list[WikiIngestBatchResponse])
 async def list_ingest_batches(
     workspace: Annotated[WorkspaceResponse, Depends(require_workspace)],
@@ -242,6 +325,7 @@ async def update_ingest_batch(
             batch_id,
             workspace.id,
             title=payload.title,
+            raw_notes=payload.raw_notes,
             entries=payload.entries,
         )
     except WikiIngestNotFoundError as exc:

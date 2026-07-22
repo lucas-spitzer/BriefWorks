@@ -251,7 +251,7 @@ Stages are **versioned definitions** (`stage_id` + `version`, major.minor format
 | Job queue | RQ + Redis |
 | Workers | Python (`PipelineRunner` + stage executors) |
 | Database | Supabase Postgres + pgvector |
-| File storage | Supabase Storage (`sources`, `artifacts` buckets) |
+| File storage | Supabase Storage (`sources` bucket; per-source `parse/`, `structure/`, `narration/`, `artifacts/`) |
 | LLM / embeddings | OpenAI |
 | PDF parsing | LlamaParse (LlamaCloud, agentic tier) |
 
@@ -277,8 +277,7 @@ BriefWorks/
 │       ├── components/console/  production console UI
 │       └── lib/              API client + mappers
 ├── supabase/
-│   ├── setup/                consolidated SQL for fresh Supabase projects
-│   └── migrations/           incremental schema history (existing databases)
+│   └── setup/                greenfield SQL (01–04) + alter patches for existing DBs
 ├── docker/                   docker-compose (Redis)
 └── docs/internal/            system overview & design notes
 ```
@@ -291,7 +290,7 @@ Setup, environment variables, and the full endpoint reference live in [`api/READ
 
 1. **Backend** — create a venv, install `api/requirements.txt`, populate `api/.env`, run `uvicorn app.main:app --reload --port 8000`.
 2. **Queue + Worker** — start Redis (`docker compose up -d redis`), then run `python run_worker.py`.
-3. **Database** — for a new Supabase project, run the setup scripts in order (see [`supabase/setup/README.md`](supabase/setup/README.md)). If you are upgrading an existing database, use [`supabase/migrations/`](supabase/README.md) instead.
+3. **Database** — for a new Supabase project, run `01`–`04` in order (see [`supabase/setup/README.md`](supabase/setup/README.md)). Existing databases use the `alter-*.sql` patches in that same folder — see [`supabase/README.md`](supabase/README.md).
 4. **Frontend** — point `VITE_API_BASE_URL` at the API and run the Vite dev server (see [`app/README.md`](app/README.md)).
 
 For architectural rationale and the design narrative, see [`docs/internal/system-overview.md`](docs/internal/system-overview.md).

@@ -6,7 +6,7 @@ export const moduleLabels: Record<Module, string> = {
   qngen: 'QnGen',
 }
 
-export const documentTypeLabels: Record<string, string> = {
+const documentTypeLabels: Record<string, string> = {
   military_doctrine: 'Doctrinal Publication',
   research_paper: 'Research Paper',
   white_paper: 'White Paper',
@@ -24,7 +24,7 @@ export function documentTypeLabel(type: string): string {
   )
 }
 
-export const artifactKindLabels: Record<string, string> = {
+const artifactKindLabels: Record<string, string> = {
   electronic_book: 'Electronic Book',
   wiki_json: 'Wiki JSON Export',
   narration_audio: 'Audio Narration',
@@ -36,7 +36,7 @@ export const artifactKindLabels: Record<string, string> = {
   scenarios: 'Scenarios',
 }
 
-export const artifactKindShortLabels: Record<string, string> = {
+const artifactKindShortLabels: Record<string, string> = {
   electronic_book: 'EBook',
   wiki_json: 'Wiki JSON',
   narration_audio: 'Audio Narration',

@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useWorkspaceData } from '../features/workspace/workspaceDataContext'
 import type { LearnerPage } from '../components/learner/types'
+import { sourceDisplayName } from './sourceDisplay'
 import type { Source } from './workspaceApi'
 
 export type OutputKind = 'artifact' | 'flashcard' | 'question' | 'scenario'
@@ -23,19 +24,13 @@ const UNASSIGNED = 'Unassigned'
 const AUDIO_FORMATS = new Set(['mp3', 'wav', 'm4a', 'ogg'])
 const DIFFICULTY_ORDER: Record<string, number> = { easy: 0, medium: 1, hard: 2 }
 
-export function difficultyRank(difficulty: string): number {
+function difficultyRank(difficulty: string): number {
   return DIFFICULTY_ORDER[difficulty] ?? 9
-}
-
-function stripFileExtension(name: string): string {
-  return name.replace(/\.[^./\\]+$/, '')
 }
 
 function sourceLabel(source: Source | undefined): string {
   if (!source) return UNASSIGNED
-  const title = source.source_metadata?.title
-  const raw = (typeof title === 'string' && title.trim()) || source.filename
-  return stripFileExtension(raw)
+  return sourceDisplayName(source)
 }
 
 export function useOutputs(): { items: OutputItem[]; sources: { id: string; name: string }[] } {
@@ -145,13 +140,15 @@ export function filterAndSortRecords<
   )
   switch (sort) {
     case 'newest':
-      return filtered.sort((a, b) => b.created_at.localeCompare(a.created_at))
+      return [...filtered].sort((a, b) => b.created_at.localeCompare(a.created_at))
     case 'difficulty':
-      return filtered.sort((a, b) => difficultyRank(a.difficulty) - difficultyRank(b.difficulty))
+      return [...filtered].sort(
+        (a, b) => difficultyRank(a.difficulty) - difficultyRank(b.difficulty),
+      )
     case 'source':
     case 'type':
     default:
-      return filtered.sort(
+      return [...filtered].sort(
         (a, b) =>
           (a.source_id ?? '').localeCompare(b.source_id ?? '') ||
           b.created_at.localeCompare(a.created_at),

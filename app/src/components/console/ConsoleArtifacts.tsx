@@ -1,19 +1,34 @@
 import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { artifactFormatLabel, artifactKindShortLabel, formatBytes } from '../../lib/consoleFormat'
 import {
   artifactCardTitle,
   artifactModule,
-  sourceResearchTitle,
   sourceTitle,
 } from '../../lib/consoleMappers'
+import { sourceBibliographicTitle, sourceDisplayName } from '../../lib/sourceDisplay'
+import type { Artifact } from '../../lib/workspaceApi'
 import { ConsoleViewToggle } from './ConsoleViewToggle'
 import { ErrorBanner } from './ErrorBanner'
 import { moduleLabel } from './moduleLabel'
 import type { ConsoleView } from './types'
 
+const AUDIO_FORMATS = new Set(['mp3', 'wav', 'm4a', 'ogg'])
+
+/** Raw audio files download; narration manifests and ebooks open in the learner reader. */
+function isRawAudioArtifact(artifact: Artifact): boolean {
+  const format = (artifact.format || '').toLowerCase()
+  const isNarrationManifest = artifact.artifact_type === 'narration_audio'
+  return (
+    !isNarrationManifest &&
+    (artifact.artifact_type.includes('audio') || AUDIO_FORMATS.has(format))
+  )
+}
+
 export function ConsoleArtifacts() {
   const { sources, artifacts, isLoading, error, downloadArtifact } = useWorkspaceData()
+  const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [view, setView] = useState<ConsoleView>('grid')
   const [downloadError, setDownloadError] = useState<string | null>(null)
@@ -24,11 +39,13 @@ export function ConsoleArtifacts() {
     const q = query.toLowerCase()
     return artifacts.filter((artifact) => {
       const source = artifact.source_id ? sourceById.get(artifact.source_id) : undefined
-      const sourceName = source ? sourceResearchTitle(source) : ''
+      const displayName = source ? sourceDisplayName(source) : ''
+      const bibliographic = source ? (sourceBibliographicTitle(source) ?? '') : ''
       return (
         artifact.filename.toLowerCase().includes(q) ||
         artifactCardTitle(artifact, source).toLowerCase().includes(q) ||
-        sourceName.toLowerCase().includes(q) ||
+        displayName.toLowerCase().includes(q) ||
+        bibliographic.toLowerCase().includes(q) ||
         artifactKindShortLabel(artifact.artifact_type).toLowerCase().includes(q) ||
         moduleLabel(artifactModule(artifact)).toLowerCase().includes(q)
       )
@@ -41,6 +58,16 @@ export function ConsoleArtifacts() {
       await downloadArtifact(artifactId)
     } catch (caught) {
       setDownloadError(caught instanceof Error ? caught.message : 'Download failed.')
+    }
+  }
+
+  const handleOpen = (artifact: Artifact) => {
+    if (isRawAudioArtifact(artifact)) {
+      void handleDownload(artifact.id)
+      return
+    }
+    if (artifact.source_id) {
+      navigate(`/app/reader/${artifact.source_id}`)
     }
   }
 
@@ -143,8 +170,13 @@ export function ConsoleArtifacts() {
                     <span className="seg">{formatBytes(artifact.file_size_bytes)}</span>
                     <span className="seg">{artifactFormatLabel(artifact.format)}</span>
                     <span className="seg">
-                      <button type="button" className="bw-console__statepill bw-state--download">
-                        Open
+                      <button
+                        type="button"
+                        className="bw-console__statepill bw-state--download"
+                        onClick={() => handleOpen(artifact)}
+                        disabled={!isRawAudioArtifact(artifact) && !artifact.source_id}
+                      >
+                        {isRawAudioArtifact(artifact) ? 'Download' : 'Open'}
                       </button>
                     </span>
                   </div>

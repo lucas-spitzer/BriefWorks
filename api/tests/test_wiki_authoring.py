@@ -50,9 +50,15 @@ class FakeWikiEntryRepository:
 
 
 class FakeBatchRepository:
-    def __init__(self, chapters: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        chapters: list[dict[str, Any]] | None = None,
+        *,
+        has_segments: bool = True,
+    ) -> None:
         self.rows: dict[str, dict[str, Any]] = {}
         self.chapters = chapters or []
+        self.has_segments = has_segments
         self._next_id = 1
 
     async def list_for_workspace(self, workspace_id: str, **_kwargs) -> list[dict[str, Any]]:
@@ -63,8 +69,10 @@ class FakeBatchRepository:
         return row if row and row["workspace_id"] == workspace_id else None
 
     async def insert(self, payload: dict[str, Any]) -> dict[str, Any]:
-        row = {**payload, "id": f"batch-{self._next_id}"}
-        self._next_id += 1
+        row_id = str(payload.get("id") or f"batch-{self._next_id}")
+        if "id" not in payload:
+            self._next_id += 1
+        row = {**payload, "id": row_id}
         self.rows[row["id"]] = row
         return row
 
@@ -74,6 +82,9 @@ class FakeBatchRepository:
 
     async def list_chapters_for_source(self, source_id: str) -> list[dict[str, Any]]:
         return self.chapters
+
+    async def source_has_segments(self, source_id: str) -> bool:
+        return self.has_segments
 
 
 class FakeRetrievalRepository:
@@ -137,13 +148,16 @@ def _service(
     segment_matches: dict[int, list[dict[str, Any]]] | None = None,
     wiki_matches: list[dict[str, Any]] | None = None,
     chapters: list[dict[str, Any]] | None = None,
+    has_segments: bool = True,
+    storage: Any | None = None,
 ) -> WikiAuthoringService:
     return WikiAuthoringService(
         wiki_entries=FakeWikiEntryRepository(wiki_rows),  # type: ignore[arg-type]
-        batches=FakeBatchRepository(chapters),  # type: ignore[arg-type]
+        batches=FakeBatchRepository(chapters, has_segments=has_segments),  # type: ignore[arg-type]
         retrieval=FakeRetrievalRepository(segment_matches, wiki_matches),  # type: ignore[arg-type]
         embedding_client=FakeEmbeddingClient(),
         llm_client=FakeLLMClient(llm_content or {"entries": [], "unparsed_fragments": []}),
+        storage=storage,
     )
 
 
@@ -469,8 +483,35 @@ def test_create_entry_quick_add_inserts_and_embeds() -> None:
     )
 
     assert row["canonical_slug"] == "ooda-loop"
+    assert row["origin"] == {"kind": "manual"}
     stored = asyncio.run(service.wiki_entries.get_for_workspace(row["id"], "ws-1"))
     assert stored["embedding"]
+
+
+def test_create_entry_accepts_reader_define_origin() -> None:
+    service = _service()
+
+    row = asyncio.run(
+        service.create_entry(
+            "ws-1",
+            preferred_label="Tempo",
+            definition="The pace of decisions in a fight.",
+            entry_kind="term",
+            importance="supporting",
+            aliases=[],
+            pronunciation=None,
+            origin={
+                "kind": "reader_define",
+                "mode": "contextual",
+                "source_id": "src-1",
+                "term": "Tempo",
+            },
+        ),
+    )
+
+    assert row["origin"]["kind"] == "reader_define"
+    assert row["origin"]["mode"] == "contextual"
+    assert row["status"] == "canonical"
 
 
 def test_create_entry_rejects_duplicate_slug() -> None:
@@ -500,3 +541,152 @@ def test_deprecate_entry_sets_status() -> None:
     row = asyncio.run(service.deprecate_entry("wiki-existing-tempo", "ws-1"))
 
     assert row["status"] == "deprecated"
+
+
+# ---------------------------------------------------------------------------
+# File ingest + structure_batch
+# ---------------------------------------------------------------------------
+
+
+class FakeStorage:
+    def __init__(self) -> None:
+        self.uploads: list[dict[str, Any]] = []
+
+    async def upload(
+        self,
+        *,
+        bucket: str,
+        path: str,
+        content: bytes,
+        content_type: str,
+        upsert: bool = False,
+    ):
+        self.uploads.append(
+            {
+                "bucket": bucket,
+                "path": path,
+                "content": content,
+                "content_type": content_type,
+            },
+        )
+        return {}
+
+
+def test_create_file_batch_requires_source_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service(storage=FakeStorage())
+    monkeypatch.setattr(
+        "app.services.wiki_authoring.enqueue_wiki_ingest_transcription",
+        lambda *_args, **_kwargs: "job-1",
+    )
+
+    with pytest.raises(WikiAuthoringError, match="source_id is required"):
+        asyncio.run(
+            service.create_file_batch(
+                workspace_id="ws-1",
+                source_id="",
+                chapter_hint=None,
+                title=None,
+                files=[("notes.md", "text/markdown", b"term: def")],
+            ),
+        )
+
+
+def test_create_file_batch_requires_segments(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _service(storage=FakeStorage(), has_segments=False)
+    monkeypatch.setattr(
+        "app.services.wiki_authoring.enqueue_wiki_ingest_transcription",
+        lambda *_args, **_kwargs: "job-1",
+    )
+
+    with pytest.raises(WikiAuthoringError, match="no parsed segments"):
+        asyncio.run(
+            service.create_file_batch(
+                workspace_id="ws-1",
+                source_id="src-1",
+                chapter_hint=None,
+                title=None,
+                files=[("notes.md", "text/markdown", b"term: def")],
+            ),
+        )
+
+
+def test_create_file_batch_stores_attachments_and_enqueues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = FakeStorage()
+    service = _service(storage=storage)
+    enqueued: list[str] = []
+    monkeypatch.setattr(
+        "app.services.wiki_authoring.enqueue_wiki_ingest_transcription",
+        lambda _settings, batch_id: enqueued.append(batch_id) or "job-1",
+    )
+
+    batch = asyncio.run(
+        service.create_file_batch(
+            workspace_id="ws-1",
+            source_id="src-1",
+            chapter_hint="3",
+            title="Ch. 3 photos",
+            files=[
+                ("page1.md", "text/markdown", "Enemy system - interdependent parts".encode()),
+                ("page2.txt", "text/plain", b"insight: tempo wins"),
+            ],
+        ),
+    )
+
+    assert batch["status"] == "transcribing"
+    assert batch["raw_notes"] == ""
+    assert batch["source_id"] == "src-1"
+    assert len(batch["attachments"]) == 2
+    assert batch["attachments"][0]["filename"] == "page1.md"
+    assert len(storage.uploads) == 2
+    assert enqueued == [batch["id"]]
+
+
+def test_structure_batch_from_transcribed_notes() -> None:
+    service = _service(llm_content=_STRUCTURED)
+    batch_id = "batch-tx"
+    service.batches.rows[batch_id] = {
+        "id": batch_id,
+        "workspace_id": "ws-1",
+        "source_id": "src-1",
+        "title": "Notes",
+        "raw_notes": "Enemy system…\ntempo: rate of ops",
+        "chapter_hint": None,
+        "chapter": None,
+        "status": "transcribed",
+        "entries": [],
+        "unparsed_fragments": [],
+        "attachments": [],
+    }
+
+    updated = asyncio.run(service.structure_batch(batch_id, "ws-1"))
+
+    assert updated["status"] == "draft"
+    assert len(updated["entries"]) == 2
+    assert updated["unparsed_fragments"] == ["something about page 12?"]
+
+
+def test_update_batch_allows_raw_notes_while_transcribed() -> None:
+    service = _service()
+    batch_id = "batch-tx"
+    service.batches.rows[batch_id] = {
+        "id": batch_id,
+        "workspace_id": "ws-1",
+        "source_id": "src-1",
+        "title": "Notes",
+        "raw_notes": "old",
+        "chapter_hint": None,
+        "chapter": None,
+        "status": "transcribed",
+        "entries": [],
+        "unparsed_fragments": [],
+        "attachments": [],
+    }
+
+    updated = asyncio.run(
+        service.update_batch(batch_id, "ws-1", raw_notes="corrected OCR notes"),
+    )
+
+    assert updated["raw_notes"] == "corrected OCR notes"
+    assert updated["status"] == "transcribed"

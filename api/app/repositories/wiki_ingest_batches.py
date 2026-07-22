@@ -65,3 +65,11 @@ class WikiIngestBatchRepository:
             order="sequence_index.asc",
             limit=500,
         )
+
+    async def source_has_segments(self, source_id: str) -> bool:
+        row = await self.db.select_one(
+            "ndr_segments",
+            filters={"source_id": f"eq.{source_id}"},
+            columns="id",
+        )
+        return row is not None

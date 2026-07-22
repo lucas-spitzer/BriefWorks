@@ -1,10 +1,15 @@
-import { ArrowRight, Check, RotateCcw, Send } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, RotateCcw, Send } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useWorkspace } from '../../features/workspace/workspaceContext'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { assistantChat } from '../../lib/assistantApi'
-import { filterAndSortRecords, useOutputs, type OutputSort } from '../../lib/learnerOutputs'
-import { OutputFilterBar } from './OutputFilterBar'
+import { filterAndSortRecords, useOutputs } from '../../lib/learnerOutputs'
+import {
+  StudyHead,
+  StudyPanel,
+  StudySourceReference,
+} from './StudySessionChrome'
+import { useStudyFullscreen } from './useStudyFullscreen'
 
 type ChatMessage = { role: 'ai' | 'user'; text: string }
 
@@ -22,28 +27,43 @@ export function ScenarioView({
   const { activeWorkspace } = useWorkspace()
   const { scenarios } = useWorkspaceData()
   const { sources } = useOutputs()
-
-  const [sourceId, setSourceId] = useState<string | null>(initialSource)
-  const [sort, setSort] = useState<OutputSort>('source')
+  const { fullscreen, toggle } = useStudyFullscreen()
 
   const items = useMemo(
-    () => filterAndSortRecords(scenarios, (s) => s.title, { search: '', sourceId, sort }),
-    [scenarios, sourceId, sort],
+    () =>
+      filterAndSortRecords(scenarios, (s) => s.title, {
+        search: '',
+        sourceId: initialSource,
+        sort: 'source',
+      }),
+    [scenarios, initialSource],
   )
 
-  const [sIndex, setSIndex] = useState(() => {
-    if (!targetId) return 0
-    const idx = items.findIndex((s) => s.id === targetId)
-    return idx >= 0 ? idx : 0
-  })
+  const [sIndex, setSIndex] = useState(0)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
   const [passed, setPassed] = useState(false)
-  const [hasFeedback, setHasFeedback] = useState(false)
   const [done, setDone] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
+  const targetAppliedRef = useRef<string | null>(null)
+
+  // Apply Library deep-link focus once the matching scenario is in the loaded list.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!targetId || items.length === 0) return
+    if (targetAppliedRef.current === targetId) return
+    const idx = items.findIndex((s) => s.id === targetId)
+    if (idx < 0) return
+    setSIndex(idx)
+    setPassed(false)
+    setDone(false)
+    setDraft('')
+    setError(null)
+    targetAppliedRef.current = targetId
+  }, [targetId, items])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const safeIndex = Math.min(sIndex, Math.max(items.length - 1, 0))
   const scenario = items[safeIndex]
@@ -64,21 +84,11 @@ export function ScenarioView({
   const resetRun = () => {
     setSIndex(0)
     setPassed(false)
-    setHasFeedback(false)
     setDone(false)
     setDraft('')
     setError(null)
   }
-  const onSource = (v: string | null) => {
-    setSourceId(v)
-    resetRun()
-  }
-  const onSort = (v: OutputSort) => {
-    setSort(v)
-    resetRun()
-  }
-
-  const send = async (e: React.FormEvent) => {
+  const send = async (e: FormEvent) => {
     e.preventDefault()
     const text = draft.trim()
     if (!text || sending || !scenario || !activeWorkspace) return
@@ -101,7 +111,6 @@ export function ScenarioView({
       const verdict = response.evaluation
       const feedback = verdict?.feedback || response.answer
       setMessages((m) => [...m, { role: 'ai', text: feedback }])
-      setHasFeedback(true)
       if (verdict?.passed) setPassed(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -110,38 +119,42 @@ export function ScenarioView({
     }
   }
 
-  const moveOn = () => {
-    if (safeIndex + 1 >= items.length) {
-      setDone(true)
-      return
-    }
-    setSIndex(safeIndex + 1)
+  const goTo = (index: number) => {
+    if (index < 0 || index >= items.length) return
+    setSIndex(index)
     setPassed(false)
-    setHasFeedback(false)
     setDraft('')
     setError(null)
   }
 
-  const filterBar = (
-    <OutputFilterBar
-      sourceId={sourceId}
-      onSource={onSource}
-      sort={sort}
-      onSort={onSort}
-      sources={sources}
-      showTypes={false}
-      showSearch={false}
+  const nextItem = () => {
+    if (isLast) {
+      setDone(true)
+      return
+    }
+    goTo(safeIndex + 1)
+  }
+
+  const sourceName = scenario
+    ? sources.find((s) => s.id === scenario.source_id)?.name ?? 'Unassigned'
+    : 'Unassigned'
+
+  const head = (
+    <StudyHead
+      eyebrow="Applied judgment"
+      title="Scenario lab"
+      description="Make a decision, explain your reasoning, and review it against doctrine."
+      stats={[
+        { value: items.length, label: 'scenarios' },
+        { value: new Set(items.map((s) => s.source_id ?? '')).size, label: 'sources' },
+      ]}
     />
   )
 
   if (done) {
     return (
-      <section className="study">
-        <header className="study__head">
-          <h2 className="study__title">Scenarios</h2>
-          <span className="study__count">Complete</span>
-        </header>
-        {filterBar}
+      <section className="study-session">
+        {head}
         <div className="quiz quiz--result">
           <p className="quiz__score">All scenarios reviewed</p>
           <p className="quiz__score-note">
@@ -156,81 +169,75 @@ export function ScenarioView({
   }
 
   return (
-    <section className="study">
-      <header className="study__head">
-        <h2 className="study__title">Scenarios</h2>
-        <span className="study__count">
-          {items.length > 0 ? `Scenario ${safeIndex + 1} of ${items.length}` : 'No scenarios'}
-        </span>
-      </header>
-
-      {filterBar}
-
-      {scenario && (
-        <div className="study__meta scenario__heading">
-          <span className={`pill pill--${scenario.difficulty}`}>{scenario.difficulty}</span>
-          {scenario.title}
-        </div>
-      )}
+    <section className="study-session">
+      {head}
 
       {scenario ? (
-        <div className="chat">
-          <div className="chat__log" ref={logRef}>
-            {messages.map((m, i) => (
-              <div key={i} className={`chat__msg chat__msg--${m.role}`}>
-                <span className="chat__role">{m.role === 'ai' ? 'Grader' : 'You'}</span>
-                <p className="chat__text">{m.text}</p>
+        <>
+          <StudyPanel
+            fullscreen={fullscreen}
+            onToggleFullscreen={toggle}
+            meta={
+              <>
+                <span className={`pill pill--${scenario.difficulty}`}>{scenario.difficulty}</span>
+                <span className="study-session__panel-title">{scenario.title}</span>
+              </>
+            }
+            progress={{ current: safeIndex + 1, total: items.length }}
+            pager={{
+              onPrev: () => goTo(safeIndex - 1),
+              onNext: nextItem,
+              prevDisabled: safeIndex <= 0,
+              nextDisabled: false,
+              label: isLast ? 'Next: finish set' : sourceName,
+            }}
+          >
+            <div className="chat">
+              <div className="chat__log" ref={logRef}>
+                {messages.map((m, i) => (
+                  <div key={i} className={`chat__msg chat__msg--${m.role}`}>
+                    <span className="chat__role">{m.role === 'ai' ? 'Grader' : 'You'}</span>
+                    <p className="chat__text">{m.text}</p>
+                  </div>
+                ))}
+                {sending && (
+                  <div className="chat__msg chat__msg--ai">
+                    <span className="chat__role">Grader</span>
+                    <p className="chat__text chat__text--typing">Assessing…</p>
+                  </div>
+                )}
               </div>
-            ))}
-            {sending && (
-              <div className="chat__msg chat__msg--ai">
-                <span className="chat__role">Grader</span>
-                <p className="chat__text chat__text--typing">Assessing…</p>
-              </div>
-            )}
-          </div>
 
-          {error && <p className="chat__error">{error}</p>}
+              {error && <p className="chat__error">{error}</p>}
 
-          <form className="chat__compose" onSubmit={send}>
-            <input
-              className="chat__input"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              placeholder="Type your response…"
-              aria-label="Your response"
-              disabled={sending}
-            />
-            <button type="submit" className="chat__send" disabled={!draft.trim() || sending}>
-              <Send size={16} /> Send
-            </button>
-          </form>
-
-          {passed ? (
-            <div className="chat__actions">
-              <p className="chat__verdict">
-                <Check size={16} /> Response accepted
-              </p>
-              <button type="button" className="study__btn study__btn--primary" onClick={moveOn}>
-                {isLast ? 'Finish scenarios' : 'Continue to next scenario'} <ArrowRight size={16} />
-              </button>
-            </div>
-          ) : (
-            hasFeedback && (
-              <div className="chat__actions">
-                <button type="button" className="study__btn" onClick={moveOn}>
-                  Move on without finishing <ArrowRight size={16} />
+              <form className="chat__compose" onSubmit={send}>
+                <input
+                  className="chat__input"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Type your response…"
+                  aria-label="Your response"
+                  disabled={sending}
+                />
+                <button type="submit" className="chat__send" disabled={!draft.trim() || sending}>
+                  <Send size={16} /> Send
                 </button>
-              </div>
-            )
-          )}
-        </div>
+              </form>
+
+              {passed && (
+                <p className="chat__verdict">
+                  <Check size={16} /> Response accepted — use Next item to continue
+                </p>
+              )}
+            </div>
+          </StudyPanel>
+
+          <StudySourceReference sourceId={scenario.source_id ?? null} sourceName={sourceName} />
+        </>
       ) : (
         <div className="quiz quiz--result">
           <p className="quiz__score">No scenarios</p>
-          <p className="quiz__score-note">
-            Nothing matches the current filters, or none have been generated yet.
-          </p>
+          <p className="quiz__score-note">No scenarios are available for this scope.</p>
         </div>
       )}
     </section>

@@ -20,6 +20,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.intellex.source_readiness import CURRENT_STRUCTURE_VERSION
 from app.intellex.structuring.boundaries import auto_boundaries, trim
 from app.intellex.structuring.classify import classify
 from app.intellex.structuring.models import (
@@ -204,7 +205,7 @@ class StructureStageExecutor(_ExecutorBase):
     """Stage: STRUCTURE -- classify into chapters/sections/body (replaces deconstruct)."""
 
     STAGE_ID = "structure-document"
-    STAGE_VERSION = "1.0"
+    STAGE_VERSION = CURRENT_STRUCTURE_VERSION
 
     def run_for_source(
         self,
@@ -228,6 +229,7 @@ class StructureStageExecutor(_ExecutorBase):
             )
             self._merge_metadata(source, "structure", {
                 "structured_at": utc_now_iso(),
+                "stage_version": self.STAGE_VERSION,
                 "chapter_count": len(book.chapters),
                 "section_count": sum(len(c.sections) for c in book.chapters),
                 "body_paragraph_count": book.body_paragraph_count(),
@@ -297,7 +299,7 @@ class CreateEbookStageExecutor(_ExecutorBase):
     STAGE_VERSION = "1.0"
     MODULE = "mathesys"
 
-    def _publication_metadata(self, source: dict[str, Any]) -> dict[str, Any]:
+    def _publication_metadata_from_research(self, source: dict[str, Any]) -> dict[str, Any]:
         research = source.get("source_metadata", {}).get("research") or {}
         if not isinstance(research, dict):
             research = {}
@@ -318,6 +320,35 @@ class CreateEbookStageExecutor(_ExecutorBase):
             "publication_date": str(pub_date) if pub_date else None,
             "language": "en",
         }
+
+    def _prior_publication_snapshot(self, source_id: str) -> dict[str, Any] | None:
+        """Reuse title/author from the newest prior electronic_book for this source."""
+        for artifact in self.db.list_artifacts_for_source(
+            source_id, artifact_type="electronic_book"
+        ):
+            manifest = artifact.get("manifest") or {}
+            if not isinstance(manifest, dict):
+                continue
+            title = manifest.get("title")
+            author = manifest.get("author")
+            if not title or not author:
+                continue
+            identifier = manifest.get("identifier")
+            pub_date = manifest.get("publication_date")
+            return {
+                "title": str(title),
+                "author": str(author),
+                "identifier": str(identifier) if identifier else None,
+                "publication_date": str(pub_date) if pub_date else None,
+                "language": "en",
+            }
+        return None
+
+    def _publication_metadata(self, source: dict[str, Any]) -> dict[str, Any]:
+        prior = self._prior_publication_snapshot(source["id"])
+        if prior:
+            return prior
+        return self._publication_metadata_from_research(source)
 
     def _load_book(self, source: dict[str, Any]) -> Book:
         """Load the structured Book that the structure stage persisted to storage."""
@@ -366,6 +397,10 @@ class CreateEbookStageExecutor(_ExecutorBase):
                     "storage_path": "pending",
                     "file_size_bytes": 0,
                     "manifest": {
+                        "title": meta["title"],
+                        "author": meta["author"],
+                        "identifier": meta["identifier"],
+                        "publication_date": meta["publication_date"],
                         "chapter_count": len(book.chapters),
                         "section_count": sum(len(c.sections) for c in book.chapters),
                         "chapter_titles": [c.title for c in book.chapters],
@@ -379,8 +414,15 @@ class CreateEbookStageExecutor(_ExecutorBase):
                 }
             )
             artifact_id = artifact["id"]
-            storage_path = f"workspaces/{workspace_id}/artifacts/{artifact_id}/{filename}"
-            self.storage.upload(storage_path, epub_bytes, content_type="application/epub+zip")
+            storage_path = _artifact_path(
+                source["storage_path"], "artifacts", artifact_id, filename
+            )
+            self.storage.upload(
+                storage_path,
+                epub_bytes,
+                bucket=self.storage.sources_bucket,
+                content_type="application/epub+zip",
+            )
             self.db.update_artifact(
                 artifact_id, {"storage_path": storage_path, "file_size_bytes": len(epub_bytes)}
             )

@@ -3,8 +3,7 @@
 The earlier stages decide structure from the LlamaParse output alone; this stage
 independently checks that decision against the source PDF so a parsing quirk
 can't silently corrupt the book. It runs fully automatically and RAISES on
-failure -- the same contract as line_content_filter.validate_prepared_document
--- so a bad run stops loudly instead of shipping a broken EPUB.
+failure so a bad run stops loudly instead of shipping a broken EPUB.
 
 Checks (by re-reading the PDF text layer with PyMuPDF):
   1. Every chapter/section title appears on or near its recorded page.

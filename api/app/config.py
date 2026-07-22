@@ -96,7 +96,6 @@ class InfrastructureSettings:
     frontend_origins: list[str]
     redis_url: str
     sources_bucket: str
-    artifacts_bucket: str
     rq_queue_name: str
     production_run_job_timeout: str
     signed_url_expires_seconds: int
@@ -128,8 +127,6 @@ class IntellexSettings:
     llamaparse_tier: str
     source_research_max_chars: int
     web_enrichment_max_searches: int
-    eleven_reader_max_pages: int
-    prepare_batch_pages: int
     # Shared vector space for all embedding consumers (RAG retrieval, wiki
     # authoring evidence linking). 1536 dims = text-embedding-3-small,
     # matching the pgvector columns from migration 31.
@@ -148,6 +145,10 @@ class WikiAuthoringSettings:
     evidence_weak_floor: float
     # Advisory duplicate detection against existing wiki entries.
     dedup_similarity_threshold: float
+    # File-ingest: note attachments transcribed before structuring.
+    max_attachment_bytes: int
+    max_attachments_per_batch: int
+    transcription_job_timeout: str
 
 
 @dataclass(frozen=True)
@@ -221,10 +222,6 @@ class Settings:
         return self.infra.sources_bucket
 
     @property
-    def artifacts_bucket(self) -> str:
-        return self.infra.artifacts_bucket
-
-    @property
     def rq_queue_name(self) -> str:
         return self.infra.rq_queue_name
 
@@ -257,7 +254,6 @@ def _get_settings_cached() -> Settings:
             frontend_origins=parse_csv_env("FRONTEND_ORIGINS", "http://localhost:5173"),
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             sources_bucket=os.getenv("SOURCES_BUCKET", "sources"),
-            artifacts_bucket=os.getenv("ARTIFACTS_BUCKET", "artifacts"),
             rq_queue_name=os.getenv("RQ_QUEUE_NAME", "briefworks"),
             production_run_job_timeout=os.getenv("PRODUCTION_RUN_JOB_TIMEOUT", "2h"),
             signed_url_expires_seconds=int(os.getenv("SIGNED_URL_EXPIRES_SECONDS", "3600")),
@@ -278,8 +274,6 @@ def _get_settings_cached() -> Settings:
             llamaparse_tier=os.getenv("LLAMAPARSE_TIER", "agentic"),
             source_research_max_chars=int(os.getenv("SOURCE_RESEARCH_MAX_CHARS", "16000")),
             web_enrichment_max_searches=int(os.getenv("WEB_ENRICHMENT_MAX_SEARCHES", "5")),
-            eleven_reader_max_pages=int(os.getenv("ELEVEN_READER_MAX_PAGES", "500")),
-            prepare_batch_pages=int(os.getenv("PREPARE_BATCH_PAGES", "15")),
             # EXTRACT_EMBEDDING_MODEL honored as a fallback so existing .env
             # files keep working after the extraction-era rename.
             embedding_model=os.getenv(
@@ -294,6 +288,19 @@ def _get_settings_cached() -> Settings:
             evidence_weak_floor=float(os.getenv("WIKI_AUTHORING_EVIDENCE_WEAK_FLOOR", "0.3")),
             dedup_similarity_threshold=float(
                 os.getenv("WIKI_AUTHORING_DEDUP_SIMILARITY_THRESHOLD", "0.85"),
+            ),
+            max_attachment_bytes=int(
+                os.getenv(
+                    "WIKI_AUTHORING_MAX_ATTACHMENT_BYTES",
+                    str(25 * 1024 * 1024),
+                ),
+            ),
+            max_attachments_per_batch=int(
+                os.getenv("WIKI_AUTHORING_MAX_ATTACHMENTS_PER_BATCH", "20"),
+            ),
+            transcription_job_timeout=os.getenv(
+                "WIKI_AUTHORING_TRANSCRIPTION_JOB_TIMEOUT",
+                "30m",
             ),
         ),
         assistant=AssistantSettings(

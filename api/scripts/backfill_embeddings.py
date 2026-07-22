@@ -8,8 +8,8 @@ writes the vector back. Safe to re-run — it only touches rows where
     python -m scripts.backfill_embeddings --table wiki_entries
 
 After the initial run, keep embeddings fresh by calling embed-on-write in the
-ingest path (app/intellex/structuring/chunk.py / ingest.py) and on wiki
-promotion (app/intellex/stages/wiki_promotion.py).
+ingest path (app/intellex/structuring/chunk.py) and on wiki authoring commit
+(app/services/wiki_authoring.py).
 """
 
 from __future__ import annotations

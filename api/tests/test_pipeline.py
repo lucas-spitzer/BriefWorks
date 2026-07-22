@@ -42,6 +42,12 @@ def test_electronic_book_target_maps_to_create_ebook() -> None:
     assert create_ebook["stage_id"] == "create-ebook"
 
 
+def test_structure_document_stage_version_is_current() -> None:
+    pipeline = build_pipeline([])
+    structure = next(step for step in pipeline if step["step"] == "structure-document")
+    assert structure["stage_version"] == "1.2"
+
+
 def test_prepare_and_deconstruct_are_gone() -> None:
     step_names = [step["step"] for step in build_pipeline([])]
 

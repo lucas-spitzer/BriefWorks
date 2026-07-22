@@ -473,6 +473,7 @@
 
 .status-badge--completed,
 .status-badge--ready,
+.status-badge--stored,
 .status-badge--canonical {
   border-color: #2f6b3b;
   color: #2f6b3b;

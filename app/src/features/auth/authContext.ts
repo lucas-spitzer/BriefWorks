@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { Session, User } from '@supabase/supabase-js'
+import type { User } from '@supabase/supabase-js'
 import type { CurrentUserResponse } from '../../lib/apiClient'
 
 export type ApprovalStatus = 'idle' | 'checking' | 'approved' | 'rejected' | 'unavailable'
@@ -11,7 +11,6 @@ export interface AuthContextValue {
   isApproved: boolean
   isAuthenticated: boolean
   isLoading: boolean
-  session: Session | null
   user: User | null
 }
 

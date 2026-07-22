@@ -27,10 +27,10 @@ LLM_ACTIONS: tuple[LLMAction, ...] = (
     LLMAction("source_research", "Source Research", "openai", GPT_54_MINI_MODEL),
     # Needs a provider/model with server-side web search support.
     LLMAction("source_web_enrichment", "Source Web Enrichment", "anthropic", HAIKU_45_MODEL),
-    LLMAction("prepare", "Prepare Document", "openai", GPT_54_MODEL),
     LLMAction("wiki_structuring", "Wiki Structuring", "openai", GPT_54_MODEL),
     LLMAction("qngen_draft", "Assessment Draft", "openai", GPT_54_MINI_MODEL),
     LLMAction("qngen_critique", "Assessment Critique", "anthropic", HAIKU_45_MODEL),
+    LLMAction("reader_define", "Reader Define", "openai", GPT_54_MINI_MODEL),
 )
 
 LLM_ACTION_DEFAULTS: dict[str, tuple[str, str]] = {

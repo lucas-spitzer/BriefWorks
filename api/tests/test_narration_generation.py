@@ -201,11 +201,11 @@ class _FakeWorkerDb:
 
 class _FakeWorkerStorage:
     sources_bucket = "sources"
-    artifacts_bucket = "artifacts"
 
     def __init__(self) -> None:
         self.uploads: dict[str, bytes] = {}
         self.upload_content_types: dict[str, str] = {}
+        self.upload_buckets: dict[str, str] = {}
 
     def upload(
         self,
@@ -217,6 +217,7 @@ class _FakeWorkerStorage:
     ) -> None:
         self.uploads[path] = content
         self.upload_content_types[path] = content_type
+        self.upload_buckets[path] = bucket or self.sources_bucket
 
 
 def test_publish_artifact_writes_json_manifest() -> None:
@@ -225,14 +226,14 @@ def test_publish_artifact_writes_json_manifest() -> None:
     rows = [
         {
             "segment_id": "seg-a",
-            "audio_path": "ws/src/narration/v/seg-a.mp3",
+            "audio_path": "workspaces/ws-1/sources/src-1/narration/v/seg-a.mp3",
             "duration_seconds": 2.5,
             "character_count": 40,
             "words": [{"i": 0, "w": "Hello", "s": 0.0, "e": 0.5}],
         },
         {
             "segment_id": "seg-b",
-            "audio_path": "ws/src/narration/v/seg-b.mp3",
+            "audio_path": "workspaces/ws-1/sources/src-1/narration/v/seg-b.mp3",
             "duration_seconds": 3.0,
             "character_count": 50,
             "words": [{"i": 0, "w": "World", "s": 0.0, "e": 0.6}],
@@ -258,11 +259,17 @@ def test_publish_artifact_writes_json_manifest() -> None:
         "seg-b": {"sequence_index": 2},
     }
 
+    source_storage = "workspaces/ws-1/sources/src-1/warfighting.pdf"
     file_info = executor._publish_artifact(
         workspace_id="ws-1",
         production_run_id="run-1",
         stage_run_id="sr-1",
-        source={"id": "src-1", "filename": "warfighting.pdf", "source_metadata": {}},
+        source={
+            "id": "src-1",
+            "filename": "warfighting.pdf",
+            "storage_path": source_storage,
+            "source_metadata": {},
+        },
         chapters=chapters,
         segments=segments,
     )
@@ -270,6 +277,10 @@ def test_publish_artifact_writes_json_manifest() -> None:
     assert file_info is not None
     assert file_info["artifact_id"] == "art-1"
     assert file_info["filename"].endswith("-narration.json")
+    assert file_info["storage_path"] == (
+        "workspaces/ws-1/sources/src-1/artifacts/art-1/" + file_info["filename"]
+    )
+    assert storage.upload_buckets[file_info["storage_path"]] == "sources"
 
     created = db.created_artifacts[0]
     assert created["artifact_type"] == "narration_audio"
@@ -285,7 +296,7 @@ def test_publish_artifact_writes_json_manifest() -> None:
     assert manifest["segment_count"] == 2
     first = manifest["chapters"][0]["segments"][0]
     assert first["segment_id"] == "seg-a"
-    assert first["audio_path"] == "ws/src/narration/v/seg-a.mp3"
+    assert first["audio_path"] == "workspaces/ws-1/sources/src-1/narration/v/seg-a.mp3"
     assert first["words"][0]["w"] == "Hello"
     assert "file" not in first
 

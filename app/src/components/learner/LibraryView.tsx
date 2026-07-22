@@ -11,6 +11,7 @@ import {
   type OutputType,
 } from '../../lib/learnerOutputs'
 import { OutputFilterBar } from './OutputFilterBar'
+import { StudyHead } from './StudySessionChrome'
 import type { LearnerPage, LearnerScope } from './types'
 
 const KIND_META: Record<
@@ -69,11 +70,16 @@ export function LibraryView({
   }
 
   return (
-    <section className="lib">
-      <header className="lib__head">
-        <h2 className="lib__title">Library</h2>
-        <p className="lib__sub">Every output across your workspace — search, filter by source, and open.</p>
-      </header>
+    <section className="lib study-session">
+      <StudyHead
+        eyebrow="Workspace catalog"
+        title="Library"
+        description="Search, filter, and open every artifact, flashcard, question, and scenario in this workspace."
+        stats={[
+          { value: filtered.length, label: 'outputs' },
+          { value: sources.length, label: 'sources' },
+        ]}
+      />
 
       <OutputFilterBar
         search={search}

@@ -35,7 +35,6 @@ from app.qngen.stages.scenario_gen import ScenarioGenStage
 from app.services.stage_run_billing import stage_run_completion_fields
 from app.worker.db import WorkerDatabase
 from app.worker.storage import WorkerStorage
-from app.worker.structuring_executors import StructureStageExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -457,9 +456,15 @@ class ExportWikiJsonStageExecutor:
                 },
             )
             artifact_id = artifact_row["id"]
-            storage_path = f"workspaces/{workspace_id}/artifacts/{artifact_id}/{filename}"
+            parent = str(source["storage_path"]).rsplit("/", 1)[0]
+            storage_path = f"{parent}/artifacts/{artifact_id}/{filename}"
 
-            self.storage.upload(storage_path, file_bytes, content_type="application/json")
+            self.storage.upload(
+                storage_path,
+                file_bytes,
+                bucket=self.storage.sources_bucket,
+                content_type="application/json",
+            )
 
             self.db.update_artifact(
                 artifact_id,
@@ -655,17 +660,7 @@ def _run_qngen_stage(
     if not segments:
         raise RuntimeError(f"No NDR segments found for source {source_id}.")
 
-    has_structure_stage_run = db.has_completed_stage_run_for_source(
-        source_id,
-        StructureStageExecutor.STAGE_ID,
-    )
-    has_document_chapters = db.has_document_chapters_for_source(source_id)
-    if not source_intellex_complete(
-        source,
-        has_segments=True,
-        has_document_chapters=has_document_chapters,
-        has_structure_stage_run=has_structure_stage_run,
-    ):
+    if not source_intellex_complete(source, has_segments=True):
         raise RuntimeError(
             f"Source {source_id} is not intellex-complete. "
             "Run ingest before generating assessments.",

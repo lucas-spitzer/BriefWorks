@@ -6,7 +6,22 @@ import type { WikiEntry } from './workspaceApi'
 
 export type WikiIngestResolution = 'new' | 'merge' | 'conflict'
 export type WikiIngestEvidenceStatus = 'linked' | 'weak' | 'unlinked'
-export type WikiIngestBatchStatus = 'draft' | 'committed' | 'discarded'
+export type WikiIngestBatchStatus =
+  | 'transcribing'
+  | 'transcribed'
+  | 'structuring'
+  | 'draft'
+  | 'committed'
+  | 'discarded'
+  | 'failed'
+
+export const OPEN_INGEST_STATUSES: WikiIngestBatchStatus[] = [
+  'transcribing',
+  'transcribed',
+  'structuring',
+  'draft',
+  'failed',
+]
 
 export interface WikiIngestEvidence {
   segment_id: string
@@ -49,6 +64,14 @@ export interface WikiIngestChapter {
   sequence_index: number
 }
 
+export interface WikiIngestAttachment {
+  order: number
+  filename: string
+  mime_type: string
+  storage_path: string
+  byte_size: number
+}
+
 export interface WikiIngestBatch {
   id: string
   workspace_id: string
@@ -60,6 +83,8 @@ export interface WikiIngestBatch {
   status: WikiIngestBatchStatus
   entries: WikiIngestEntry[]
   unparsed_fragments: string[]
+  attachments: WikiIngestAttachment[]
+  transcription_error: string | null
   model: string | null
   cost_usd: number | null
   committed_entry_ids: string[]
@@ -89,6 +114,46 @@ export async function createIngestBatch(
   })
 }
 
+export async function createIngestBatchFromFiles(
+  workspaceId: string,
+  payload: {
+    source_id: string
+    chapter_hint?: string | null
+    title?: string | null
+    files: File[]
+  },
+): Promise<WikiIngestBatch> {
+  const form = new FormData()
+  form.append('source_id', payload.source_id)
+  if (payload.chapter_hint) {
+    form.append('chapter_hint', payload.chapter_hint)
+  }
+  if (payload.title) {
+    form.append('title', payload.title)
+  }
+  for (const file of payload.files) {
+    form.append('files', file)
+  }
+
+  return apiRequest<WikiIngestBatch>(
+    `/workspaces/${workspaceId}/wiki/ingest-batches/from-files`,
+    {
+      method: 'POST',
+      body: form,
+    },
+  )
+}
+
+export async function structureIngestBatch(
+  workspaceId: string,
+  batchId: string,
+): Promise<WikiIngestBatch> {
+  return apiRequest<WikiIngestBatch>(
+    `/workspaces/${workspaceId}/wiki/ingest-batches/${batchId}/structure`,
+    { method: 'POST' },
+  )
+}
+
 export async function listIngestBatches(
   workspaceId: string,
   status?: WikiIngestBatchStatus,
@@ -111,7 +176,7 @@ export async function getIngestBatch(
 export async function updateIngestBatch(
   workspaceId: string,
   batchId: string,
-  payload: { title?: string; entries?: WikiIngestEntry[] },
+  payload: { title?: string; raw_notes?: string; entries?: WikiIngestEntry[] },
 ): Promise<WikiIngestBatch> {
   return apiRequest<WikiIngestBatch>(
     `/workspaces/${workspaceId}/wiki/ingest-batches/${batchId}`,
@@ -142,23 +207,6 @@ export async function discardIngestBatch(
   )
 }
 
-export async function createWikiEntry(
-  workspaceId: string,
-  payload: {
-    preferred_label: string
-    definition: string
-    entry_kind: string
-    importance: string
-    aliases?: string[]
-    pronunciation?: string | null
-  },
-): Promise<WikiEntry> {
-  return apiRequest<WikiEntry>(`/workspaces/${workspaceId}/wiki/entries`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
-}
-
 export async function updateWikiEntry(
   workspaceId: string,
   entryId: string,
@@ -173,6 +221,24 @@ export async function updateWikiEntry(
 ): Promise<WikiEntry> {
   return apiRequest<WikiEntry>(`/workspaces/${workspaceId}/wiki/entries/${entryId}`, {
     method: 'PATCH',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function createWikiEntry(
+  workspaceId: string,
+  payload: {
+    preferred_label: string
+    definition: string
+    entry_kind?: 'term' | 'concept' | 'insight'
+    importance?: 'essential' | 'supporting' | 'contextual'
+    aliases?: string[]
+    pronunciation?: string | null
+    origin?: Record<string, unknown>
+  },
+): Promise<WikiEntry> {
+  return apiRequest<WikiEntry>(`/workspaces/${workspaceId}/wiki/entries`, {
+    method: 'POST',
     body: JSON.stringify(payload),
   })
 }

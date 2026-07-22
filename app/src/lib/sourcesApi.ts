@@ -32,15 +32,6 @@ export interface DocumentChapter {
   created_at: string
 }
 
-export async function listSourceSegments(
-  workspaceId: string,
-  sourceId: string,
-): Promise<NdrSegment[]> {
-  return apiRequest<NdrSegment[]>(
-    `/workspaces/${workspaceId}/sources/${sourceId}/segments?limit=1000`,
-  )
-}
-
 // Fetch every segment for a source, paging past the endpoint's 1000-row cap.
 export async function listAllSourceSegments(
   workspaceId: string,

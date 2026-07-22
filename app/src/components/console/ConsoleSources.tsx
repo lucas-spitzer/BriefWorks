@@ -22,6 +22,8 @@ export function ConsoleSources() {
       (source) =>
         source.title.toLowerCase().includes(q) ||
         source.filename.toLowerCase().includes(q) ||
+        (source.bibliographicTitle?.toLowerCase().includes(q) ?? false) ||
+        (source.identifier?.toLowerCase().includes(q) ?? false) ||
         (source.documentType?.toLowerCase().includes(q) ?? false) ||
         (source.issuingAuthority?.toLowerCase().includes(q) ?? false),
     )
@@ -72,7 +74,7 @@ export function ConsoleSources() {
         <div className="bw-console__searchbar">
           <span style={{ color: '#6f828b' }}>⌕</span>
           <input
-            placeholder="Search source files by title or filename…"
+            placeholder="Search sources by name, filename, or research title…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -104,7 +106,18 @@ export function ConsoleSources() {
                       <div className="bw-console__listname">
                         <span>
                           <div className="t">{source.title}</div>
-                          <div className="s">{source.issuingAuthority ?? source.filename}</div>
+                          <div className="s">
+                            {[
+                              source.bibliographicTitle &&
+                              source.bibliographicTitle !== source.title
+                                ? source.bibliographicTitle
+                                : null,
+                              source.identifier,
+                              source.issuingAuthority,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ') || source.filename}
+                          </div>
                         </span>
                       </div>
                     </td>
@@ -138,7 +151,17 @@ export function ConsoleSources() {
                     {source.title}
                   </div>
                   <div style={{ fontSize: '0.8rem', color: '#9fb2bb', marginTop: 6 }}>
-                    {[source.purpose, source.audience].filter(Boolean).join(' · ') ||
+                    {[
+                      source.bibliographicTitle &&
+                      source.bibliographicTitle !== source.title
+                        ? source.bibliographicTitle
+                        : null,
+                      source.identifier,
+                      source.purpose,
+                      source.audience,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ') ||
                       [source.documentType, source.issuingAuthority].filter(Boolean).join(' · ') ||
                       (source.status === 'stored' || source.status === 'processing'
                         ? 'Ingest in progress'

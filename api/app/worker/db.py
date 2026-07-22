@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 NDR_SEGMENT_BATCH_SIZE = 200
 
 
-# Wiki writes moved to the API's wiki-authoring flow (services/wiki_authoring.py);
-# the worker only reads wiki_entries now.
+# Wiki writes for canonical entries live in the API's wiki-authoring flow
+# (services/wiki_authoring.py). The worker still updates wiki_ingest_batches
+# during note-file transcription.
 
 
 class WorkerDatabase:
@@ -149,6 +150,31 @@ class WorkerDatabase:
         )
         return rows[0]
 
+    def get_wiki_ingest_batch(self, batch_id: str) -> dict[str, Any] | None:
+        rows = self._request(
+            "GET",
+            "wiki_ingest_batches",
+            params={
+                "select": "*",
+                "id": f"eq.{batch_id}",
+                "limit": "1",
+            },
+        )
+        return rows[0] if rows else None
+
+    def update_wiki_ingest_batch(
+        self,
+        batch_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        rows = self._request(
+            "PATCH",
+            "wiki_ingest_batches",
+            params={"id": f"eq.{batch_id}"},
+            json_body=payload,
+        )
+        return rows[0]
+
     def delete_ndr_segments_for_source(self, source_id: str) -> None:
         self._request(
             "DELETE",
@@ -186,18 +212,6 @@ class WorkerDatabase:
             },
         )
         return rows or []
-
-    def has_document_chapters_for_source(self, source_id: str) -> bool:
-        rows = self._request(
-            "GET",
-            "document_chapters",
-            params={
-                "select": "id",
-                "source_id": f"eq.{source_id}",
-                "limit": "1",
-            },
-        )
-        return bool(rows)
 
     def insert_ndr_segments(self, segments: list[dict[str, Any]]) -> None:
         if not segments:
@@ -290,20 +304,6 @@ class WorkerDatabase:
         )
         return rows or []
 
-    def has_completed_stage_run_for_source(self, source_id: str, stage_id: str) -> bool:
-        rows = self._request(
-            "GET",
-            "stage_runs",
-            params={
-                "select": "id",
-                "stage_id": f"eq.{stage_id}",
-                "status": "eq.completed",
-                "inputs->>source_id": f"eq.{source_id}",
-                "limit": "1",
-            },
-        )
-        return bool(rows)
-
     def list_wiki_entries_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
         rows = self._request(
             "GET",
@@ -339,6 +339,22 @@ class WorkerDatabase:
                 "order": "created_at.desc",
             },
         )
+        return rows or []
+
+    def list_artifacts_for_source(
+        self,
+        source_id: str,
+        *,
+        artifact_type: str | None = None,
+    ) -> list[dict[str, Any]]:
+        params: dict[str, str] = {
+            "select": "*",
+            "source_id": f"eq.{source_id}",
+            "order": "created_at.desc",
+        }
+        if artifact_type:
+            params["artifact_type"] = f"eq.{artifact_type}"
+        rows = self._request("GET", "artifacts", params=params)
         return rows or []
 
     def get_artifact(self, artifact_id: str) -> dict[str, Any] | None:

@@ -25,7 +25,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (!isMounted) return
 
       if (error) {
-        console.error('Failed to load Supabase session:', error)
+        console.error('Failed to load Supabase session:', error.message)
       }
 
       setSession(data.session ?? null)
@@ -85,7 +85,10 @@ export function AuthProvider({ children }: AuthProviderProps) {
           return
         }
 
-        console.error('BriefWorks approval check failed:', error)
+        console.error(
+          'BriefWorks approval check failed:',
+          error instanceof Error ? error.message : error,
+        )
         setApprovalStatus('unavailable')
         setApprovalError('BriefWorks could not reach the approval service.')
       }
@@ -106,7 +109,6 @@ export function AuthProvider({ children }: AuthProviderProps) {
       isApproved: approvalStatus === 'approved',
       isAuthenticated: Boolean(session),
       isLoading: isSessionLoading || approvalStatus === 'checking',
-      session,
       user: session?.user ?? null,
     }
   }, [approvalError, approvalStatus, approvedUser, isSessionLoading, session])

@@ -3,8 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from app.llm_defaults import HAIKU_45_MODEL
-
 
 @dataclass(frozen=True)
 class LLMCompletionResult:

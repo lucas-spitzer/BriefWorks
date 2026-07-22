@@ -49,7 +49,10 @@ export function LoginPage() {
       setErrorMessage(null)
       await signInWithGoogle()
     } catch (error) {
-      console.error(error)
+      console.error(
+        'Unable to start Google login:',
+        error instanceof Error ? error.message : error,
+      )
       setErrorMessage('Unable to start Google login. Try again.')
       setIsSubmitting(false)
     }

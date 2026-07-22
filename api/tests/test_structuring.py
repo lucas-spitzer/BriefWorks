@@ -4,7 +4,7 @@ import pytest
 from app.intellex.structuring.boundaries import auto_boundaries, trim
 from app.intellex.structuring.chunk import build_segments_and_chapters
 from app.intellex.structuring.classify import classify
-from app.intellex.structuring.models import Element, book_from_dict
+from app.intellex.structuring.models import book_from_dict
 from app.intellex.structuring.normalize import normalize_structured_pages
 from app.intellex.structuring.validate import StructureValidationError, validate_against_pdf
 from app.mathesys.structured_epub import book_to_epub_chapters
@@ -144,6 +144,254 @@ def test_epub_render_emits_three_types_and_preserves_emphasis() -> None:
     assert "<h2>WAR DEFINED</h2>" in body
     assert "<p>War is a clash of wills.</p>" in body
     assert "<em>" in body  # epigraph italics preserved
+
+
+def test_classify_joins_paragraph_split_only_by_page_boundary() -> None:
+    pages = [
+        _page(3, [
+            _item("heading", "# Chapter 1", value="Chapter 1", level=1),
+            _item("heading", "# The Nature of War", value="The Nature of War", level=1),
+            _item("heading", "## WAR DEFINED", value="WAR DEFINED", level=2),
+            _item(
+                "text",
+                "War is thus a process of continuous",
+                value="War is thus a process of continuous",
+            ),
+        ]),
+        _page(4, [
+            _item(
+                "text",
+                "mutual adaptation, of give and take.",
+                value="mutual adaptation, of give and take.",
+            ),
+        ]),
+    ]
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    assert [p.md for p in book.chapters[0].sections[0].body] == [
+        "War is thus a process of continuous mutual adaptation, of give and take."
+    ]
+    body = book_to_epub_chapters(book)[0]["xhtml_body"]
+    assert (
+        "<p>War is thus a process of continuous mutual adaptation, of give and take.</p>"
+        in body
+    )
+
+
+@pytest.mark.parametrize(
+    ("first_text", "second_page", "intervening_item"),
+    [
+        ("A complete paragraph.", 4, None),
+        ("An incomplete paragraph", 5, None),
+        ("An incomplete paragraph", 4, _item("heading", "## NEXT", value="NEXT", level=2)),
+        ("An incomplete paragraph", 4, _item("list", "- A separate list item")),
+    ],
+)
+def test_classify_does_not_join_across_true_structure_boundaries(
+    first_text, second_page, intervening_item
+) -> None:
+    first_items = [
+        _item("heading", "# Chapter 1", value="Chapter 1", level=1),
+        _item("heading", "# Test", value="Test", level=1),
+        _item("text", first_text, value=first_text),
+    ]
+    if intervening_item is not None:
+        first_items.append(intervening_item)
+    pages = [
+        _page(3, first_items),
+        _page(second_page, [_item("text", "Next text.", value="Next text.")]),
+    ]
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    paragraphs = [
+        paragraph.md
+        for chapter in book.chapters
+        for paragraph in chapter.intro
+    ] + [
+        paragraph.md
+        for chapter in book.chapters
+        for section in chapter.sections
+        for paragraph in section.body
+    ]
+    assert paragraphs == [first_text, "Next text."]
+
+
+def test_classify_joins_sentence_around_omitted_figure_and_caption() -> None:
+    pages = [
+        _page(28, [
+            _item("heading", "# Chapter 2", value="Chapter 2", level=1),
+            _item("heading", "# The Theory of War", value="The Theory of War", level=1),
+            _item(
+                "text",
+                "The lowest level is the *tactical level*. Tactics refers to the "
+                "concepts and methods used to accomplish a particular mission",
+                value=(
+                    "The lowest level is the tactical level. Tactics refers to the "
+                    "concepts and methods used to accomplish a particular mission"
+                ),
+            ),
+        ]),
+        _page(29, [
+            _item("image", "figure-1.png", value="figure-1.png"),
+            _item(
+                "text",
+                "Figure 1. The Levels of War.",
+                value="Figure 1. The Levels of War.",
+            ),
+            _item(
+                "text",
+                "in either combat or other military operations. In war, tactics "
+                "focuses on the application of combat power.",
+                value=(
+                    "in either combat or other military operations. In war, tactics "
+                    "focuses on the application of combat power."
+                ),
+            ),
+        ]),
+    ]
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    paragraphs = book.chapters[0].intro
+    assert len(paragraphs) == 1
+    assert "particular mission in either combat" in paragraphs[0].md
+    assert "mission  in" not in paragraphs[0].md
+    assert "Figure 1" not in paragraphs[0].md
+    assert book.dropped_nontext == {"image": 1, "caption": 1}
+
+    xhtml = book_to_epub_chapters(book)[0]["xhtml_body"]
+    assert xhtml.count("<p>") == 1
+    assert "particular mission in either combat" in xhtml
+    assert "Figure 1" not in xhtml
+
+    segments, _ = build_segments_and_chapters(book, source_id="src-1", workspace_id="ws-1")
+    body_segments = [segment for segment in segments if segment["kind"] == "paragraph"]
+    assert len(body_segments) == 1
+    assert "particular mission in either combat" in body_segments[0]["text"]
+
+
+def test_classify_keeps_epigraph_quotes_and_attributions_separate() -> None:
+    pages = [
+        _page(1, [
+            _item("heading", "# Chapter 1", value="Chapter 1", level=1),
+            _item("heading", "# The Nature of War", value="The Nature of War", level=1),
+            _item(
+                "text",
+                '*"Everything in war is simple, but the simplest thing is difficult."*',
+                value='"Everything in war is simple, but the simplest thing is difficult."',
+            ),
+            _item("text", "*—Carl von Clausewitz*", value="—Carl von Clausewitz"),
+            _item(
+                "text",
+                '*"In war the chief incalculable is the human will."*',
+                value='"In war the chief incalculable is the human will."',
+            ),
+            _item("text", "*—B. H. Liddell Hart*", value="—B. H. Liddell Hart"),
+            _item(
+                "text",
+                "To understand the Marine Corps' philosophy of warfighting, we first "
+                "need an appreciation for the nature of war itself.",
+                value=(
+                    "To understand the Marine Corps' philosophy of warfighting, we first "
+                    "need an appreciation for the nature of war itself."
+                ),
+            ),
+        ]),
+    ]
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    intro = [paragraph.md for paragraph in book.chapters[0].intro]
+    assert intro == [
+        '*"Everything in war is simple, but the simplest thing is difficult."*',
+        "*—Carl von Clausewitz*",
+        '*"In war the chief incalculable is the human will."*',
+        "*—B. H. Liddell Hart*",
+        (
+            "To understand the Marine Corps' philosophy of warfighting, we first "
+            "need an appreciation for the nature of war itself."
+        ),
+    ]
+
+    xhtml = book_to_epub_chapters(book)[0]["xhtml_body"]
+    assert xhtml.count("<p>") == 5
+    assert '<p><em>"Everything in war is simple, but the simplest thing is difficult."</em></p>' in xhtml
+    assert "<p><em>—Carl von Clausewitz</em></p>" in xhtml
+    assert "<p><em>—B. H. Liddell Hart</em></p>" in xhtml
+    assert "Clausewitz</em> <em>\"" not in xhtml
+    assert "Hart</em> <em>\"" not in xhtml
+
+
+def test_classify_splits_quote_and_attribution_packed_in_one_item() -> None:
+    pages = [
+        _page(1, [
+            _item("heading", "# Chapter 2", value="Chapter 2", level=1),
+            _item("heading", "# The Theory of War", value="The Theory of War", level=1),
+            _item(
+                "text",
+                '*"The political object is the goal."*\n—Carl von Clausewitz',
+                value='"The political object is the goal."\n—Carl von Clausewitz',
+            ),
+        ]),
+    ]
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    assert [paragraph.md for paragraph in book.chapters[0].intro] == [
+        '*"The political object is the goal."*',
+        "—Carl von Clausewitz",
+    ]
+    xhtml = book_to_epub_chapters(book)[0]["xhtml_body"]
+    assert xhtml.count("<p>") == 2
+    assert '<p><em>"The political object is the goal."</em></p>' in xhtml
+    assert "<p>—Carl von Clausewitz</p>" in xhtml
+
+
+def test_classify_drops_standalone_visual_captions_but_keeps_inline_references() -> None:
+    pages = [
+        _page(1, [
+            _item("heading", "# Chapter 1", value="Chapter 1", level=1),
+            _item("heading", "# Test", value="Test", level=1),
+            _item(
+                "text",
+                "As shown in Figure 1, the levels interact.",
+                value="As shown in Figure 1, the levels interact.",
+            ),
+            _item(
+                "text",
+                "Figure 1. The Levels of War.",
+                value="Figure 1. The Levels of War.",
+            ),
+            _item("text", "Fig. IV: Another omitted visual.", value="Fig. IV: Another omitted visual."),
+            _item(
+                "text",
+                "Figure 1 shows how the levels interact.",
+                value="Figure 1 shows how the levels interact.",
+            ),
+        ]),
+    ]
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    assert book.dropped_nontext == {"caption": 2}
+    kept = [paragraph.md for paragraph in book.chapters[0].intro]
+    assert kept == [
+        "As shown in Figure 1, the levels interact.",
+        "Figure 1 shows how the levels interact.",
+    ]
+
+    xhtml = book_to_epub_chapters(book)[0]["xhtml_body"]
+    assert "The Levels of War" not in xhtml
+    assert "Another omitted visual" not in xhtml
+    assert "As shown in Figure 1" in xhtml
+
+    segments, _ = build_segments_and_chapters(book, source_id="src-1", workspace_id="ws-1")
+    segment_text = " ".join(segment["text"] for segment in segments)
+    assert "The Levels of War" not in segment_text
+    assert "Another omitted visual" not in segment_text
+    assert "As shown in Figure 1" in segment_text
 
 
 def test_book_round_trips_through_dict() -> None:

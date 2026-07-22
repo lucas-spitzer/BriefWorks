@@ -100,7 +100,9 @@ class AssistantService:
         system_prompt = self._system_prompt(request)
         context_block = _render_context(chunks)
         history = [m.model_dump() for m in request.messages]
-        # Inject the retrieved context ahead of the latest turn.
+        # SECURITY: Retrieved evidence is injected as a user turn so the chat
+        # API can keep a single message list. Treat SOURCE MATERIAL as untrusted
+        # grounding data, not instructions (same role channel as the learner).
         history.insert(
             max(len(history) - 1, 0),
             {"role": "user", "content": f"SOURCE MATERIAL:\n{context_block}"},

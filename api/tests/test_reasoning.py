@@ -31,14 +31,14 @@ def _clear_overrides():
 def test_overrides_from_rows_carries_reasoning() -> None:
     rows = [
         {
-            "stage_action": "extract_knowledge",
+            "stage_action": "source_web_enrichment",
             "provider": "anthropic",
             "model": "claude-sonnet-4-6",
             "reasoning_effort": "High",
             "reasoning_tokens": None,
         },
         {
-            "stage_action": "prepare",
+            "stage_action": "wiki_structuring",
             "provider": "anthropic",
             "model": "claude-haiku-4-5-20251001",
             "reasoning_effort": None,
@@ -48,14 +48,16 @@ def test_overrides_from_rows_carries_reasoning() -> None:
 
     overrides = overrides_from_rows(rows)
 
-    assert overrides["extract_knowledge"].reasoning == ReasoningSettings(effort="high")
-    assert overrides["prepare"].reasoning == ReasoningSettings(thinking_budget_tokens=8000)
+    assert overrides["source_web_enrichment"].reasoning == ReasoningSettings(effort="high")
+    assert overrides["wiki_structuring"].reasoning == ReasoningSettings(
+        thinking_budget_tokens=8000
+    )
 
 
 def test_overrides_from_rows_no_reasoning_is_none() -> None:
-    rows = [{"stage_action": "prepare", "provider": "openai", "model": "gpt-5.4"}]
+    rows = [{"stage_action": "wiki_structuring", "provider": "openai", "model": "gpt-5.4"}]
 
-    assert overrides_from_rows(rows)["prepare"].reasoning is None
+    assert overrides_from_rows(rows)["wiki_structuring"].reasoning is None
 
 
 def test_supports_adaptive_by_family() -> None:

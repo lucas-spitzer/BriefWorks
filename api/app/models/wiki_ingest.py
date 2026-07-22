@@ -7,7 +7,15 @@ EntryKind = Literal["term", "concept", "insight"]
 Importance = Literal["essential", "supporting", "contextual"]
 Resolution = Literal["new", "merge", "conflict"]
 EvidenceStatus = Literal["linked", "weak", "unlinked"]
-BatchStatus = Literal["draft", "committed", "discarded"]
+BatchStatus = Literal[
+    "transcribing",
+    "transcribed",
+    "structuring",
+    "draft",
+    "committed",
+    "discarded",
+    "failed",
+]
 
 
 class WikiIngestCreate(BaseModel):
@@ -61,6 +69,14 @@ class WikiIngestChapter(BaseModel):
     sequence_index: int
 
 
+class WikiIngestAttachment(BaseModel):
+    order: int
+    filename: str
+    mime_type: str
+    storage_path: str
+    byte_size: int
+
+
 class WikiIngestBatchResponse(BaseModel):
     id: str
     workspace_id: str
@@ -72,6 +88,8 @@ class WikiIngestBatchResponse(BaseModel):
     status: BatchStatus
     entries: list[WikiIngestEntry]
     unparsed_fragments: list[str]
+    attachments: list[WikiIngestAttachment] = Field(default_factory=list)
+    transcription_error: str | None = None
     model: str | None
     cost_usd: float | None
     committed_entry_ids: list[str]
@@ -82,6 +100,7 @@ class WikiIngestBatchResponse(BaseModel):
 
 class WikiIngestBatchUpdate(BaseModel):
     title: str | None = None
+    raw_notes: str | None = None
     entries: list[WikiIngestEntry] | None = None
 
 
@@ -105,6 +124,7 @@ def batch_row_to_response(row: dict[str, Any]) -> WikiIngestBatchResponse:
             **row,
             "entries": row.get("entries") or [],
             "unparsed_fragments": row.get("unparsed_fragments") or [],
+            "attachments": row.get("attachments") or [],
             "committed_entry_ids": row.get("committed_entry_ids") or [],
         },
     )

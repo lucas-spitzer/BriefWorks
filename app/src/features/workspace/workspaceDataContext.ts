@@ -29,6 +29,7 @@ export interface WorkspaceDataContextValue {
     target_artifacts: string[]
   }) => Promise<ProductionRun>
   downloadArtifact: (artifactId: string) => Promise<void>
+  addWikiEntry: (entry: WikiEntry) => void
   refresh: () => Promise<void>
 }
 

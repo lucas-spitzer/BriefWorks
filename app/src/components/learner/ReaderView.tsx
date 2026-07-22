@@ -15,17 +15,31 @@ import {
   Volume2,
   X,
 } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react'
 import { useWorkspace } from '../../features/workspace/workspaceContext'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import {
   MOCK_BLOCKS,
   buildBlocks,
   buildNarration,
+  globalsFromDomSelection,
   matchWikiTerms,
+  resolveReaderSelection,
   type Block,
   type SpokenWord,
 } from '../../lib/readerContent'
+import { defineReaderTerm, type ReaderDefineMode } from '../../lib/readerDefineApi'
+import { ApiError } from '../../lib/apiClient'
+import { createWikiEntry } from '../../lib/wikiApi'
+import { sourceDisplayName } from '../../lib/sourceDisplay'
 import type { LearnerPage, LearnerScope } from './types'
 import { useIdleChrome } from './useIdleChrome'
 import { useReaderFlip } from './useReaderFlip'
@@ -70,6 +84,8 @@ type LiveContent = {
   narration: Map<string, NarrationSegment>
   loading: boolean
   error: string | null
+  /** Soft warning when narration timings failed to load (reading still works). */
+  narrationWarning: string | null
 }
 
 const NO_NARRATION = new Map<string, NarrationSegment>()
@@ -96,40 +112,52 @@ export function ReaderView({
   onOpen?: (page: LearnerPage, scope: LearnerScope) => void
 }) {
   const { activeWorkspace } = useWorkspace()
-  const { sources, wikiEntries } = useWorkspaceData()
+  const { sources, wikiEntries, addWikiEntry } = useWorkspaceData()
   const workspaceId = activeWorkspace?.id ?? null
   const activeSource = sources.find((source) => source.id === sourceId)
-  const metadataTitle = activeSource?.source_metadata.title
-  const ebookTitle =
-    (typeof metadataTitle === 'string' && metadataTitle.trim()) ||
-    activeSource?.filename.replace(/\.[^./\\]+$/, '') ||
-    'Ebook'
+  const ebookTitle = activeSource ? sourceDisplayName(activeSource) : 'Ebook'
 
   const [live, setLive] = useState<LiveContent>({
     blocks: [],
     narration: NO_NARRATION,
     loading: false,
     error: null,
+    narrationWarning: null,
   })
 
   // Fetch is keyed on (workspace, source); the sync setLive puts the viewport
   // into its loading state for the whole request, same pattern as the
   // measurement effect below. Narration is optional — a failure there never
-  // blocks reading, it just falls back to the simulated cadence.
+  // blocks reading, but we surface a soft warning instead of silent fallback.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!sourceId || !workspaceId) return
     let cancelled = false
-    setLive({ blocks: [], narration: NO_NARRATION, loading: true, error: null })
+    setLive({
+      blocks: [],
+      narration: NO_NARRATION,
+      loading: true,
+      error: null,
+      narrationWarning: null,
+    })
     Promise.all([
       listAllSourceSegments(workspaceId, sourceId),
       listSourceChapters(workspaceId, sourceId),
-      listSourceNarration(workspaceId, sourceId).catch(() => [] as NarrationSegment[]),
+      listSourceNarration(workspaceId, sourceId).then(
+        (rows) => ({ rows, warning: null as string | null }),
+        (error: unknown) => ({
+          rows: [] as NarrationSegment[],
+          warning:
+            error instanceof Error
+              ? `Couldn’t load narration audio (${error.message}). Using estimated pacing.`
+              : 'Couldn’t load narration audio. Using estimated pacing.',
+        }),
+      ),
     ])
-      .then(([segments, chapters, narrationRows]) => {
+      .then(([segments, chapters, narrationResult]) => {
         if (cancelled) return
         const narration = new Map<string, NarrationSegment>()
-        for (const row of narrationRows) {
+        for (const row of narrationResult.rows) {
           if (row.words.length > 0) narration.set(row.segment_id, row)
         }
         setLive({
@@ -137,12 +165,19 @@ export function ReaderView({
           narration,
           loading: false,
           error: null,
+          narrationWarning: narrationResult.warning,
         })
       })
       .catch((err: unknown) => {
         if (cancelled) return
         const message = err instanceof Error ? err.message : 'Failed to load the source.'
-        setLive({ blocks: [], narration: NO_NARRATION, loading: false, error: message })
+        setLive({
+          blocks: [],
+          narration: NO_NARRATION,
+          loading: false,
+          error: message,
+          narrationWarning: null,
+        })
       })
     return () => {
       cancelled = true
@@ -174,6 +209,7 @@ export function ReaderView({
   const [playing, setPlaying] = useState(false)
   const [spoken, setSpoken] = useState(-1)
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1)
+  const [audioError, setAudioError] = useState<string | null>(null)
 
   const [remaining, setRemaining] = useState(SESSION_SECONDS)
   const [timerRunning, setTimerRunning] = useState(false)
@@ -193,6 +229,7 @@ export function ReaderView({
   const pendingTargetRef = useRef<number | null>(seg)
 
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const readerRootRef = useRef<HTMLElement | null>(null)
   const flowRef = useRef<HTMLDivElement | null>(null)
   const blockRefs = useRef<Map<number, HTMLElement>>(new Map())
 
@@ -243,9 +280,10 @@ export function ReaderView({
   }, [bookmarkKey])
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // --- Wiki term links ------------------------------------------------------
+  // --- Wiki term links + selection define -----------------------------------
   // Match canonical wiki entry labels/aliases against the word stream; matched
-  // words become tappable links that open a definition popover.
+  // words become tappable links. Free-text selection opens the same popup for
+  // wiki hits or contextual/general define assists.
   const termByWord = useMemo(
     () => matchWikiTerms(wordBlocks, wikiEntries),
     [wordBlocks, wikiEntries],
@@ -254,25 +292,197 @@ export function ReaderView({
     () => new Map(wikiEntries.map((entry) => [entry.id, entry])),
     [wikiEntries],
   )
-  const [termPop, setTermPop] = useState<{ entryId: string; left: number; top: number } | null>(
-    null,
-  )
 
-  const onTermClick = useCallback((entryId: string, target: HTMLElement) => {
-    const vp = viewportRef.current
-    if (!vp) return
-    const vpRect = vp.getBoundingClientRect()
-    const rect = target.getBoundingClientRect()
+  type DefineContext = {
+    prev: string
+    current: string
+    next: string
+    sentence: string
+    sourceId: string | null
+  }
+  type DefinePop =
+    | { kind: 'wiki'; entryId: string; left: number; bottom: number }
+    | { kind: 'miss'; term: string; left: number; bottom: number; context: DefineContext }
+    | {
+        kind: 'generated'
+        term: string
+        left: number
+        bottom: number
+        mode: ReaderDefineMode
+        definition: string
+        loading: boolean
+        saving: boolean
+        error: string | null
+        context: DefineContext
+      }
+
+  const [definePop, setDefinePop] = useState<DefinePop | null>(null)
+  const skipNextSelectionRef = useRef(false)
+  const defineEditRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Anchor the popup's bottom edge just above the selection so it always
+  // grows upward (never flips below the word). Coordinates are relative to
+  // the reader shell so the overlay can sit above chrome.
+  const positionDefinePop = useCallback((target: DOMRect) => {
+    const root = readerRootRef.current
+    if (!root) return { left: 0, bottom: 0 }
+    const rootRect = root.getBoundingClientRect()
     const width = 320
-    const left = Math.max(0, Math.min(rect.left - vpRect.left, vp.clientWidth - width))
-    const top = Math.min(rect.bottom - vpRect.top + 8, vp.clientHeight - 40)
-    setTermPop({ entryId, left, top })
+    const left = Math.max(
+      8,
+      Math.min(target.left - rootRect.left, root.clientWidth - width - 8),
+    )
+    const selectionTop = target.top - rootRect.top
+    const bottom = Math.max(8, root.clientHeight - selectionTop + 8)
+    return { left, bottom }
   }, [])
 
-  const termEntry = termPop ? entryById.get(termPop.entryId) : undefined
+  useLayoutEffect(() => {
+    const el = defineEditRef.current
+    if (!el || definePop?.kind !== 'generated' || definePop.loading) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [
+    definePop?.kind,
+    definePop?.kind === 'generated' ? definePop.definition : null,
+    definePop?.kind === 'generated' ? definePop.loading : null,
+  ])
+
+  const onTermClick = useCallback(
+    (entryId: string, target: HTMLElement) => {
+      skipNextSelectionRef.current = true
+      const { left, bottom } = positionDefinePop(target.getBoundingClientRect())
+      setDefinePop({ kind: 'wiki', entryId, left, bottom })
+    },
+    [positionDefinePop],
+  )
+
+  const openSelectionDefine = useCallback(() => {
+    if (skipNextSelectionRef.current) {
+      skipNextSelectionRef.current = false
+      return
+    }
+    const globals = globalsFromDomSelection(flowRef.current)
+    const resolved = resolveReaderSelection(wordBlocks, globals, termByWord)
+    if (!resolved) return
+    const sel = window.getSelection()
+    const rect =
+      sel && sel.rangeCount > 0 ? sel.getRangeAt(0).getBoundingClientRect() : null
+    if (!rect || (rect.width === 0 && rect.height === 0)) return
+    // Prefer the live selection string so the popup shows exactly what the user
+    // highlighted (no edge punctuation from whole word spans).
+    const highlighted = (sel?.toString() ?? '').replace(/\s+/g, ' ').trim()
+    const term = highlighted || resolved.term
+    const { left, bottom } = positionDefinePop(rect)
+    const context: DefineContext = {
+      prev: resolved.neighbors.prev,
+      current: resolved.neighbors.current,
+      next: resolved.neighbors.next,
+      sentence: resolved.sentence,
+      sourceId: sourceId ?? null,
+    }
+    if (resolved.entryId) {
+      setDefinePop({ kind: 'wiki', entryId: resolved.entryId, left, bottom })
+    } else {
+      setDefinePop({ kind: 'miss', term, left, bottom, context })
+    }
+  }, [wordBlocks, termByWord, positionDefinePop, sourceId])
+
+  const runDefine = useCallback(
+    async (mode: ReaderDefineMode) => {
+      if (!definePop || definePop.kind === 'wiki' || !workspaceId) return
+      const { term, left, bottom, context } = definePop
+      setDefinePop({
+        kind: 'generated',
+        term,
+        left,
+        bottom,
+        mode,
+        definition: '',
+        loading: true,
+        saving: false,
+        error: null,
+        context,
+      })
+      try {
+        const result = await defineReaderTerm(workspaceId, {
+          term,
+          mode,
+          source_id: context.sourceId,
+          sentence: context.sentence,
+          prev_paragraph: context.prev,
+          current_paragraph: context.current,
+          next_paragraph: context.next,
+        })
+        setDefinePop({
+          kind: 'generated',
+          term: result.term,
+          left,
+          bottom,
+          mode: result.mode,
+          definition: result.definition,
+          loading: false,
+          saving: false,
+          error: null,
+          context,
+        })
+      } catch (err) {
+        const message =
+          err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Define failed.'
+        setDefinePop({
+          kind: 'generated',
+          term,
+          left,
+          bottom,
+          mode,
+          definition: '',
+          loading: false,
+          saving: false,
+          error: message,
+          context,
+        })
+      }
+    },
+    [definePop, workspaceId],
+  )
+
+  const saveGeneratedToWiki = useCallback(async () => {
+    if (!definePop || definePop.kind !== 'generated' || !workspaceId) return
+    if (!definePop.definition.trim()) return
+    const { term, left, bottom, mode, definition, context } = definePop
+    setDefinePop({ ...definePop, saving: true, error: null })
+    try {
+      const entry = await createWikiEntry(workspaceId, {
+        preferred_label: term,
+        definition: definition.trim(),
+        entry_kind: 'term',
+        importance: 'supporting',
+        origin: {
+          kind: 'reader_define',
+          mode,
+          source_id: context.sourceId,
+          term,
+        },
+      })
+      addWikiEntry(entry)
+      setDefinePop({ kind: 'wiki', entryId: entry.id, left, bottom })
+      window.getSelection()?.removeAllRanges()
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : 'Save failed.'
+      setDefinePop((prev) =>
+        prev && prev.kind === 'generated'
+          ? { ...prev, saving: false, error: message }
+          : prev,
+      )
+    }
+  }, [definePop, workspaceId, addWikiEntry])
+
+  const wikiPopEntry =
+    definePop?.kind === 'wiki' ? entryById.get(definePop.entryId) : undefined
 
   const { visible: chromeVisible, bind: idleBind } = useIdleChrome({
-    pinned: tocOpen || termPop != null || showBreak || hoverChrome,
+    pinned: tocOpen || definePop != null || showBreak || hoverChrome,
   })
   const chromeHover = {
     onMouseEnter: () => setHoverChrome(true),
@@ -411,10 +621,19 @@ export function ReaderView({
     return () => window.clearTimeout(timeout)
   }, [targetSeq])
 
+  useEffect(() => {
+    if (!definePop) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDefinePop(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [definePop])
+
   // --- Navigation ---------------------------------------------------------
   const turn = useCallback(
     (delta: 1 | -1) => {
-      setTermPop(null)
+      setDefinePop(null)
       goToSpread(spreadRef.current + delta, 'flip')
     },
     [goToSpread],
@@ -428,7 +647,7 @@ export function ReaderView({
         goToSpread(Math.floor(col / 2), 'fade')
       }
       setTocOpen(false)
-      setTermPop(null)
+      setDefinePop(null)
     },
     [colStride, goToSpread],
   )
@@ -501,6 +720,7 @@ export function ReaderView({
 
   useEffect(() => {
     urlCacheRef.current = new Map()
+    setAudioError(null)
   }, [sourceId])
 
   // Simulated cadence (no synthesized audio).
@@ -529,6 +749,7 @@ export function ReaderView({
     audio.playbackRate = speedRef.current
     audioRef.current = audio
     let trackIndex = 0
+    setAudioError(null)
 
     const fetchUrl = async (segmentId: string): Promise<string> => {
       const cached = urlCacheRef.current.get(segmentId)
@@ -552,9 +773,26 @@ export function ReaderView({
         audio.playbackRate = speedRef.current
         setSpoken(track.base)
         await audio.play()
-        if (tracks[index + 1]) void fetchUrl(tracks[index + 1].segmentId).catch(() => undefined)
-      } catch {
-        if (!disposed) setPlaying(false)
+        if (tracks[index + 1]) {
+          void fetchUrl(tracks[index + 1].segmentId).catch((error: unknown) => {
+            if (disposed) return
+            // Prefetch failure is non-fatal; surface it so the next track isn't a surprise.
+            setAudioError(
+              error instanceof Error
+                ? `Couldn’t prefetch the next clip: ${error.message}`
+                : 'Couldn’t prefetch the next narration clip.',
+            )
+          })
+        }
+      } catch (error: unknown) {
+        if (!disposed) {
+          setPlaying(false)
+          setAudioError(
+            error instanceof Error
+              ? `Narration playback failed: ${error.message}`
+              : 'Narration playback failed.',
+          )
+        }
       }
     }
 
@@ -739,6 +977,7 @@ export function ReaderView({
 
   return (
     <section
+      ref={readerRootRef}
       className={`reader${evening ? ' reader--warm' : ''}${fullscreen ? ' reader--fullscreen' : ''}${chromeVisible ? '' : ' reader--chrome-hidden'}`}
       {...idleBind}
     >
@@ -813,7 +1052,7 @@ export function ReaderView({
       <div className="reader__stage">
         <div
           className="reader__book"
-          style={{ '--reader-gap': `${GAP}px` } as React.CSSProperties}
+          style={{ '--reader-gap': `${GAP}px` } as CSSProperties}
         >
         {showBook && (
           <div className="reader__running-head" aria-hidden="true">
@@ -855,11 +1094,13 @@ export function ReaderView({
             <div
               className="reader__flow"
               ref={flowRef}
+              onMouseUp={openSelectionDefine}
+              onTouchEnd={openSelectionDefine}
               style={
                 {
                   '--reader-spread': safeSpread,
                   '--reader-gap': `${GAP}px`,
-                } as React.CSSProperties
+                } as CSSProperties
               }
             >
               {wordBlocks.map(({ block, words }, i) => (
@@ -883,47 +1124,6 @@ export function ReaderView({
           )}
 
           {showBook && <div className="reader__spine" aria-hidden="true" />}
-
-          {termPop && termEntry && (
-            <>
-              <div
-                className="reader__term-backdrop"
-                onClick={() => setTermPop(null)}
-                aria-hidden="true"
-              />
-              <aside
-                className="reader__term-pop"
-                style={{ left: termPop.left, top: termPop.top }}
-                role="dialog"
-                aria-label={`Definition of ${termEntry.preferred_label}`}
-              >
-                <div className="reader__term-head">
-                  <span className="reader__term-label">{termEntry.preferred_label}</span>
-                  <button
-                    type="button"
-                    className="reader__toc-close"
-                    onClick={() => setTermPop(null)}
-                    aria-label="Close definition"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-                <p className="reader__term-definition">{termEntry.definition}</p>
-                {onOpen && sourceId && (
-                  <button
-                    type="button"
-                    className="reader__term-discuss"
-                    onClick={() => {
-                      setTermPop(null)
-                      onOpen('discussions', { sourceId, targetId: null })
-                    }}
-                  >
-                    Discuss with assistant
-                  </button>
-                )}
-              </aside>
-            </>
-          )}
 
           {tocOpen && (
             <>
@@ -1076,6 +1276,12 @@ export function ReaderView({
             remember.
           </p>
         )}
+        {(live.narrationWarning || audioError) && (
+          <p className="reader__audio-error" role="alert">
+            <AlertTriangle size={14} aria-hidden="true" />
+            {audioError ?? live.narrationWarning}
+          </p>
+        )}
       </div>
 
       {showBreak && (
@@ -1101,6 +1307,169 @@ export function ReaderView({
             </div>
           </div>
         </div>
+      )}
+
+      {definePop && (
+        <>
+          <div
+            className="reader__term-backdrop"
+            onClick={() => setDefinePop(null)}
+            aria-hidden="true"
+          />
+          <aside
+            className="reader__term-pop"
+            style={{ left: definePop.left, bottom: definePop.bottom, top: 'auto' }}
+            role="dialog"
+            aria-label={
+              definePop.kind === 'wiki'
+                ? `Definition of ${wikiPopEntry?.preferred_label ?? 'term'}`
+                : `Define ${definePop.term}`
+            }
+          >
+            {definePop.kind === 'wiki' && wikiPopEntry && (
+              <>
+                <div className="reader__term-head">
+                  <span className="reader__term-label">{wikiPopEntry.preferred_label}</span>
+                  <button
+                    type="button"
+                    className="reader__toc-close"
+                    onClick={() => setDefinePop(null)}
+                    aria-label="Close definition"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <span className="reader__term-provenance">From wiki</span>
+                <p className="reader__term-definition">{wikiPopEntry.definition}</p>
+                {onOpen && sourceId && (
+                  <button
+                    type="button"
+                    className="reader__term-discuss"
+                    onClick={() => {
+                      setDefinePop(null)
+                      onOpen('discussions', { sourceId, targetId: null })
+                    }}
+                  >
+                    Discuss with assistant
+                  </button>
+                )}
+              </>
+            )}
+
+            {definePop.kind === 'miss' && (
+              <>
+                <div className="reader__term-head">
+                  <span className="reader__term-label">{definePop.term}</span>
+                  <button
+                    type="button"
+                    className="reader__toc-close"
+                    onClick={() => setDefinePop(null)}
+                    aria-label="Close definition"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <p className="reader__term-hint">Not in the wiki yet.</p>
+                <div className="reader__term-actions">
+                  <button
+                    type="button"
+                    className="reader__term-action reader__term-action--primary"
+                    onClick={() => void runDefine('contextual')}
+                    disabled={!workspaceId}
+                  >
+                    Contextual definition
+                  </button>
+                  <button
+                    type="button"
+                    className="reader__term-action"
+                    onClick={() => void runDefine('general')}
+                    disabled={!workspaceId}
+                  >
+                    General definition
+                  </button>
+                </div>
+              </>
+            )}
+
+            {definePop.kind === 'generated' && (
+              <>
+                <div className="reader__term-head">
+                  <span className="reader__term-label">{definePop.term}</span>
+                  <button
+                    type="button"
+                    className="reader__toc-close"
+                    onClick={() => setDefinePop(null)}
+                    aria-label="Close definition"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                <span className="reader__term-provenance">
+                  {definePop.mode === 'contextual'
+                    ? 'From nearby paragraphs'
+                    : 'General definition'}
+                </span>
+                {definePop.loading ? (
+                  <div
+                    className="reader__term-generating"
+                    aria-live="polite"
+                    aria-busy="true"
+                  >
+                    <div className="reader__term-ink" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <p className="reader__term-hint reader__term-hint--pulse">
+                      Composing definition…
+                    </p>
+                  </div>
+                ) : (
+                  <textarea
+                    ref={defineEditRef}
+                    className="reader__term-edit reader__term-edit--reveal"
+                    value={definePop.definition}
+                    rows={1}
+                    onChange={(event) =>
+                      setDefinePop({
+                        ...definePop,
+                        definition: event.target.value,
+                      })
+                    }
+                  />
+                )}
+                {definePop.error && (
+                  <p className="reader__term-error" role="alert">
+                    {definePop.error}
+                  </p>
+                )}
+                <div className="reader__term-actions">
+                  <button
+                    type="button"
+                    className="reader__term-action reader__term-action--primary"
+                    onClick={() => void saveGeneratedToWiki()}
+                    disabled={
+                      definePop.loading ||
+                      definePop.saving ||
+                      !definePop.definition.trim() ||
+                      !workspaceId
+                    }
+                  >
+                    {definePop.saving ? 'Saving…' : 'Add to wiki'}
+                  </button>
+                  <button
+                    type="button"
+                    className="reader__term-action"
+                    onClick={() => setDefinePop(null)}
+                    disabled={definePop.saving}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </aside>
+        </>
       )}
     </section>
   )
@@ -1157,11 +1526,18 @@ function ReaderBlock({
         const termId = termByWord.get(w.global)
         if (termId) {
           return (
-            <span key={w.global} className={`reader__word${state}${style}`}>
+            <span
+              key={w.global}
+              className={`reader__word${state}${style}`}
+              data-global={w.global}
+            >
               <button
                 type="button"
                 className="reader__term"
-                onClick={(e) => onTermClick(termId, e.currentTarget)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onTermClick(termId, e.currentTarget)
+                }}
               >
                 {w.text}
               </button>{' '}
@@ -1169,7 +1545,11 @@ function ReaderBlock({
           )
         }
         return (
-          <span key={w.global} className={`reader__word${state}${style}`}>
+          <span
+            key={w.global}
+            className={`reader__word${state}${style}`}
+            data-global={w.global}
+          >
             {w.text}{' '}
           </span>
         )

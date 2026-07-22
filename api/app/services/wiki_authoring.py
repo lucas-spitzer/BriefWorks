@@ -2,12 +2,11 @@
 
 The lifecycle (docs/internal/plans/wiki-authoring-contract.md):
 
-1. ``create_batch`` — one structuring LLM call turns an unstructured notes dump
-   into proposed entries, then server-side enrichment (no further LLM) adds
-   slugs, duplicate resolution against the current wiki, and embedding-based
-   evidence links into the source's ndr_segments. Saved as a ``draft`` batch.
-2. ``update_batch`` — review edits; slugs/resolutions recomputed server-side.
-3. ``commit_batch`` — re-validates against the *current* wiki (409 on drift),
+1. ``create_batch`` — paste notes → structuring LLM → enriched ``draft`` batch.
+2. ``create_file_batch`` — upload note files → ``transcribing`` (RQ) →
+   ``transcribed`` (author edits) → ``structure_batch`` → ``draft``.
+3. ``update_batch`` — review edits; slugs/resolutions recomputed server-side.
+4. ``commit_batch`` — re-validates against the *current* wiki (409 on drift),
    promotes included entries through the shared candidate promotion, resolves
    prerequisites, embeds every touched entry, and marks the batch committed.
 
@@ -18,6 +17,7 @@ passes through human review first.
 from __future__ import annotations
 
 import asyncio
+import uuid
 from datetime import UTC, datetime
 from typing import Any
 
@@ -29,7 +29,6 @@ from app.intellex.wiki_candidates import (
     promote_candidates,
     resolve_prerequisites,
 )
-from app.intellex.wiki_slug import normalize_slug
 from app.models.wiki_ingest import (
     WikiIngestCreate,
     WikiIngestEntry,
@@ -42,7 +41,20 @@ from app.repositories.wiki_ingest_batches import WikiIngestBatchRepository
 from app.services.api_pricing import cost_llm_usage
 from app.services.embeddings import EmbeddingClient, get_embedding_client, to_pgvector_literal
 from app.services.llm import get_llm_client
+from app.services.llm.base import LLMClient
+from app.services.queue import enqueue_wiki_ingest_transcription
 from app.services.retrieval import build_reader_link
+from app.services.supabase_storage import SupabaseStorageClient, SupabaseStorageError
+from app.services.wiki_transcription import (
+    ValidatedAttachment,
+    WikiTranscriptionError,
+    attachment_storage_path,
+    validate_note_attachment,
+)
+
+_DISCARDABLE_STATUSES = frozenset(
+    {"transcribing", "transcribed", "structuring", "draft", "failed"},
+)
 
 STRUCTURING_ACTION = "wiki_structuring"
 
@@ -125,7 +137,8 @@ class WikiAuthoringService:
         retrieval: RetrievalRepository,
         settings: Settings | None = None,
         embedding_client: EmbeddingClient | None = None,
-        llm_client: Any | None = None,
+        llm_client: LLMClient | None = None,
+        storage: SupabaseStorageClient | None = None,
     ) -> None:
         self.wiki_entries = wiki_entries
         self.batches = batches
@@ -133,6 +146,7 @@ class WikiAuthoringService:
         self.settings = settings or get_settings()
         self._embedding_client = embedding_client
         self._llm_client = llm_client
+        self._storage = storage
 
     @property
     def embedding_client(self) -> EmbeddingClient:
@@ -141,10 +155,16 @@ class WikiAuthoringService:
         return self._embedding_client
 
     @property
-    def llm_client(self) -> Any:
+    def llm_client(self) -> LLMClient:
         if self._llm_client is None:
             self._llm_client = get_llm_client(STRUCTURING_ACTION)
         return self._llm_client
+
+    @property
+    def storage(self) -> SupabaseStorageClient:
+        if self._storage is None:
+            self._storage = SupabaseStorageClient(self.settings)
+        return self._storage
 
     # ------------------------------------------------------------------
     # Batch lifecycle
@@ -193,11 +213,184 @@ class WikiAuthoringService:
                 "status": "draft",
                 "entries": [entry.model_dump() for entry in entries],
                 "unparsed_fragments": structured["unparsed_fragments"],
+                "attachments": [],
                 "model": model,
                 "cost_usd": cost_usd,
             },
         )
         return row
+
+    async def create_file_batch(
+        self,
+        *,
+        workspace_id: str,
+        source_id: str,
+        chapter_hint: str | None,
+        title: str | None,
+        files: list[tuple[str, str | None, bytes]],
+    ) -> dict[str, Any]:
+        """Create a ``transcribing`` batch from note uploads and enqueue RQ.
+
+        ``files`` is ``(filename, content_type, content)`` in upload order.
+        """
+        if not (source_id or "").strip():
+            raise WikiAuthoringError("source_id is required for file ingest.")
+
+        wiki_settings = self.settings.wiki_authoring
+        if not files:
+            raise WikiAuthoringError("Upload at least one note file.")
+
+        if len(files) > wiki_settings.max_attachments_per_batch:
+            raise WikiAuthoringError(
+                f"At most {wiki_settings.max_attachments_per_batch} files per batch.",
+            )
+
+        if not await self.batches.source_has_segments(source_id):
+            raise WikiAuthoringError(
+                "Selected source has no parsed segments yet. "
+                "Finish ingesting the source before attaching reading notes.",
+            )
+
+        validated: list[ValidatedAttachment] = []
+        try:
+            for order, (filename, content_type, content) in enumerate(files):
+                validated.append(
+                    validate_note_attachment(
+                        order=order,
+                        filename=filename,
+                        content_type=content_type,
+                        content=content,
+                        max_bytes=wiki_settings.max_attachment_bytes,
+                    ),
+                )
+        except WikiTranscriptionError as exc:
+            raise WikiAuthoringError(str(exc)) from exc
+
+        chapter = await self._resolve_chapter(chapter_hint, source_id)
+        batch_id = str(uuid.uuid4())
+        attachments: list[dict[str, Any]] = []
+        bucket = self.settings.sources_bucket
+
+        try:
+            for item in validated:
+                path = attachment_storage_path(
+                    workspace_id=workspace_id,
+                    batch_id=batch_id,
+                    order=item.order,
+                    filename=item.filename,
+                )
+                await self.storage.upload(
+                    bucket=bucket,
+                    path=path,
+                    content=item.content,
+                    content_type=item.mime_type,
+                )
+                attachments.append(
+                    {
+                        "order": item.order,
+                        "filename": item.filename,
+                        "mime_type": item.mime_type,
+                        "storage_path": path,
+                        "byte_size": len(item.content),
+                    },
+                )
+        except SupabaseStorageError as exc:
+            raise WikiAuthoringError(f"Could not store note files: {exc}") from exc
+
+        display_title = (title or "").strip() or f"Notes — {_utc_now_iso()[:10]}"
+        row = await self.batches.insert(
+            {
+                "id": batch_id,
+                "workspace_id": workspace_id,
+                "source_id": source_id,
+                "title": display_title,
+                "raw_notes": "",
+                "chapter_hint": chapter_hint,
+                "chapter": chapter,
+                "status": "transcribing",
+                "entries": [],
+                "unparsed_fragments": [],
+                "attachments": attachments,
+                "transcription_error": None,
+            },
+        )
+
+        try:
+            enqueue_wiki_ingest_transcription(self.settings, batch_id)
+        except Exception as exc:  # noqa: BLE001 - surface queue failures to the API
+            await self.batches.update(
+                batch_id,
+                {
+                    "status": "failed",
+                    "transcription_error": f"Failed to enqueue transcription: {exc}",
+                },
+            )
+            raise WikiAuthoringError(
+                f"Failed to enqueue transcription job: {exc}",
+            ) from exc
+
+        return row
+
+    async def structure_batch(
+        self,
+        batch_id: str,
+        workspace_id: str,
+    ) -> dict[str, Any]:
+        """Structure current ``raw_notes`` after transcription review."""
+        batch = await self._require_batch(
+            batch_id,
+            workspace_id,
+            allowed={"transcribed"},
+        )
+        notes = str(batch.get("raw_notes") or "").strip()
+
+        if not notes:
+            raise WikiAuthoringError("Notes are empty. Edit the transcription first.")
+
+        max_chars = self.settings.wiki_authoring.max_notes_chars
+        if len(notes) > max_chars:
+            raise WikiAuthoringError(
+                f"Notes exceed {max_chars} characters. "
+                "Split into another batch (same source/chapter works well).",
+            )
+
+        await self.batches.update(
+            batch_id,
+            {"status": "structuring", "transcription_error": None},
+        )
+
+        chapter = batch.get("chapter")
+        if not isinstance(chapter, dict):
+            chapter = await self._resolve_chapter(
+                batch.get("chapter_hint"),
+                batch.get("source_id"),
+            )
+
+        try:
+            structured, model, cost_usd = await self._structure_notes(
+                notes,
+                chapter_title=(chapter or {}).get("title"),
+            )
+            entries = await self._enrich_entries(
+                structured["entries"],
+                workspace_id=workspace_id,
+                source_id=batch.get("source_id"),
+                chapter=chapter if isinstance(chapter, dict) else None,
+            )
+            return await self.batches.update(
+                batch_id,
+                {
+                    "status": "draft",
+                    "entries": [entry.model_dump() for entry in entries],
+                    "unparsed_fragments": structured["unparsed_fragments"],
+                    "model": model,
+                    "cost_usd": cost_usd,
+                    "chapter": chapter,
+                },
+            )
+        except Exception:
+            await self.batches.update(batch_id, {"status": "transcribed"})
+            raise
 
     async def update_batch(
         self,
@@ -205,15 +398,44 @@ class WikiAuthoringService:
         workspace_id: str,
         *,
         title: str | None = None,
+        raw_notes: str | None = None,
         entries: list[WikiIngestEntry] | None = None,
     ) -> dict[str, Any]:
-        batch = await self._get_draft(batch_id, workspace_id)
+        batch = await self.batches.get_for_workspace(batch_id, workspace_id)
+
+        if not batch:
+            raise WikiIngestNotFoundError("Ingest batch not found.")
+
+        status = batch.get("status")
         payload: dict[str, Any] = {}
 
         if title is not None and title.strip():
+            if status not in {"transcribed", "draft", "failed"}:
+                raise WikiAuthoringError(
+                    f"Batch is {status}; title can only be edited while "
+                    "transcribed, draft, or failed.",
+                )
             payload["title"] = title.strip()
 
+        if raw_notes is not None:
+            if status not in {"transcribed", "failed"}:
+                raise WikiAuthoringError(
+                    f"Batch is {status}; raw_notes can only be edited while "
+                    "transcribed (or after a failed transcription).",
+                )
+            stripped = raw_notes.strip()
+            if not stripped:
+                raise WikiAuthoringError("Notes are empty.")
+            payload["raw_notes"] = stripped
+            if status == "failed":
+                payload["status"] = "transcribed"
+                payload["transcription_error"] = None
+
         if entries is not None:
+            if status != "draft":
+                raise WikiAuthoringError(
+                    f"Batch is {status}; only drafts can edit structured entries.",
+                )
             existing_entries = await self._list_all_entries(workspace_id)
             refreshed = self._refresh_resolutions(entries, existing_entries)
             payload["entries"] = [entry.model_dump() for entry in refreshed]
@@ -224,7 +446,16 @@ class WikiAuthoringService:
         return await self.batches.update(batch_id, payload)
 
     async def discard_batch(self, batch_id: str, workspace_id: str) -> dict[str, Any]:
-        await self._get_draft(batch_id, workspace_id)
+        batch = await self.batches.get_for_workspace(batch_id, workspace_id)
+
+        if not batch:
+            raise WikiIngestNotFoundError("Ingest batch not found.")
+
+        if batch.get("status") not in _DISCARDABLE_STATUSES:
+            raise WikiAuthoringError(
+                f"Batch is {batch.get('status')}; it cannot be discarded.",
+            )
+
         return await self.batches.update(batch_id, {"status": "discarded"})
 
     async def commit_batch(
@@ -232,7 +463,7 @@ class WikiAuthoringService:
         batch_id: str,
         workspace_id: str,
     ) -> tuple[dict[str, Any], list[str], list[str]]:
-        batch = await self._get_draft(batch_id, workspace_id)
+        batch = await self._require_batch(batch_id, workspace_id, allowed={"draft"})
         entries = [WikiIngestEntry.model_validate(entry) for entry in batch.get("entries") or []]
         included = [entry for entry in entries if entry.include]
 
@@ -321,8 +552,10 @@ class WikiAuthoringService:
         importance: str,
         aliases: list[str],
         pronunciation: str | None,
+        origin: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         existing_entries = await self._list_all_entries(workspace_id)
+        entry_origin = origin if isinstance(origin, dict) and origin.get("kind") else {"kind": "manual"}
         candidate = WikiCandidate(
             label=preferred_label.strip(),
             definition=definition.strip(),
@@ -330,7 +563,7 @@ class WikiAuthoringService:
             importance=importance,
             aliases=aliases,
             pronunciation=pronunciation,
-            origin={"kind": "manual"},
+            origin=entry_origin,
         )
         slug = candidate_slug(candidate, {
             str(entry["canonical_slug"]): entry for entry in existing_entries
@@ -491,7 +724,7 @@ class WikiAuthoringService:
         return entries
 
     @staticmethod
-    def _coerce_choice(value: Any, allowed: set[str], default: str) -> Any:
+    def _coerce_choice(value: Any, allowed: set[str], default: str) -> str:
         candidate = str(value or "").strip().lower()
         return candidate if candidate in allowed else default
 
@@ -710,15 +943,23 @@ class WikiAuthoringService:
             ],
         }
 
-    async def _get_draft(self, batch_id: str, workspace_id: str) -> dict[str, Any]:
+    async def _require_batch(
+        self,
+        batch_id: str,
+        workspace_id: str,
+        *,
+        allowed: set[str],
+    ) -> dict[str, Any]:
         batch = await self.batches.get_for_workspace(batch_id, workspace_id)
 
         if not batch:
             raise WikiIngestNotFoundError("Ingest batch not found.")
 
-        if batch.get("status") != "draft":
+        status = batch.get("status")
+        if status not in allowed:
+            allowed_list = ", ".join(sorted(allowed))
             raise WikiAuthoringError(
-                f"Batch is {batch.get('status')}; only drafts can be modified.",
+                f"Batch is {status}; expected one of: {allowed_list}.",
             )
 
         return batch

@@ -1,5 +1,11 @@
 import { getAccessToken } from '../features/auth/authService'
-import { apiRequest, apiRequestVoid, hasApiBaseUrl, parseApiErrorMessage } from './apiClient'
+import {
+  ApiError,
+  apiRequest,
+  apiRequestVoid,
+  hasApiBaseUrl,
+  parseApiErrorMessage,
+} from './apiClient'
 
 export interface Workspace {
   id: string
@@ -182,22 +188,22 @@ export async function listSources(workspaceId: string): Promise<Source[]> {
   return apiRequest<Source[]>(`/workspaces/${workspaceId}/sources`)
 }
 
-export async function uploadSource(workspaceId: string, file: File): Promise<Source> {
+async function uploadMultipart<TResponse>(path: string, file: File): Promise<TResponse> {
   if (!hasApiBaseUrl()) {
-    throw new Error('Missing VITE_API_BASE_URL.')
+    throw new ApiError('Missing VITE_API_BASE_URL.', 0)
   }
 
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string
   const token = await getAccessToken()
 
   if (!token) {
-    throw new Error('Missing access token.')
+    throw new ApiError('Missing access token.', 401)
   }
 
   const formData = new FormData()
   formData.append('file', file)
 
-  const response = await fetch(`${apiBaseUrl}/workspaces/${workspaceId}/sources`, {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -207,10 +213,14 @@ export async function uploadSource(workspaceId: string, file: File): Promise<Sou
 
   if (!response.ok) {
     const message = await parseApiErrorMessage(response)
-    throw new Error(message)
+    throw new ApiError(message, response.status)
   }
 
-  return response.json() as Promise<Source>
+  return response.json() as Promise<TResponse>
+}
+
+export async function uploadSource(workspaceId: string, file: File): Promise<Source> {
+  return uploadMultipart<Source>(`/workspaces/${workspaceId}/sources`, file)
 }
 
 export async function listWikiEntries(
@@ -232,34 +242,7 @@ export async function listArtifacts(workspaceId: string): Promise<Artifact[]> {
 }
 
 export async function uploadArtifact(workspaceId: string, file: File): Promise<Artifact> {
-  if (!hasApiBaseUrl()) {
-    throw new Error('Missing VITE_API_BASE_URL.')
-  }
-
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL as string
-  const token = await getAccessToken()
-
-  if (!token) {
-    throw new Error('Missing access token.')
-  }
-
-  const formData = new FormData()
-  formData.append('file', file)
-
-  const response = await fetch(`${apiBaseUrl}/workspaces/${workspaceId}/artifacts`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  })
-
-  if (!response.ok) {
-    const message = await parseApiErrorMessage(response)
-    throw new Error(message)
-  }
-
-  return response.json() as Promise<Artifact>
+  return uploadMultipart<Artifact>(`/workspaces/${workspaceId}/artifacts`, file)
 }
 
 export async function getArtifactDownloadUrl(

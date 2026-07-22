@@ -57,10 +57,10 @@ export async function parseApiErrorMessage(response: Response): Promise<string> 
   return body
 }
 
-export async function apiRequest<TResponse>(
+async function sendApiRequest(
   path: string,
   options: ApiRequestOptions = {},
-): Promise<TResponse> {
+): Promise<Response> {
   if (!apiBaseUrl) {
     throw new ApiError('Missing VITE_API_BASE_URL.', 0)
   }
@@ -68,7 +68,7 @@ export async function apiRequest<TResponse>(
   const { requiresAuth = true, headers, body, ...fetchOptions } = options
   const requestHeaders = new Headers(headers)
 
-  if (body && !requestHeaders.has('Content-Type')) {
+  if (body && !(body instanceof FormData) && !requestHeaders.has('Content-Type')) {
     requestHeaders.set('Content-Type', 'application/json')
   }
 
@@ -93,6 +93,14 @@ export async function apiRequest<TResponse>(
     throw new ApiError(message, response.status)
   }
 
+  return response
+}
+
+export async function apiRequest<TResponse>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<TResponse> {
+  const response = await sendApiRequest(path, options)
   return response.json() as Promise<TResponse>
 }
 
@@ -100,37 +108,7 @@ export async function apiRequestVoid(
   path: string,
   options: ApiRequestOptions = {},
 ): Promise<void> {
-  if (!apiBaseUrl) {
-    throw new ApiError('Missing VITE_API_BASE_URL.', 0)
-  }
-
-  const { requiresAuth = true, headers, body, ...fetchOptions } = options
-  const requestHeaders = new Headers(headers)
-
-  if (body && !requestHeaders.has('Content-Type')) {
-    requestHeaders.set('Content-Type', 'application/json')
-  }
-
-  if (requiresAuth) {
-    const token = await getAccessToken()
-
-    if (!token) {
-      throw new ApiError('Missing access token.', 401)
-    }
-
-    requestHeaders.set('Authorization', `Bearer ${token}`)
-  }
-
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    ...fetchOptions,
-    body,
-    headers: requestHeaders,
-  })
-
-  if (!response.ok) {
-    const message = await parseApiErrorMessage(response)
-    throw new ApiError(message, response.status)
-  }
+  await sendApiRequest(path, options)
 }
 
 export async function getCurrentUser(): Promise<CurrentUserResponse> {

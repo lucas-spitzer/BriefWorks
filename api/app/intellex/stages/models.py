@@ -111,14 +111,14 @@ class SourceResearchOutput(BaseModel):
 
     @field_validator("web_sources", mode="before")
     @classmethod
-    def _coerce_web_sources(cls, value: Any) -> list:
+    def _coerce_web_sources(cls, value: Any) -> list[dict[str, str]]:
         if isinstance(value, list):
             return value
         return []
 
     @field_validator("confidence", mode="before")
     @classmethod
-    def _coerce_confidence(cls, value: Any) -> dict:
+    def _coerce_confidence(cls, value: Any) -> dict[str, float]:
         if not isinstance(value, dict):
             return {}
         cleaned: dict[str, float] = {}
@@ -131,7 +131,7 @@ class SourceResearchOutput(BaseModel):
 
     @field_validator("provenance", mode="before")
     @classmethod
-    def _coerce_provenance(cls, value: Any) -> dict:
+    def _coerce_provenance(cls, value: Any) -> dict[str, Literal["document", "web", "inferred"]]:
         if not isinstance(value, dict):
             return {}
         return {str(key): val for key, val in value.items() if val in _PROVENANCE_VALUES}
@@ -226,7 +226,7 @@ class WebEnrichmentOutput(BaseModel):
 
     @field_validator("related_documents", mode="before")
     @classmethod
-    def _coerce_related_documents(cls, value: Any) -> list:
+    def _coerce_related_documents(cls, value: Any) -> list[RelatedDocument | dict[str, Any]]:
         if not isinstance(value, list):
             return []
         return [
@@ -238,7 +238,7 @@ class WebEnrichmentOutput(BaseModel):
 
     @field_validator("web_sources", mode="before")
     @classmethod
-    def _coerce_web_sources(cls, value: Any) -> list:
+    def _coerce_web_sources(cls, value: Any) -> list[WebSource | dict[str, Any]]:
         if not isinstance(value, list):
             return []
         return [
@@ -250,7 +250,7 @@ class WebEnrichmentOutput(BaseModel):
 
     @field_validator("confidence", mode="before")
     @classmethod
-    def _coerce_confidence(cls, value: Any) -> dict:
+    def _coerce_confidence(cls, value: Any) -> dict[str, float]:
         if not isinstance(value, dict):
             return {}
         cleaned: dict[str, float] = {}

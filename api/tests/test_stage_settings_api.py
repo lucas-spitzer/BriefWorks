@@ -120,7 +120,7 @@ def test_put_invalid_selection_422() -> None:
     payload = StageSettingUpdate(provider="openai", model="claude-opus-4-8")
 
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(put_stage_setting("prepare", payload, _workspace(), repo))  # type: ignore[arg-type]
+        asyncio.run(put_stage_setting("wiki_structuring", payload, _workspace(), repo))  # type: ignore[arg-type]
 
     assert exc.value.status_code == 422
     assert repo.upserted == []
@@ -129,9 +129,9 @@ def test_put_invalid_selection_422() -> None:
 def test_delete_removes_override() -> None:
     repo = FakeStageSettingsRepo()
 
-    asyncio.run(delete_stage_setting("prepare", _workspace(), repo))  # type: ignore[arg-type]
+    asyncio.run(delete_stage_setting("wiki_structuring", _workspace(), repo))  # type: ignore[arg-type]
 
-    assert repo.deleted == [("ws-1", "prepare")]
+    assert repo.deleted == [("ws-1", "wiki_structuring")]
 
 
 def test_delete_unknown_action_404() -> None:

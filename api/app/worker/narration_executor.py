@@ -43,6 +43,13 @@ def _narration_path(storage_path: str, voice_id: str, segment_id: str) -> str:
     return f"{parent}/narration/{voice_id}/{segment_id}.mp3"
 
 
+def _downloadable_artifact_path(
+    source_storage_path: str, artifact_id: str, filename: str
+) -> str:
+    parent = source_storage_path.rsplit("/", 1)[0]
+    return f"{parent}/artifacts/{artifact_id}/{filename}"
+
+
 def _progress_output(
     *,
     done: int,
@@ -444,9 +451,14 @@ class NarrationStageExecutor:
             }
         )
         artifact_id = artifact["id"]
-        storage_path = f"workspaces/{workspace_id}/artifacts/{artifact_id}/{filename}"
+        storage_path = _downloadable_artifact_path(
+            source["storage_path"], artifact_id, filename
+        )
         self.storage.upload(
-            storage_path, manifest_bytes, content_type="application/json"
+            storage_path,
+            manifest_bytes,
+            bucket=self.storage.sources_bucket,
+            content_type="application/json",
         )
         self.db.update_artifact(
             artifact_id,

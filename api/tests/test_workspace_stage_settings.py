@@ -65,32 +65,40 @@ def test_get_llm_client_honors_override(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_overrides_from_rows_builds_map_and_normalizes() -> None:
     rows = [
-        {"stage_action": "prepare", "provider": "OpenAI", "model": "gpt-5.4-mini"},
-        {"stage_action": "extract_knowledge", "provider": "anthropic", "model": "claude-sonnet-4-6"},
+        {"stage_action": "wiki_structuring", "provider": "OpenAI", "model": "gpt-5.4-mini"},
+        {
+            "stage_action": "source_web_enrichment",
+            "provider": "anthropic",
+            "model": "claude-sonnet-4-6",
+        },
     ]
 
     overrides = overrides_from_rows(rows)
 
-    assert overrides["prepare"] == ActionOverride(provider="openai", model="gpt-5.4-mini")
-    assert overrides["extract_knowledge"].model == "claude-sonnet-4-6"
+    assert overrides["wiki_structuring"] == ActionOverride(
+        provider="openai", model="gpt-5.4-mini"
+    )
+    assert overrides["source_web_enrichment"].model == "claude-sonnet-4-6"
 
 
 def test_overrides_from_rows_drops_unbuildable_or_empty() -> None:
     rows = [
-        {"stage_action": "prepare", "provider": "google", "model": "gemini-3"},
+        {"stage_action": "wiki_structuring", "provider": "google", "model": "gemini-3"},
         {"stage_action": "", "provider": "openai", "model": "gpt-4o"},
-        {"stage_action": "extract_knowledge", "provider": "anthropic", "model": ""},
+        {"stage_action": "source_web_enrichment", "provider": "anthropic", "model": ""},
     ]
 
     assert overrides_from_rows(rows) == {}
 
 
 def test_overrides_from_rows_allows_uncatalogued_model() -> None:
-    rows = [{"stage_action": "prepare", "provider": "openai", "model": "gpt-6-future"}]
+    rows = [{"stage_action": "wiki_structuring", "provider": "openai", "model": "gpt-6-future"}]
 
     overrides = overrides_from_rows(rows)
 
-    assert overrides["prepare"] == ActionOverride(provider="openai", model="gpt-6-future")
+    assert overrides["wiki_structuring"] == ActionOverride(
+        provider="openai", model="gpt-6-future"
+    )
 
 
 def test_validate_selection_accepts_known_and_unknown_models() -> None:

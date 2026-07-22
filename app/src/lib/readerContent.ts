@@ -118,7 +118,7 @@ type StyledWord = { text: string; em: boolean; strong: boolean }
 // Marker characters are stripped; each word carries the style of its first
 // content character. Word order and count match the plain-text tokenization
 // (markers attach to words), which keeps narration indexes aligned.
-export function styleWords(md: string): StyledWord[] {
+function styleWords(md: string): StyledWord[] {
   const out: StyledWord[] = []
   let em = false
   let strong = false
@@ -218,6 +218,120 @@ export function matchWikiTerms(
     }
   }
   return result
+}
+
+/** Max words for free-text define selection in the reader. */
+export const READER_DEFINE_MAX_WORDS = 8
+
+export type ParagraphNeighbors = {
+  prev: string
+  current: string
+  next: string
+}
+
+export type ReaderSelectionContext = {
+  term: string
+  globals: number[]
+  blockId: string
+  sentence: string
+  neighbors: ParagraphNeighbors
+  /** Wiki entry id when every selected word maps to the same canonical term. */
+  entryId: string | null
+}
+
+function paragraphNeighborsAt(wordBlocks: WordBlock[], index: number): ParagraphNeighbors {
+  const current = wordBlocks[index]?.block.kind === 'paragraph' ? wordBlocks[index].block.text : ''
+  let prev = ''
+  for (let i = index - 1; i >= 0; i -= 1) {
+    if (wordBlocks[i].block.kind === 'paragraph') {
+      prev = wordBlocks[i].block.text
+      break
+    }
+  }
+  let next = ''
+  for (let i = index + 1; i < wordBlocks.length; i += 1) {
+    if (wordBlocks[i].block.kind === 'paragraph') {
+      next = wordBlocks[i].block.text
+      break
+    }
+  }
+  return { prev, current, next }
+}
+
+function sentenceForGlobals(words: SpokenWord[], globals: number[]): string {
+  if (globals.length === 0) return ''
+  const byGlobal = new Map(words.map((w) => [w.global, w]))
+  const first = byGlobal.get(globals[0])
+  if (!first) return ''
+  return words
+    .filter((w) => w.sentence === first.sentence && w.seq === first.seq)
+    .map((w) => w.text)
+    .join(' ')
+}
+
+/**
+ * Resolve a contiguous same-block word selection into define context.
+ * Returns null when empty, multi-block, or over the word cap.
+ */
+export function resolveReaderSelection(
+  wordBlocks: WordBlock[],
+  globals: number[],
+  termByWord: Map<number, string>,
+): ReaderSelectionContext | null {
+  if (globals.length === 0 || globals.length > READER_DEFINE_MAX_WORDS) return null
+  const sorted = [...new Set(globals)].sort((a, b) => a - b)
+  for (let i = 1; i < sorted.length; i += 1) {
+    if (sorted[i] !== sorted[i - 1] + 1) return null
+  }
+
+  const blockIndex = wordBlocks.findIndex((wb) =>
+    wb.words.some((w) => w.global === sorted[0]),
+  )
+  if (blockIndex < 0) return null
+  const wb = wordBlocks[blockIndex]
+  if (wb.block.kind !== 'paragraph') return null
+
+  const inBlock = new Map(wb.words.map((w) => [w.global, w]))
+  const selected = sorted.map((g) => inBlock.get(g))
+  if (selected.some((w) => w == null)) return null
+  const words = selected as SpokenWord[]
+
+  const flat = wordBlocks.flatMap((block) => block.words)
+  const entryIds = sorted.map((g) => termByWord.get(g) ?? null)
+  const entryId =
+    entryIds.every((id) => id != null && id === entryIds[0]) ? entryIds[0] : null
+
+  return {
+    term: words
+      .map((w) => w.text)
+      .join(' ')
+      .replace(/^[\s"'“”‘’]+|[\s"'“”‘’]+$/gu, ''),
+    globals: sorted,
+    blockId: wb.block.id,
+    sentence: sentenceForGlobals(flat, sorted),
+    neighbors: paragraphNeighborsAt(wordBlocks, blockIndex),
+    entryId,
+  }
+}
+
+/**
+ * Collect data-global indexes covered by the current DOM selection inside root.
+ * Returns [] when the selection is empty or outside root.
+ */
+export function globalsFromDomSelection(root: HTMLElement | null): number[] {
+  if (!root || typeof window === 'undefined') return []
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return []
+  const range = sel.getRangeAt(0)
+  if (!root.contains(range.commonAncestorContainer)) return []
+
+  const globals: number[] = []
+  for (const node of root.querySelectorAll<HTMLElement>('.reader__word[data-global]')) {
+    if (!range.intersectsNode(node)) continue
+    const g = Number(node.dataset.global)
+    if (Number.isFinite(g)) globals.push(g)
+  }
+  return globals
 }
 
 export function buildNarration(blocks: Block[]): { wordBlocks: WordBlock[]; total: number } {

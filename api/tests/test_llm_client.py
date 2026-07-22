@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
 
 from app.services.api_pricing import cost_anthropic_usage, cost_llm_usage
 from app.services.llm.anthropic_client import _parse_json_object
-from app.services.llm.base import HAIKU_45_MODEL, LLMCompletionResult
+from app.llm_defaults import HAIKU_45_MODEL
 from app.services.llm.factory import get_llm_client, resolve_action
 from app.services.llm.openai_adapter import OpenAILLMClient
 from app.services.openai_client import OpenAICompletionResult
@@ -58,11 +57,11 @@ def test_resolve_action_openai_stage_defaults(monkeypatch: pytest.MonkeyPatch) -
 def test_resolve_action_openai_stage_uses_global_model_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("LLM_PREPARE_PROVIDER", raising=False)
-    monkeypatch.delenv("LLM_PREPARE_MODEL", raising=False)
+    monkeypatch.delenv("LLM_WIKI_STRUCTURING_PROVIDER", raising=False)
+    monkeypatch.delenv("LLM_WIKI_STRUCTURING_MODEL", raising=False)
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
 
-    provider, model = resolve_action("prepare")
+    provider, model = resolve_action("wiki_structuring")
 
     assert provider == "openai"
     assert model == "gpt-4o"

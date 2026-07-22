@@ -2,7 +2,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.intellex.models import ParsedLine
 from app.intellex.stages.parse_document import ParseStage
 from app.services.llamaparse_client import LlamaParsePage, LlamaParseResult
 

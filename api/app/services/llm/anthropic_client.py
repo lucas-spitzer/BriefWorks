@@ -7,7 +7,8 @@ from typing import Any
 from anthropic import Anthropic, BadRequestError
 
 from app.config import get_settings
-from app.services.llm.base import HAIKU_45_MODEL, LLMCompletionResult
+from app.llm_defaults import HAIKU_45_MODEL
+from app.services.llm.base import LLMCompletionResult
 from app.services.llm.reasoning import ReasoningSettings
 
 _DEFAULT_MODEL = HAIKU_45_MODEL

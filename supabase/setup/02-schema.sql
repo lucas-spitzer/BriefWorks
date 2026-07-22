@@ -51,6 +51,36 @@ on public.stages (module)
 where is_active = true;
 
 -- ---------------------------------------------------------------------------
+-- Per-workspace LLM overrides for pipeline stage actions
+-- ---------------------------------------------------------------------------
+
+create table public.workspace_stage_settings (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  stage_action text not null,
+  provider text not null,
+  model text not null,
+  reasoning_effort text,
+  reasoning_tokens integer,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint workspace_stage_settings_provider_check
+    check (provider in ('openai', 'anthropic')),
+  constraint workspace_stage_settings_reasoning_tokens_check
+    check (reasoning_tokens is null or reasoning_tokens > 0),
+  constraint workspace_stage_settings_workspace_action_key
+    unique (workspace_id, stage_action)
+);
+
+create index workspace_stage_settings_workspace_id_idx
+on public.workspace_stage_settings (workspace_id);
+
+create trigger workspace_stage_settings_set_updated_at
+before update on public.workspace_stage_settings
+for each row
+execute function public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
 -- Sources (uploaded files)
 -- ---------------------------------------------------------------------------
 
@@ -150,6 +180,7 @@ create index stage_runs_cost_usd_idx on public.stage_runs (cost_usd);
 
 -- ---------------------------------------------------------------------------
 -- NDR segments (parsed and chunked source content)
+-- text = plain (LLM / embeddings / narration); md = inline markdown for Reader
 -- ---------------------------------------------------------------------------
 
 create table public.ndr_segments (
@@ -159,7 +190,10 @@ create table public.ndr_segments (
   sequence_index integer not null,
   kind text not null,
   text text not null,
+  md text,
   locator jsonb not null default '{}',
+  embedding extensions.vector(1536),
+  embedded_at timestamptz,
   created_at timestamptz not null default now(),
   constraint ndr_segments_kind_check
     check (kind in ('heading', 'paragraph', 'list_item', 'table', 'caption')),
@@ -171,6 +205,8 @@ create index ndr_segments_source_id_idx on public.ndr_segments (source_id);
 create index ndr_segments_workspace_id_idx on public.ndr_segments (workspace_id);
 create index ndr_segments_source_sequence_idx
 on public.ndr_segments (source_id, sequence_index);
+create index ndr_segments_embedding_idx
+on public.ndr_segments using hnsw (embedding extensions.vector_cosine_ops);
 
 -- ---------------------------------------------------------------------------
 -- Document chapters (persisted chapter/section segmentation)
@@ -211,12 +247,16 @@ create table public.wiki_entries (
   entry_kind text not null default 'concept',
   evidence jsonb not null default '[]',
   origin jsonb not null default '{}',
+  confidence double precision,
+  selection_score double precision,
+  embedding extensions.vector(1536),
+  embedded_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint wiki_entries_importance_check
     check (importance in ('essential', 'supporting', 'contextual')),
   constraint wiki_entries_status_check
-    check (status in ('canonical', 'disputed', 'deprecated', 'rejected')),
+    check (status in ('candidate', 'canonical', 'disputed', 'deprecated', 'rejected')),
   constraint wiki_entries_entry_kind_check
     check (entry_kind in ('term', 'concept', 'insight')),
   constraint wiki_entries_workspace_slug_key
@@ -225,6 +265,10 @@ create table public.wiki_entries (
 
 create index wiki_entries_workspace_id_idx on public.wiki_entries (workspace_id);
 create index wiki_entries_status_idx on public.wiki_entries (workspace_id, status);
+create index wiki_entries_workspace_status_score_idx
+on public.wiki_entries (workspace_id, status, selection_score);
+create index wiki_entries_embedding_idx
+on public.wiki_entries using hnsw (embedding extensions.vector_cosine_ops);
 
 create trigger wiki_entries_set_updated_at
 before update on public.wiki_entries
@@ -250,6 +294,58 @@ create index wiki_disputes_workspace_id_idx on public.wiki_disputes (workspace_i
 create index wiki_disputes_wiki_entry_id_idx on public.wiki_disputes (wiki_entry_id);
 
 -- ---------------------------------------------------------------------------
+-- Wiki ingest batches (manual authoring drafts; never provisional wiki rows)
+-- ---------------------------------------------------------------------------
+
+create table public.wiki_ingest_batches (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  source_id uuid references public.sources (id) on delete set null,
+  title text not null,
+  -- Empty while status = transcribing (file ingest); filled after transcription
+  -- or immediately for paste-notes batches.
+  raw_notes text not null default '',
+  chapter_hint text,
+  chapter jsonb,
+  status text not null default 'draft',
+  entries jsonb not null default '[]',
+  unparsed_fragments jsonb not null default '[]',
+  -- Uploaded note files: [{order, filename, mime_type, storage_path, byte_size}]
+  attachments jsonb not null default '[]',
+  transcription_error text,
+  model text,
+  cost_usd numeric(12, 6),
+  committed_entry_ids uuid[] not null default '{}',
+  committed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint wiki_ingest_batches_status_check
+    check (
+      status in (
+        'transcribing',
+        'transcribed',
+        'structuring',
+        'draft',
+        'committed',
+        'discarded',
+        'failed'
+      )
+    )
+);
+
+create index wiki_ingest_batches_workspace_id_idx
+on public.wiki_ingest_batches (workspace_id);
+create index wiki_ingest_batches_source_id_idx
+on public.wiki_ingest_batches (source_id);
+create index wiki_ingest_batches_status_idx
+on public.wiki_ingest_batches (workspace_id, status);
+
+create trigger wiki_ingest_batches_set_updated_at
+before update on public.wiki_ingest_batches
+for each row
+execute function public.set_updated_at();
+
+-- ---------------------------------------------------------------------------
 -- Generated artifacts
 -- ---------------------------------------------------------------------------
 
@@ -270,6 +366,7 @@ create table public.artifacts (
     check (
       artifact_type in (
         'electronic_book',
+        'narration_audio',
         'wiki_json'
       )
     )
@@ -278,6 +375,33 @@ create table public.artifacts (
 create index artifacts_workspace_id_idx on public.artifacts (workspace_id);
 create index artifacts_source_id_idx on public.artifacts (source_id);
 create index artifacts_production_run_id_idx on public.artifacts (production_run_id);
+
+-- ---------------------------------------------------------------------------
+-- Narration segments (per-paragraph audio + word timings for the Reader)
+-- ---------------------------------------------------------------------------
+
+create table public.narration_segments (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  source_id uuid not null references public.sources (id) on delete cascade,
+  chapter_id uuid references public.document_chapters (id) on delete set null,
+  segment_id uuid not null references public.ndr_segments (id) on delete cascade,
+  voice_id text not null,
+  model_id text not null,
+  audio_path text not null,
+  duration_seconds double precision not null default 0,
+  words jsonb not null default '[]',
+  request_id text,
+  character_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  constraint narration_segments_segment_voice_key
+    unique (segment_id, voice_id)
+);
+
+create index narration_segments_source_id_idx
+on public.narration_segments (source_id);
+create index narration_segments_workspace_id_idx
+on public.narration_segments (workspace_id);
 
 -- ---------------------------------------------------------------------------
 -- Assessment sets and promoted QnGen entities
@@ -390,3 +514,89 @@ create table public.scenarios (
 create index scenarios_workspace_id_idx on public.scenarios (workspace_id);
 create index scenarios_source_id_idx on public.scenarios (source_id);
 create index scenarios_assessment_set_id_idx on public.scenarios (assessment_set_id);
+
+-- ---------------------------------------------------------------------------
+-- RAG match helpers (service role only; tenancy via p_workspace_id)
+-- ---------------------------------------------------------------------------
+
+create or replace function public.match_ndr_segments(
+  query_embedding extensions.vector(1536),
+  p_workspace_id uuid,
+  match_threshold double precision default 0.3,
+  match_count integer default 8,
+  p_source_ids uuid[] default null
+)
+returns table (
+  id uuid,
+  source_id uuid,
+  sequence_index integer,
+  kind text,
+  text text,
+  locator jsonb,
+  chapter_title text,
+  chapter_sequence integer,
+  similarity double precision
+)
+language sql
+stable
+set search_path = public, extensions
+as $$
+  select
+    s.id,
+    s.source_id,
+    s.sequence_index,
+    s.kind,
+    s.text,
+    s.locator,
+    c.title as chapter_title,
+    c.sequence_index as chapter_sequence,
+    1 - (s.embedding <=> query_embedding) as similarity
+  from public.ndr_segments s
+  left join lateral (
+    select dc.title, dc.sequence_index
+    from public.document_chapters dc
+    where dc.source_id = s.source_id
+      and s.id = any (dc.segment_ids)
+    limit 1
+  ) c on true
+  where s.workspace_id = p_workspace_id
+    and s.embedding is not null
+    and (p_source_ids is null or s.source_id = any (p_source_ids))
+    and 1 - (s.embedding <=> query_embedding) >= match_threshold
+  order by s.embedding <=> query_embedding
+  limit match_count;
+$$;
+
+create or replace function public.match_wiki_entries(
+  query_embedding extensions.vector(1536),
+  p_workspace_id uuid,
+  match_threshold double precision default 0.3,
+  match_count integer default 6
+)
+returns table (
+  id uuid,
+  preferred_label text,
+  canonical_slug text,
+  definition text,
+  importance text,
+  similarity double precision
+)
+language sql
+stable
+set search_path = public, extensions
+as $$
+  select
+    w.id,
+    w.preferred_label,
+    w.canonical_slug,
+    w.definition,
+    w.importance,
+    1 - (w.embedding <=> query_embedding) as similarity
+  from public.wiki_entries w
+  where w.workspace_id = p_workspace_id
+    and w.embedding is not null
+    and w.status = 'canonical'
+    and 1 - (w.embedding <=> query_embedding) >= match_threshold
+  order by w.embedding <=> query_embedding
+  limit match_count;
+$$;

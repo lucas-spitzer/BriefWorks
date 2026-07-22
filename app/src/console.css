@@ -34,10 +34,10 @@
 }
 .bw-dot--completed { background: #2f6b3a; }
 .bw-dot--ready { background: #2f6b3a; }
+.bw-dot--stored { background: #2f6b3a; }
 .bw-dot--running { background: var(--color-gold); }
 .bw-dot--processing { background: var(--color-gold); }
 .bw-dot--queued { background: var(--color-gray); }
-.bw-dot--stored { background: var(--color-gray); }
 .bw-dot--failed { background: var(--color-scarlet); }
 .bw-dot--cancelled { background: var(--color-light-gray); }
 
@@ -237,7 +237,8 @@
   text-transform: uppercase; padding: 3px 9px; border-radius: 6px; font-weight: 600;
 }
 .bw-state--completed,
-.bw-state--ready { background: rgba(62,161,90,0.18); color: #6fd08c; }
+.bw-state--ready,
+.bw-state--stored { background: rgba(62,161,90,0.18); color: #6fd08c; }
 .bw-state--running,
 .bw-state--processing,
 .bw-state--download { background: rgba(132,117,78,0.28); color: #d8c48a; }
@@ -715,6 +716,12 @@
 }
 .bw-wiki__input:focus-visible { outline: 3px solid var(--color-gold); outline-offset: 2px; }
 .bw-wiki__input--label { flex: 1 1 200px; font-weight: 600; }
+
+.bw-wiki__file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 
 .bw-wiki__textarea {
   width: 100%;

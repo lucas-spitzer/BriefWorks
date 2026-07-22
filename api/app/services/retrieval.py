@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from app.repositories.retrieval import RetrievalRepository
 from app.services.embeddings import EmbeddingClient, get_embedding_client
@@ -12,7 +12,7 @@ from app.services.embeddings import EmbeddingClient, get_embedding_client
 class RetrievedChunk:
     """One retrieved passage, ready to cite and (for source text) deep-link."""
 
-    kind: str  # "segment" | "wiki"
+    kind: Literal["segment", "wiki"]
     label: str
     text: str
     similarity: float

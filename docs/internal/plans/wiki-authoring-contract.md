@@ -277,12 +277,14 @@ create table public.wiki_ingest_batches (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   source_id uuid references public.sources (id) on delete set null,
   title text not null,
-  raw_notes text not null,
+  raw_notes text not null default '',  -- empty while transcribing
   chapter_hint text,
   chapter jsonb,                        -- resolved {chapter_id, title, sequence_index}
   status text not null default 'draft',
   entries jsonb not null default '[]',  -- enriched proposal entries (contract §3)
   unparsed_fragments jsonb not null default '[]',
+  attachments jsonb not null default '[]',  -- uploaded note files
+  transcription_error text,
   model text,
   cost_usd numeric,
   committed_entry_ids uuid[] not null default '{}',
@@ -290,7 +292,10 @@ create table public.wiki_ingest_batches (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint wiki_ingest_batches_status_check
-    check (status in ('draft', 'committed', 'discarded'))
+    check (status in (
+      'transcribing', 'transcribed', 'structuring',
+      'draft', 'committed', 'discarded', 'failed'
+    ))
 );
 ```
 
@@ -299,16 +304,27 @@ Draft entries deliberately live as jsonb here rather than as provisional
 assistant, and the slug-uniqueness constraint never see half-reviewed data),
 and a discarded batch leaves zero residue.
 
+**File-ingest lifecycle:** `transcribing` → `transcribed` (author edits
+`raw_notes`) → `structuring` → `draft` (entry review) → `committed`.
+Failures land in `failed` with `transcription_error`. Paste-notes batches
+skip straight to `draft`.
+
+Attachment object shape: `{order, filename, mime_type, storage_path, byte_size}`.
+Originals live at `workspaces/{ws}/wiki-ingest/{batch_id}/{order}_{filename}`
+in the sources bucket.
+
 ---
 
 ## Endpoint summary
 
 | Method & path | Purpose |
 |---------------|---------|
-| `POST /workspaces/{ws}/wiki/ingest-batches` | Upload dump → structure → enrich → save draft |
+| `POST /workspaces/{ws}/wiki/ingest-batches` | Paste dump → structure → enrich → save draft |
+| `POST /workspaces/{ws}/wiki/ingest-batches/from-files` | Multipart files + required `source_id` → `transcribing` + RQ job |
+| `POST /workspaces/{ws}/wiki/ingest-batches/{id}/structure` | Structure current `raw_notes` (`transcribed` → `draft`) |
 | `GET /workspaces/{ws}/wiki/ingest-batches?status=` | List batches |
 | `GET /workspaces/{ws}/wiki/ingest-batches/{id}` | Fetch batch for review |
-| `PATCH /workspaces/{ws}/wiki/ingest-batches/{id}` | Save review edits (drafts only) |
+| `PATCH /workspaces/{ws}/wiki/ingest-batches/{id}` | Edit `raw_notes`/`title` while transcribed; entry review while draft |
 | `POST /workspaces/{ws}/wiki/ingest-batches/{id}/commit` | Promote to canonical wiki entries |
 | `POST /workspaces/{ws}/wiki/ingest-batches/{id}/discard` | Terminal discard |
 | `POST /workspaces/{ws}/wiki/entries` | Single manual entry, no LLM (quick add) |
@@ -324,6 +340,9 @@ and a discarded batch leaves zero residue.
 | `evidence_threshold` | 0.45 | `linked` floor (stricter than the assistant's 0.30 recall threshold — linking is a precision problem) |
 | `evidence_weak_floor` | 0.30 | Below threshold but above this → `weak` |
 | `dedup_similarity_threshold` | 0.85 | Advisory `similar_entries` floor |
+| `max_attachment_bytes` | 25 MB | Per-file upload cap for note attachments |
+| `max_attachments_per_batch` | 20 | Max files per file-ingest batch |
+| `transcription_job_timeout` | 30m | RQ timeout for LlamaParse transcription |
 
 The structuring model is resolved through the existing per-action LLM routing
 (`llm.resolve_action("wiki-structuring")`), consistent with every other stage.

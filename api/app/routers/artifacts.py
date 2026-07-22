@@ -70,7 +70,7 @@ async def download_artifact(
         )
 
     download_url = await storage.create_signed_url(
-        bucket=settings.artifacts_bucket,
+        bucket=settings.sources_bucket,
         path=row["storage_path"],
         expires_in=settings.signed_url_expires_seconds,
     )

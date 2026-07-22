@@ -112,7 +112,24 @@ class LlamaParseClient:
         }
 
     def parse_pdf(self, *, filename: str, content: bytes) -> LlamaParseResult:
-        file_id = self._upload_file(filename=filename, content=content)
+        return self.parse_file(
+            filename=filename,
+            content=content,
+            content_type="application/pdf",
+        )
+
+    def parse_file(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str = "application/octet-stream",
+    ) -> LlamaParseResult:
+        file_id = self._upload_file(
+            filename=filename,
+            content=content,
+            content_type=content_type,
+        )
         job_id = self._start_parse_job(file_id)
         payload = self._poll_until_complete(job_id)
         pages = self._extract_pages(payload)
@@ -136,12 +153,18 @@ class LlamaParseClient:
             structured_pages=structured_pages,
         )
 
-    def _upload_file(self, *, filename: str, content: bytes) -> str:
+    def _upload_file(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str = "application/pdf",
+    ) -> str:
         with httpx.Client(**_HTTP_CLIENT_KWARGS) as client:
             response = client.post(
                 f"{_API_BASE}/api/v1/beta/files",
                 headers=self.headers,
-                files={"file": (filename, content, "application/pdf")},
+                files={"file": (filename, content, content_type)},
                 data={"purpose": "parse"},
             )
 

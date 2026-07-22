@@ -2,6 +2,9 @@
 
 create extension if not exists citext;
 create extension if not exists pgcrypto;
+-- RAG embeddings (text-embedding-3-small, 1536 dims). Kept in the extensions
+-- schema so it does not collide with the public API surface.
+create extension if not exists vector with schema extensions;
 
 create or replace function public.set_updated_at()
 returns trigger

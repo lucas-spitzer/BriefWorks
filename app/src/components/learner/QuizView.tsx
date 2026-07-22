@@ -1,9 +1,14 @@
-import { ArrowRight, Check, Info, RotateCcw, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Check, Info, RotateCcw, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
-import { filterAndSortRecords, useOutputs, type OutputSort } from '../../lib/learnerOutputs'
+import { filterAndSortRecords, useOutputs } from '../../lib/learnerOutputs'
 import type { Quiz } from '../../lib/workspaceApi'
-import { OutputFilterBar } from './OutputFilterBar'
+import {
+  StudyHead,
+  StudyPanel,
+  StudySourceReference,
+} from './StudySessionChrome'
+import { useStudyFullscreen } from './useStudyFullscreen'
 
 // Quiz options are plain strings; correct_answer may be the option text, a
 // letter (A/B/C), or a numeric index — handle each.
@@ -16,22 +21,47 @@ function optionIsCorrect(quiz: Quiz, option: string, index: number): boolean {
   return false
 }
 
-export function QuizView({ sourceId: initialSource = null }: { sourceId?: string | null }) {
+export function QuizView({
+  sourceId: initialSource = null,
+  targetId = null,
+}: {
+  sourceId?: string | null
+  targetId?: string | null
+}) {
   const { quizzes } = useWorkspaceData()
   const { sources } = useOutputs()
-
-  const [sourceId, setSourceId] = useState<string | null>(initialSource)
-  const [sort, setSort] = useState<OutputSort>('source')
+  const { fullscreen, toggle } = useStudyFullscreen()
 
   const items = useMemo(
-    () => filterAndSortRecords(quizzes, (q) => q.question, { search: '', sourceId, sort }),
-    [quizzes, sourceId, sort],
+    () =>
+      filterAndSortRecords(quizzes, (q) => q.question, {
+        search: '',
+        sourceId: initialSource,
+        sort: 'source',
+      }),
+    [quizzes, initialSource],
   )
 
   const [qIndex, setQIndex] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
   const [score, setScore] = useState(0)
   const [finished, setFinished] = useState(false)
+  const targetAppliedRef = useRef<string | null>(null)
+
+  // Apply Library / console deep-link focus once the matching question is loaded.
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    if (!targetId || items.length === 0) return
+    if (targetAppliedRef.current === targetId) return
+    const idx = items.findIndex((q) => q.id === targetId)
+    if (idx < 0) return
+    setQIndex(idx)
+    setSelected(null)
+    setScore(0)
+    setFinished(false)
+    targetAppliedRef.current = targetId
+  }, [targetId, items])
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const resetRun = () => {
     setQIndex(0)
@@ -39,15 +69,6 @@ export function QuizView({ sourceId: initialSource = null }: { sourceId?: string
     setScore(0)
     setFinished(false)
   }
-  const onSource = (v: string | null) => {
-    setSourceId(v)
-    resetRun()
-  }
-  const onSort = (v: OutputSort) => {
-    setSort(v)
-    resetRun()
-  }
-
   const safeIndex = Math.min(qIndex, Math.max(items.length - 1, 0))
   const quiz = items[safeIndex]
   const revealed = selected !== null
@@ -68,26 +89,32 @@ export function QuizView({ sourceId: initialSource = null }: { sourceId?: string
     setSelected(null)
   }
 
-  const filterBar = (
-    <OutputFilterBar
-      sourceId={sourceId}
-      onSource={onSource}
-      sort={sort}
-      onSort={onSort}
-      sources={sources}
-      showTypes={false}
-      showSearch={false}
+  const prev = () => {
+    if (safeIndex === 0) return
+    setQIndex((i) => i - 1)
+    setSelected(null)
+  }
+
+  const sourceName = quiz
+    ? sources.find((s) => s.id === quiz.source_id)?.name ?? 'Unassigned'
+    : 'Unassigned'
+
+  const head = (
+    <StudyHead
+      eyebrow="Knowledge check"
+      title="Quiz"
+      description="Answer, review the rationale, and trace each item to its source."
+      stats={[
+        { value: items.length, label: 'questions' },
+        { value: new Set(items.map((q) => q.source_id ?? '')).size, label: 'sources' },
+      ]}
     />
   )
 
   if (finished) {
     return (
-      <section className="study">
-        <header className="study__head">
-          <h2 className="study__title">Quiz</h2>
-          <span className="study__count">Complete</span>
-        </header>
-        {filterBar}
+      <section className="study-session">
+        {head}
         <div className="quiz quiz--result">
           <p className="quiz__score">
             {score} of {items.length} correct
@@ -104,77 +131,72 @@ export function QuizView({ sourceId: initialSource = null }: { sourceId?: string
   }
 
   return (
-    <section className="study">
-      <header className="study__head">
-        <h2 className="study__title">Quiz</h2>
-        <span className="study__count">
-          {items.length > 0 ? `Question ${safeIndex + 1} of ${items.length}` : 'No questions'}
-        </span>
-      </header>
-
-      {filterBar}
-
-      {quiz && (
-        <div className="study__meta">
-          <span className={`pill pill--${quiz.difficulty}`}>{quiz.difficulty}</span>
-        </div>
-      )}
+    <section className="study-session">
+      {head}
 
       {quiz ? (
-        <div className="quiz">
-          <p className="quiz__question">{quiz.question}</p>
-          <div className="quiz__options">
-            {quiz.options.map((opt, i) => {
-              let cls = 'quiz__option'
-              const correct = optionIsCorrect(quiz, opt, i)
-              const showCorrect = revealed && correct
-              const showWrong = revealed && i === selected && !correct
-              if (showCorrect) cls += ' is-correct'
-              else if (showWrong) cls += ' is-wrong'
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  className={cls}
-                  disabled={revealed}
-                  onClick={() => choose(i)}
-                >
-                  <span className="quiz__option-text">{opt}</span>
-                  {showCorrect && (
-                    <span className="quiz__option-status">
-                      <Check size={16} /> Correct
-                    </span>
-                  )}
-                  {showWrong && (
-                    <span className="quiz__option-status">
-                      <X size={16} /> Incorrect
-                    </span>
-                  )}
-                </button>
-              )
-            })}
-          </div>
-          {revealed && (
-            <>
-              {quiz.explanation && (
+        <>
+          <StudyPanel
+            fullscreen={fullscreen}
+            onToggleFullscreen={toggle}
+            meta={<span className={`pill pill--${quiz.difficulty}`}>{quiz.difficulty}</span>}
+            progress={{ current: safeIndex + 1, total: items.length }}
+            pager={{
+              onPrev: prev,
+              onNext: next,
+              prevDisabled: safeIndex <= 0,
+              // Require an answer before moving forward; the last item leads to results.
+              nextDisabled: !revealed,
+              label: isLast && revealed ? 'Next: results' : sourceName,
+            }}
+          >
+            <div className="quiz">
+              <p className="quiz__question">{quiz.question}</p>
+              <div className="quiz__options">
+                {quiz.options.map((opt, i) => {
+                  let cls = 'quiz__option'
+                  const correct = optionIsCorrect(quiz, opt, i)
+                  const showCorrect = revealed && correct
+                  const showWrong = revealed && i === selected && !correct
+                  if (showCorrect) cls += ' is-correct'
+                  else if (showWrong) cls += ' is-wrong'
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      className={cls}
+                      disabled={revealed}
+                      onClick={() => choose(i)}
+                    >
+                      <span className="quiz__option-text">{opt}</span>
+                      {showCorrect && (
+                        <span className="quiz__option-status">
+                          <Check size={16} /> Correct
+                        </span>
+                      )}
+                      {showWrong && (
+                        <span className="quiz__option-status">
+                          <X size={16} /> Incorrect
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+              {revealed && quiz.explanation && (
                 <p className="quiz__explain">
                   <Info size={15} /> {quiz.explanation}
                 </p>
               )}
-              <div className="study__controls study__controls--end">
-                <button type="button" className="study__btn study__btn--primary" onClick={next}>
-                  {isLast ? 'See results' : 'Next question'} <ArrowRight size={16} />
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+            </div>
+          </StudyPanel>
+
+          <StudySourceReference sourceId={quiz.source_id ?? null} sourceName={sourceName} />
+        </>
       ) : (
         <div className="quiz quiz--result">
           <p className="quiz__score">No questions</p>
-          <p className="quiz__score-note">
-            Nothing matches the current filters. Adjust the source above.
-          </p>
+          <p className="quiz__score-note">No questions are available for this scope.</p>
         </div>
       )}
     </section>

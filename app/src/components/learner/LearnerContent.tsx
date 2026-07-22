@@ -23,7 +23,7 @@ export function LearnerContent({ page, sourceId = null, seg = null, scope, onOpe
         {page === 'flashcards' && (
           <FlashcardsView sourceId={scope.sourceId} targetId={scope.targetId} />
         )}
-        {page === 'quiz' && <QuizView sourceId={scope.sourceId} />}
+        {page === 'quiz' && <QuizView sourceId={scope.sourceId} targetId={scope.targetId} />}
         {page === 'scenarios' && (
           <ScenarioView sourceId={scope.sourceId} targetId={scope.targetId} />
         )}

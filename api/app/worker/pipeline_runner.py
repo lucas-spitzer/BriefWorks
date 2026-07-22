@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import copy
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from app.intellex.models import ParsedDocument
+from app.intellex.ingest import structured_pages_artifact_path
 from app.intellex.source_readiness import (
     source_intellex_complete,
+    source_parse_complete,
+    source_research_complete,
     source_web_enrichment_complete,
 )
 from app.intellex.structuring.chunk import build_segments_and_chapters
@@ -172,7 +176,9 @@ class PipelineRunner:
         for source in context.sources:
             source_id = source["id"]
 
-            if source_id in context.intellex_complete_source_ids:
+            # Skip parse when layout already exists — even if structure is stale
+            # and must rebuild from stored structured.json.
+            if source_parse_complete(source):
                 parse_metadata = (source.get("source_metadata") or {}).get("parse")
                 if isinstance(parse_metadata, dict):
                     page_count = parse_metadata.get("page_count")
@@ -206,6 +212,26 @@ class PipelineRunner:
                 reused=reused,
                 suffix=f"{total_pages} pages",
             ),
+        )
+
+    def _load_structured_pages(self, source: dict[str, Any]) -> list[dict[str, Any]]:
+        """Reload LlamaParse structured items persisted by a prior parse step."""
+        parse_meta = (source.get("source_metadata") or {}).get("parse") or {}
+        if not isinstance(parse_meta, dict):
+            parse_meta = {}
+        path = parse_meta.get("structured_pages_path") or structured_pages_artifact_path(
+            source["storage_path"]
+        )
+        blob = self.storage.download(path, bucket=self.storage.sources_bucket)
+        payload = json.loads(blob)
+        if isinstance(payload, dict):
+            pages = payload.get("pages")
+            if isinstance(pages, list):
+                return pages
+        if isinstance(payload, list):
+            return payload
+        raise RuntimeError(
+            f"Structured pages artifact for source {source['id']} is empty or malformed: {path}"
         )
 
     def _run_structuring_step(
@@ -246,10 +272,13 @@ class PipelineRunner:
             source_id = source["id"]
             structured_pages = context.structured_pages.get(source_id)
             if not structured_pages:
-                raise RuntimeError(
-                    f"No structured layout for source {source_id}. The parse step must capture "
-                    "LlamaParse `items` (agentic layout) for the structuring stages."
-                )
+                if not source_parse_complete(source):
+                    raise RuntimeError(
+                        f"No structured layout for source {source_id}. The parse step must capture "
+                        "LlamaParse `items` (agentic layout) for the structuring stages."
+                    )
+                structured_pages = self._load_structured_pages(source)
+                context.structured_pages[source_id] = structured_pages
             stage_run_id, elements = self.normalize.run_for_source(
                 production_run_id=context.production_run_id,
                 workspace_id=context.workspace_id,
@@ -397,7 +426,8 @@ class PipelineRunner:
         for source in context.sources:
             source_id = source["id"]
 
-            if source_id in context.intellex_complete_source_ids:
+            # Preserve title/author: reuse research even when structure is stale.
+            if source_research_complete(source):
                 reused += 1
                 continue
 
@@ -648,18 +678,7 @@ class PipelineRunner:
         for source in sources:
             source_id = source["id"]
             has_segments = bool(self.db.list_ndr_segments_for_source(source_id))
-            has_document_chapters = self.db.has_document_chapters_for_source(source_id)
-            has_structure_stage_run = self.db.has_completed_stage_run_for_source(
-                source_id,
-                StructureStageExecutor.STAGE_ID,
-            )
-
-            if source_intellex_complete(
-                source,
-                has_segments=has_segments,
-                has_document_chapters=has_document_chapters,
-                has_structure_stage_run=has_structure_stage_run,
-            ):
+            if source_intellex_complete(source, has_segments=has_segments):
                 context.intellex_complete_source_ids.add(source_id)
 
         self.db.update_production_run(

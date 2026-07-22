@@ -108,3 +108,21 @@ class SupabaseStorageClient:
             return signed_url
 
         return f"{self.settings.supabase_url}/storage/v1{signed_url}"
+
+    async def download(self, *, bucket: str, path: str) -> bytes:
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                response = await client.get(
+                    f"{self.base_url}/object/{bucket}/{path}",
+                    headers=self._headers(),
+                )
+        except httpx.HTTPError as exc:
+            raise SupabaseStorageError("Supabase Storage could not be reached.") from exc
+
+        if response.status_code >= 400:
+            detail = response.text.strip() or response.reason_phrase
+            raise SupabaseStorageError(
+                f"Supabase Storage download failed ({response.status_code}): {detail}",
+            )
+
+        return response.content

@@ -13,6 +13,7 @@ class WikiEntryCreate(BaseModel):
     importance: Literal["essential", "supporting", "contextual"] = "supporting"
     aliases: list[str] = Field(default_factory=list)
     pronunciation: str | None = None
+    origin: dict[str, Any] | None = None
 
 
 class WikiEntryUpdate(BaseModel):

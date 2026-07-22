@@ -17,7 +17,7 @@ export function AuthCallbackPage() {
         : await supabase.auth.getSession()
 
       if (error) {
-        console.error('Authentication callback failed:', error)
+        console.error('Authentication callback failed:', error.message)
         setMessage('Authentication failed. Returning to login.')
         navigate('/login', { replace: true })
         return

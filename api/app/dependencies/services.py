@@ -5,23 +5,24 @@ from fastapi import Depends
 from app.config import Settings, get_settings
 from app.repositories.artifacts import ArtifactRepository
 from app.repositories.assessments import AssessmentRepository
+from app.repositories.discussions import DiscussionRepository
+from app.repositories.document_chapters import DocumentChapterRepository
 from app.repositories.narration_segments import NarrationSegmentRepository
 from app.repositories.ndr_segments import NdrSegmentRepository
-from app.repositories.wiki_entries import WikiEntryRepository
-from app.repositories.wiki_ingest_batches import WikiIngestBatchRepository
-from app.repositories.document_chapters import DocumentChapterRepository
-from app.services.wiki_authoring import WikiAuthoringService
 from app.repositories.production_runs import ProductionRunRepository
 from app.repositories.retrieval import RetrievalRepository
+from app.repositories.sources import SourceRepository
+from app.repositories.stage_runs import StageRunRepository
+from app.repositories.stage_settings import StageSettingsRepository
+from app.repositories.stages import StageRepository
+from app.repositories.wiki_entries import WikiEntryRepository
+from app.repositories.wiki_ingest_batches import WikiIngestBatchRepository
+from app.repositories.workspaces import WorkspaceRepository
 from app.services.assistant import AssistantService
 from app.services.retrieval import RetrievalService
-from app.repositories.stage_runs import StageRunRepository
-from app.repositories.stages import StageRepository
-from app.repositories.sources import SourceRepository
-from app.repositories.stage_settings import StageSettingsRepository
-from app.repositories.workspaces import WorkspaceRepository
 from app.services.supabase_rest import SupabaseRestClient
 from app.services.supabase_storage import SupabaseStorageClient
+from app.services.wiki_authoring import WikiAuthoringService
 
 
 def get_supabase_rest_client(
@@ -144,6 +145,12 @@ def get_wiki_authoring_service(
         retrieval=retrieval,
         settings=settings,
     )
+
+
+def get_discussion_repository(
+    db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
+) -> DiscussionRepository:
+    return DiscussionRepository(db)
 
 
 def get_assistant_service(

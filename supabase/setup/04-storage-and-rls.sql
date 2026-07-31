@@ -22,6 +22,8 @@ alter table public.assessment_sets enable row level security;
 alter table public.flashcards enable row level security;
 alter table public.quizzes enable row level security;
 alter table public.scenarios enable row level security;
+alter table public.discussion_threads enable row level security;
+alter table public.discussion_messages enable row level security;
 
 revoke all on table public.workspaces from anon, authenticated;
 revoke all on table public.stages from anon, authenticated;
@@ -40,6 +42,8 @@ revoke all on table public.assessment_sets from anon, authenticated;
 revoke all on table public.flashcards from anon, authenticated;
 revoke all on table public.quizzes from anon, authenticated;
 revoke all on table public.scenarios from anon, authenticated;
+revoke all on table public.discussion_threads from anon, authenticated;
+revoke all on table public.discussion_messages from anon, authenticated;
 
 -- RAG helpers are service-role only (matches table-level revokes).
 revoke execute on function public.match_ndr_segments(

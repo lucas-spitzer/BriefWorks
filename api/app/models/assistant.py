@@ -43,3 +43,52 @@ class AssistantChatResponse(BaseModel):
     grounded: bool
     citations: list[Citation] = Field(default_factory=list)
     evaluation: ScenarioEvaluation | None = None
+
+
+# --- Persisted discussion threads ------------------------------------------
+
+
+class DiscussionThreadResponse(BaseModel):
+    id: str
+    workspace_id: str
+    title: str
+    submode: DiscussionSubmode
+    source_id: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class DiscussionMessageResponse(BaseModel):
+    id: str
+    thread_id: str
+    role: Literal["user", "assistant"]
+    content: str
+    citations: list[Citation] = Field(default_factory=list)
+    created_at: str
+
+
+class DiscussionThreadDetailResponse(DiscussionThreadResponse):
+    messages: list[DiscussionMessageResponse] = Field(default_factory=list)
+
+
+class CreateDiscussionThreadRequest(BaseModel):
+    title: str
+    submode: DiscussionSubmode = "socratic"
+    source_id: str | None = None
+    # Optional assistant-authored opener persisted as the first message.
+    seed_prompt: str | None = None
+
+
+class UpdateDiscussionThreadRequest(BaseModel):
+    title: str | None = None
+    submode: DiscussionSubmode | None = None
+
+
+class SendDiscussionMessageRequest(BaseModel):
+    content: str
+
+
+class SendDiscussionMessageResponse(BaseModel):
+    user_message: DiscussionMessageResponse
+    assistant_message: DiscussionMessageResponse
+    grounded: bool

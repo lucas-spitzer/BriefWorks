@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { ApiError, getCurrentUser, hasApiBaseUrl } from '../../lib/apiClient'
@@ -17,6 +17,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [approvalStatus, setApprovalStatus] = useState<ApprovalStatus>('idle')
   const [approvalError, setApprovalError] = useState<string | null>(null)
   const [approvedUser, setApprovedUser] = useState<CurrentUserResponse | null>(null)
+  // Keep the protected tree mounted across token refreshes (tab focus often
+  // re-fires onAuthStateChange). Only the first approval check should gate UI.
+  const wasApprovedRef = useRef(false)
 
   useEffect(() => {
     let isMounted = true
@@ -47,39 +50,52 @@ export function AuthProvider({ children }: AuthProviderProps) {
     let isCurrent = true
 
     async function verifyApproval() {
-      setApprovedUser(null)
-      setApprovalError(null)
-
       if (!session) {
+        wasApprovedRef.current = false
+        setApprovedUser(null)
+        setApprovalError(null)
         setApprovalStatus('idle')
         return
       }
 
       if (!hasApiBaseUrl()) {
+        wasApprovedRef.current = false
+        setApprovedUser(null)
         setApprovalStatus('unavailable')
         setApprovalError('Set VITE_API_BASE_URL to enable the BriefWorks approval check.')
         return
       }
 
-      setApprovalStatus('checking')
+      const quiet = wasApprovedRef.current
+      if (!quiet) {
+        setApprovedUser(null)
+        setApprovalError(null)
+        setApprovalStatus('checking')
+      }
 
       try {
         const currentUser = await getCurrentUser()
 
         if (!isCurrent) return
 
+        wasApprovedRef.current = true
         setApprovedUser(currentUser)
         setApprovalStatus('approved')
+        setApprovalError(null)
       } catch (error) {
         if (!isCurrent) return
 
+        wasApprovedRef.current = false
+
         if (error instanceof ApiError && error.status === 403) {
+          setApprovedUser(null)
           setApprovalStatus('rejected')
           setApprovalError('This Google account is not approved for BriefWorks access.')
           return
         }
 
         if (error instanceof ApiError && error.status === 401) {
+          setApprovedUser(null)
           setApprovalStatus('rejected')
           setApprovalError('Your session could not be verified. Sign in again.')
           return
@@ -89,6 +105,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
           'BriefWorks approval check failed:',
           error instanceof Error ? error.message : error,
         )
+        // Keep an already-approved session usable if a transient network blip
+        // hits during a quiet recheck (e.g. tab focus token refresh).
+        if (quiet) return
+
+        setApprovedUser(null)
         setApprovalStatus('unavailable')
         setApprovalError('BriefWorks could not reach the approval service.')
       }

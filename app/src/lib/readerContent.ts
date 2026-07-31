@@ -334,6 +334,11 @@ export function globalsFromDomSelection(root: HTMLElement | null): number[] {
   return globals
 }
 
+/** True when a token ends a sentence, allowing closing quotes/brackets after .!? */
+export function endsSentence(token: string): boolean {
+  return /[.!?]["'”’)\]]*$/.test(token)
+}
+
 export function buildNarration(blocks: Block[]): { wordBlocks: WordBlock[]; total: number } {
   const wordBlocks: WordBlock[] = []
   let global = 0
@@ -362,8 +367,11 @@ export function buildNarration(blocks: Block[]): { wordBlocks: WordBlock[]; tota
         sentence,
       })
       global += 1
-      if (/[.!?]$/.test(text)) sentence += 1
+      if (endsSentence(text)) sentence += 1
     }
+    // Paragraphs are hard sentence boundaries so the reading band never leaks
+    // across blocks when punctuation is missing or malformed.
+    if (words.length > 0) sentence += 1
     wordBlocks.push({ block, words })
   }
   return { wordBlocks, total: global }

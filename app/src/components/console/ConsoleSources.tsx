@@ -151,21 +151,12 @@ export function ConsoleSources() {
                     {source.title}
                   </div>
                   <div style={{ fontSize: '0.8rem', color: '#9fb2bb', marginTop: 6 }}>
-                    {[
-                      source.bibliographicTitle &&
-                      source.bibliographicTitle !== source.title
-                        ? source.bibliographicTitle
-                        : null,
-                      source.identifier,
-                      source.purpose,
-                      source.audience,
-                    ]
-                      .filter(Boolean)
-                      .join(' · ') ||
-                      [source.documentType, source.issuingAuthority].filter(Boolean).join(' · ') ||
-                      (source.status === 'stored' || source.status === 'processing'
-                        ? 'Ingest in progress'
-                        : source.filename)}
+                    {source.purpose
+                      ? `Purpose: ${source.purpose}`
+                      : [source.documentType, source.issuingAuthority].filter(Boolean).join(' · ') ||
+                        (source.status === 'stored' || source.status === 'processing'
+                          ? 'Ingest in progress'
+                          : source.filename)}
                   </div>
                 </div>
                 {source.pages !== null || source.segments !== null || source.confidence !== null ? (

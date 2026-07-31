@@ -50,6 +50,12 @@ _MAX_CAPTION_LENGTH = 200
 _OMITTED_VISUAL_TYPES = frozenset(
     {"image", "figure", "diagram", "chart", "illustration", "photo", "code"}
 )
+_VISUAL_LAYOUT_LABELS = frozenset(
+    {"image", "figure", "diagram", "chart", "illustration", "photo", "caption", "table"}
+)
+_NON_SECTION_LAYOUT_LABELS = _VISUAL_LAYOUT_LABELS | {"header", "footer"}
+_FRAGMENTED_VISUAL_MAX_CONFIDENCE = 0.5
+_FRAGMENTED_VISUAL_MIN_BOXES = 4
 
 
 def strip_footnote_markers(md: str) -> str:
@@ -69,6 +75,90 @@ def is_standalone_visual_caption(text: str) -> bool:
     """
     stripped = text.strip()
     return len(stripped) <= _MAX_CAPTION_LENGTH and bool(_VISUAL_CAPTION_RE.match(stripped))
+
+
+def _looks_like_fragmented_visual_text(element: Element) -> bool:
+    """Detect OCR assembled from many low-confidence labels inside a visual."""
+    return (
+        element.type == "text"
+        and set(element.layout_labels) == {"text"}
+        and element.max_layout_confidence is not None
+        and element.max_layout_confidence <= _FRAGMENTED_VISUAL_MAX_CONFIDENCE
+        and element.layout_fragment_count >= _FRAGMENTED_VISUAL_MIN_BOXES
+    )
+
+
+def _fragmented_visual_pages(elements: list[Element]) -> set[int | None]:
+    """Pages where a generic heading fronts fragmented map/diagram OCR."""
+    ambiguous_heading_pages = {
+        element.page
+        for element in elements
+        if element.type == "heading" and set(element.layout_labels) == {"text"}
+    }
+    return {
+        element.page
+        for element in elements
+        if element.page in ambiguous_heading_pages
+        and _looks_like_fragmented_visual_text(element)
+    }
+
+
+def _explicit_visual_pages(elements: list[Element]) -> set[int | None]:
+    return {
+        element.page
+        for element in elements
+        if element.type in _OMITTED_VISUAL_TYPES
+        or set(element.layout_labels) & _VISUAL_LAYOUT_LABELS
+    }
+
+
+def _is_visual_description(
+    element: Element,
+    *,
+    fragmented_visual_pages: set[int | None],
+    explicit_visual_pages: set[int | None],
+) -> bool:
+    labels = set(element.layout_labels)
+    visual_labels = labels & _VISUAL_LAYOUT_LABELS
+    nonvisual_labels = labels - _VISUAL_LAYOUT_LABELS
+    if visual_labels and not nonvisual_labels:
+        return True
+    if "image" in visual_labels and "paragraph_title" in nonvisual_labels:
+        return True
+    if (
+        visual_labels
+        and element.min_layout_confidence is not None
+        and element.min_layout_confidence <= _FRAGMENTED_VISUAL_MAX_CONFIDENCE
+    ):
+        return True
+    if (
+        not labels
+        and element.page in explicit_visual_pages
+        and len(element.text.split()) <= 8
+        and not _paragraph_looks_complete(element.text)
+    ):
+        return True
+    return (
+        element.page in fragmented_visual_pages
+        and _looks_like_fragmented_visual_text(element)
+    )
+
+
+def _is_visual_heading(
+    element: Element,
+    *,
+    fragmented_visual_pages: set[int | None],
+) -> bool:
+    """Return whether parser provenance contradicts a section heading."""
+    if is_standalone_visual_caption(element.text):
+        return True
+
+    labels = set(element.layout_labels)
+    if not labels or "paragraph_title" in labels:
+        return False
+    if labels & _NON_SECTION_LAYOUT_LABELS:
+        return True
+    return labels == {"text"} and element.page in fragmented_visual_pages
 
 
 def _paragraph_looks_complete(md: str) -> bool:
@@ -148,27 +238,49 @@ def classify(
     previous_body_element: Element | None = None
     previous_paragraph: Paragraph | None = None
     n = len(elements)
+    fragmented_visual_pages = _fragmented_visual_pages(elements)
+    explicit_visual_pages = _explicit_visual_pages(elements)
 
     for idx, el in enumerate(elements):
         if el.type == "heading":
-            previous_body_element = None
-            previous_paragraph = None
             if consume_next_heading:
+                previous_body_element = None
+                previous_paragraph = None
                 consume_next_heading = False  # already merged into the chapter title
                 continue
 
             if is_chapter_marker(el.text, chapter_re):
-                next_text = (
-                    elements[idx + 1].text
-                    if idx + 1 < n and elements[idx + 1].type == "heading"
-                    else None
-                )
+                next_element = elements[idx + 1] if idx + 1 < n else None
+                next_text = None
+                if (
+                    next_element is not None
+                    and next_element.type == "heading"
+                    and not _is_visual_heading(
+                        next_element,
+                        fragmented_visual_pages=fragmented_visual_pages,
+                    )
+                ):
+                    next_text = next_element.text
                 title, consumed = _chapter_title(el.text, next_text)
                 consume_next_heading = consumed
+                previous_body_element = None
+                previous_paragraph = None
                 current_chapter = Chapter(title=title, page=el.page)
                 current_section = None
                 book.chapters.append(current_chapter)
             else:
+                if _is_visual_heading(
+                    el,
+                    fragmented_visual_pages=fragmented_visual_pages,
+                ):
+                    book.dropped_nontext["visual_heading"] = (
+                        book.dropped_nontext.get("visual_heading", 0) + 1
+                    )
+                    # Like an omitted caption, a visual heading does not break
+                    # the surrounding authored reading flow.
+                    continue
+                previous_body_element = None
+                previous_paragraph = None
                 if current_chapter is None:  # safety net (shouldn't happen post-trim)
                     current_chapter = Chapter(title="(untitled)", page=el.page)
                     book.chapters.append(current_chapter)
@@ -182,6 +294,17 @@ def classify(
             if not md.strip() or current_chapter is None:
                 previous_body_element = None
                 previous_paragraph = None
+                continue
+            if _is_visual_description(
+                el,
+                fragmented_visual_pages=fragmented_visual_pages,
+                explicit_visual_pages=explicit_visual_pages,
+            ):
+                book.dropped_nontext["visual_description"] = (
+                    book.dropped_nontext.get("visual_description", 0) + 1
+                )
+                # Generated descriptions of omitted visuals are not source
+                # prose and remain transparent to reading order.
                 continue
             if is_standalone_visual_caption(el.text or md):
                 book.dropped_nontext["caption"] = book.dropped_nontext.get("caption", 0) + 1

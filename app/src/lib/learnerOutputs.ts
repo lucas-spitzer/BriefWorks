@@ -18,6 +18,7 @@ export interface OutputItem {
   createdAt: string
   runnerPage: LearnerPage | null // where "Open" routes; null = artifact (reader/download)
   isAudio: boolean
+  isEbook: boolean
 }
 
 const UNASSIGNED = 'Unassigned'
@@ -52,6 +53,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
         createdAt: f.created_at,
         runnerPage: 'flashcards',
         isAudio: false,
+        isEbook: false,
       })),
       ...quizzes.map<OutputItem>((q) => ({
         kind: 'question',
@@ -63,6 +65,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
         createdAt: q.created_at,
         runnerPage: 'quiz',
         isAudio: false,
+        isEbook: false,
       })),
       ...scenarios.map<OutputItem>((s) => ({
         kind: 'scenario',
@@ -74,6 +77,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
         createdAt: s.created_at,
         runnerPage: 'scenarios',
         isAudio: false,
+        isEbook: false,
       })),
       ...artifacts.map<OutputItem>((a) => {
         const format = (a.format || '').toLowerCase()
@@ -83,6 +87,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
         const isAudio =
           !isNarrationManifest &&
           (a.artifact_type.includes('audio') || AUDIO_FORMATS.has(format))
+        const isEbook = a.artifact_type === 'electronic_book' || format.startsWith('epub')
         return {
           kind: 'artifact',
           id: a.id,
@@ -93,6 +98,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
           createdAt: a.created_at,
           runnerPage: null,
           isAudio,
+          isEbook,
         }
       }),
     ]

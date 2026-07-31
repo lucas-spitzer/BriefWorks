@@ -516,6 +516,44 @@ create index scenarios_source_id_idx on public.scenarios (source_id);
 create index scenarios_assessment_set_id_idx on public.scenarios (assessment_set_id);
 
 -- ---------------------------------------------------------------------------
+-- Discussion threads (persisted assistant conversations)
+-- ---------------------------------------------------------------------------
+
+create table public.discussion_threads (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  title text not null,
+  submode text not null default 'socratic',
+  source_id uuid references public.sources (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint discussion_threads_submode_check
+    check (submode in ('socratic', 'euclidean'))
+);
+
+create index discussion_threads_workspace_id_idx
+on public.discussion_threads (workspace_id);
+
+create trigger discussion_threads_set_updated_at
+before update on public.discussion_threads
+for each row
+execute function public.set_updated_at();
+
+create table public.discussion_messages (
+  id uuid primary key default gen_random_uuid(),
+  thread_id uuid not null references public.discussion_threads (id) on delete cascade,
+  role text not null,
+  content text not null,
+  citations jsonb not null default '[]',
+  created_at timestamptz not null default now(),
+  constraint discussion_messages_role_check
+    check (role in ('user', 'assistant'))
+);
+
+create index discussion_messages_thread_id_idx
+on public.discussion_messages (thread_id, created_at);
+
+-- ---------------------------------------------------------------------------
 -- RAG match helpers (service role only; tenancy via p_workspace_id)
 -- ---------------------------------------------------------------------------
 

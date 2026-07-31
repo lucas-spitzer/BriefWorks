@@ -1700,6 +1700,80 @@
   opacity: 0.8;
 }
 
+/* Inline citation marker rendered inside the message text. */
+.chat__inline-cite {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  margin: 0 1px;
+  vertical-align: super;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-dark-scarlet, #7a1f1f);
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.chat__inline-cite:hover:not(:disabled) {
+  color: #fff;
+  background: var(--color-dark-scarlet, #7a1f1f);
+}
+
+.chat__inline-cite:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Animated three-dot "thinking" indicator for the pending reply bubble. */
+.chat__thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 0 2px;
+}
+
+.chat__thinking span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-gold);
+  animation: chat-thinking-pulse 1.1s ease-in-out infinite;
+}
+
+.chat__thinking span:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.chat__thinking span:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes chat-thinking-pulse {
+  0%,
+  70%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+  35% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat__thinking span {
+    animation: none;
+    opacity: 0.7;
+  }
+}
+
 .chat__error {
   margin: 0 var(--space-4);
   padding: var(--space-2) var(--space-3);
@@ -2224,6 +2298,40 @@
   min-height: 132px;
 }
 
+.lib__card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.lib__focus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: -2px -6px 0 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary, #8a8a8a);
+  cursor: pointer;
+}
+
+.lib__focus:hover {
+  background: #f1efe9;
+  color: var(--text-primary, #2c2c2c);
+}
+
+.lib__focus.is-focused {
+  color: #b08a1e;
+}
+
+.lib__focus.is-focused svg {
+  fill: currentColor;
+}
+
 .lib__tchip {
   align-self: flex-start;
   display: inline-flex;
@@ -2468,6 +2576,260 @@
 }
 
 /* ===========================================================================
+   Discussions conversation threads — icon toggle, slide-over panel, and the
+   empty (no thread selected) state inside the study panel.
+   =========================================================================== */
+
+.disc-threads__toggle {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--color-scarlet);
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.disc-threads__toggle:hover,
+.disc-threads__toggle[aria-expanded='true'] {
+  border-color: var(--color-scarlet);
+}
+
+.disc-threads__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: color-mix(in srgb, #fff 30%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.disc-threads {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 5;
+  width: 320px;
+  max-width: 85%;
+  overflow-y: auto;
+  padding: var(--space-4);
+  background: #fff;
+  box-shadow: 8px 0 28px rgba(60, 50, 30, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.disc-threads__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  color: var(--color-gold);
+}
+
+.disc-threads__close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-primary);
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.disc-threads__new {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.disc-threads__new input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
+  font-size: 0.9rem;
+  font-family: var(--font-body);
+  outline: 0;
+  background: #fff;
+  color: var(--text-primary);
+}
+
+.disc-threads__new input:focus-visible {
+  border-color: var(--color-scarlet);
+}
+
+.disc-threads__new button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: #fff;
+  background: var(--color-scarlet);
+  border: 2px solid var(--color-scarlet);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.disc-threads__new button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.disc-threads__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.disc-threads__item {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--color-gold);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: #fff;
+}
+
+.disc-threads__item.is-active {
+  border-color: var(--color-scarlet);
+  border-left-color: var(--color-scarlet);
+}
+
+.disc-threads__item-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 9px 11px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.disc-threads__item-title {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.disc-threads__item-meta {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.disc-threads__item-delete {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 34px;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  border-left: 1px solid var(--border-subtle);
+  cursor: pointer;
+}
+
+.disc-threads__item-delete:hover {
+  color: var(--color-scarlet);
+}
+
+.disc-threads__section-label {
+  display: block;
+  margin-bottom: var(--space-2);
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.disc-threads__suggestions {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-3);
+}
+
+.disc-threads__suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 7px 9px;
+  margin-bottom: var(--space-1);
+  font-size: 0.85rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.disc-threads__suggestion:hover:not(:disabled) {
+  background: var(--bg-panel);
+  color: var(--color-scarlet);
+}
+
+/* Starter screen shown in the panel when no conversation is selected. */
+.disc-starters {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 320px;
+  padding: var(--space-2) 0;
+}
+
+.disc-starters .disc__label:first-child {
+  margin-top: 0;
+}
+
+.disc-threads__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 320px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.disc-threads__empty svg {
+  color: var(--color-gold);
+}
+
+.disc-threads__empty-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.disc-threads__empty-copy {
+  margin: 0 0 var(--space-3);
+  font-size: 0.9rem;
+}
+
+/* ===========================================================================
    Study session chrome — shared layout for the live Discussions, Flashcards,
    Quiz, and Scenarios views: roster-style header, focus panel with fullscreen,
    progress meter, item pager, and source reference block.
@@ -2556,6 +2918,7 @@
 /* --- Focus panel ---------------------------------------------------------- */
 
 .study-session__panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   border: 1px solid var(--border-subtle);
@@ -2690,6 +3053,26 @@
   max-width: 1080px;
   width: 100%;
   margin: 0 auto;
+}
+
+/* Fullscreen chat (Discussions and Scenarios): the log grows to fill the
+   panel and the compose row stays anchored at the bottom. */
+.study-session__panel--fullscreen .study-session__panel-body > .chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.study-session__panel--fullscreen .chat__log {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.study-session__panel--fullscreen .chat__compose {
+  margin-top: auto;
 }
 
 /* --- Pager ---------------------------------------------------------------- */

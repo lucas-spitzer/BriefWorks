@@ -21,7 +21,7 @@ Extract bibliographic fields from document evidence:
 - distribution_line (distribution / dissemination / releasability / copyright-restriction statement when present)
 
 Extract interpretive fields:
-- purpose: why the document exists
+- purpose: one sentence on why the document exists (its stated aim or reason for publication)
 - target_audience: intended readers
 - scope: what the document covers and any stated boundaries
 - abstract: 2-3 sentence summary of subject and purpose. If the document prints its own abstract (typical for papers and theses), condense that faithfully instead of writing a new one.

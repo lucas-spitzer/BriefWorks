@@ -52,6 +52,17 @@ values
     '{"system":"Normalize LlamaParse structured layout into a flat element stream.","user_template":"Normalize source {{source_id}}."}'::jsonb
   ),
   (
+    'normalize-document',
+    '1.1',
+    'intellex',
+    'Normalize Document',
+    'Flatten LlamaParse structured pages into reading-order elements, preserving compact layout provenance and dropping page furniture.',
+    array['text'],
+    '{"type":"object","properties":{"source_id":{"type":"string"},"page_count":{"type":"integer"}}}'::jsonb,
+    '{"type":"object","properties":{"element_count":{"type":"integer"},"dropped_furniture":{"type":"object"}}}'::jsonb,
+    '{"system":"Normalize LlamaParse structured layout into a provenance-aware flat element stream.","user_template":"Normalize source {{source_id}}."}'::jsonb
+  ),
+  (
     'trim-document-boundaries',
     '1.0',
     'intellex',
@@ -94,6 +105,17 @@ values
     '{"type":"object","properties":{"source_id":{"type":"string"},"element_count":{"type":"integer"}}}'::jsonb,
     '{"type":"object","properties":{"chapter_count":{"type":"integer"},"section_count":{"type":"integer"},"chapter_titles":{"type":"array"},"dropped_nontext":{"type":"object"}}}'::jsonb,
     '{"system":"Build a chapter/section Book model from trimmed elements.","user_template":"Structure source {{source_id}}."}'::jsonb
+  ),
+  (
+    'structure-document',
+    '1.3',
+    'intellex',
+    'Structure Document',
+    'Classify trimmed elements into chapters, sections, and body paragraphs; removes visual-page headings and generated descriptions using layout provenance.',
+    array['text'],
+    '{"type":"object","properties":{"source_id":{"type":"string"},"element_count":{"type":"integer"}}}'::jsonb,
+    '{"type":"object","properties":{"chapter_count":{"type":"integer"},"section_count":{"type":"integer"},"chapter_titles":{"type":"array"},"dropped_nontext":{"type":"object"}}}'::jsonb,
+    '{"system":"Build a clean chapter/section Book model from provenance-aware elements.","user_template":"Structure source {{source_id}}."}'::jsonb
   ),
   (
     'validate-structure',

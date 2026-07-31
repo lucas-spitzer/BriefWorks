@@ -1,7 +1,9 @@
-import { Headphones, HelpCircle, Layers, Lightbulb } from 'lucide-react'
+import { Headphones, HelpCircle, Layers, Lightbulb, Star } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useWorkspace } from '../../features/workspace/workspaceContext'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
+import { isFocused, useLibraryFocus, type LibraryFocusState } from '../../lib/libraryFocus'
 import {
   filterOutputs,
   sortOutputs,
@@ -37,6 +39,8 @@ export function LibraryView({
 }) {
   const { items, sources } = useOutputs()
   const { downloadArtifact } = useWorkspaceData()
+  const { activeWorkspace } = useWorkspace()
+  const { focus, toggleFocus } = useLibraryFocus(activeWorkspace?.id ?? null)
   const navigate = useNavigate()
 
   const [search, setSearch] = useState('')
@@ -44,10 +48,14 @@ export function LibraryView({
   const [sourceId, setSourceId] = useState<string | null>(null)
   const [sort, setSort] = useState<OutputSort>('source')
 
-  const filtered = useMemo(
-    () => sortOutputs(filterOutputs(items, { search, type, sourceId }), sort),
-    [items, search, type, sourceId, sort],
-  )
+  const filtered = useMemo(() => {
+    const sorted = sortOutputs(filterOutputs(items, { search, type, sourceId }), sort)
+    // Focused items float to the front, keeping their relative sort order.
+    return [
+      ...sorted.filter((item) => isFocused(focus, item)),
+      ...sorted.filter((item) => !isFocused(focus, item)),
+    ]
+  }, [items, search, type, sourceId, sort, focus])
 
   const groups = useMemo(() => {
     if (sort !== 'source') return null
@@ -109,28 +117,57 @@ export function LibraryView({
               <span className="lib__band-line" />
               <span className="lib__band-count">{list.length} outputs</span>
             </div>
-            <CardGrid items={list} onOpen={handleOpen} />
+            <CardGrid items={list} onOpen={handleOpen} focus={focus} onToggleFocus={toggleFocus} />
           </div>
         ))
       ) : (
-        <CardGrid items={filtered} onOpen={handleOpen} />
+        <CardGrid items={filtered} onOpen={handleOpen} focus={focus} onToggleFocus={toggleFocus} />
       )}
     </section>
   )
 }
 
-function CardGrid({ items, onOpen }: { items: OutputItem[]; onOpen: (item: OutputItem) => void }) {
+function CardGrid({
+  items,
+  onOpen,
+  focus,
+  onToggleFocus,
+}: {
+  items: OutputItem[]
+  onOpen: (item: OutputItem) => void
+  focus: LibraryFocusState
+  onToggleFocus: (item: OutputItem) => void
+}) {
   return (
     <div className="lib__grid">
       {items.map((item) => {
         const meta = KIND_META[item.kind]
         const Icon = meta.icon
+        const focused = isFocused(focus, item)
         return (
           <article key={`${item.kind}-${item.id}`} className="lib__card">
-            <span className={`lib__tchip ${meta.cls}`}>
-              <Icon size={12} aria-hidden="true" />
-              {meta.label}
-            </span>
+            <div className="lib__card-top">
+              <span className={`lib__tchip ${meta.cls}`}>
+                <Icon size={12} aria-hidden="true" />
+                {meta.label}
+              </span>
+              <button
+                type="button"
+                className={`lib__focus${focused ? ' is-focused' : ''}`}
+                onClick={() => onToggleFocus(item)}
+                title={
+                  focused
+                    ? 'Remove focus'
+                    : item.isEbook
+                      ? 'Focus this ebook (becomes the default in the reader)'
+                      : 'Focus this item'
+                }
+                aria-pressed={focused}
+                aria-label={focused ? 'Remove focus' : 'Focus this item'}
+              >
+                <Star size={14} aria-hidden="true" />
+              </button>
+            </div>
             <p className="lib__pv">{item.title}</p>
             <div className="lib__fill" />
             <div className="lib__foot">

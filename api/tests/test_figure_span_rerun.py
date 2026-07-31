@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock
 
-from app.intellex.structuring.models import Book, Chapter, Paragraph
+from app.intellex.structuring.models import Book, Chapter, Element, Paragraph
 from app.worker.pipeline_runner import PipelineContext, PipelineRunner
 from app.worker.structuring_executors import CreateEbookStageExecutor
 
@@ -158,3 +158,70 @@ def test_source_research_skips_when_research_already_complete() -> None:
     source_research.run_for_source.assert_not_called()
     step = next(s for s in pipeline if s["step"] == "source-research")
     assert "1 reused" in step["detail"]
+
+
+def test_source_research_rebuilds_document_when_parse_was_reused() -> None:
+    db = MagicMock()
+    storage = MagicMock()
+    source_research = MagicMock()
+    source_research.run_for_source.return_value = "sr-research"
+
+    source = {
+        "id": "src-1",
+        "storage_path": "workspaces/ws/sources/src-1/file.pdf",
+        "source_metadata": {
+            "parse": {
+                "parsed_at": "2026-07-18T00:00:00+00:00",
+                "page_count": 4,
+                "parser": "llamaparse",
+                "llamaparse_job_id": "job-1",
+            },
+        },
+    }
+    context = PipelineContext(
+        production_run_id="pr-1",
+        workspace_id="ws-1",
+        sources=[source],
+    )
+    context.normalized_elements["src-1"] = [
+        Element(
+            index=0,
+            page=1,
+            type="heading",
+            level=1,
+            text="MCDP 1-3 Tactics",
+            md="# MCDP 1-3 Tactics",
+        ),
+        Element(
+            index=1,
+            page=2,
+            type="text",
+            level=None,
+            text="This publication describes tactics.",
+            md="This publication describes tactics.",
+        ),
+        Element(
+            index=2,
+            page=2,
+            type="image",
+            level=None,
+            text="figure.png",
+            md="figure.png",
+        ),
+    ]
+
+    runner = PipelineRunner(db=db, storage=storage, source_research=source_research)
+    runner.run_source_research_step(
+        context,
+        [{"step": "source-research", "status": "pending"}],
+    )
+
+    document = source_research.run_for_source.call_args.kwargs["parsed_document"]
+    assert document.page_count == 4
+    assert document.parser == "llamaparse"
+    assert document.job_id == "job-1"
+    assert [(line.kind, line.text) for line in document.lines] == [
+        ("heading", "MCDP 1-3 Tactics"),
+        ("paragraph", "This publication describes tactics."),
+    ]
+    assert context.parsed_documents["src-1"] is document

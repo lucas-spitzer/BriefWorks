@@ -111,7 +111,7 @@ class NormalizeStageExecutor(_ExecutorBase):
     """Stage: NORMALIZE -- flatten LlamaParse items, drop headers/footers."""
 
     STAGE_ID = "normalize-document"
-    STAGE_VERSION = "1.0"
+    STAGE_VERSION = "1.1"
 
     def run_for_source(
         self,

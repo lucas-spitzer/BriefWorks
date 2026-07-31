@@ -2,10 +2,24 @@ import { describe, expect, it } from 'vitest'
 import {
   READER_DEFINE_MAX_WORDS,
   buildNarration,
+  endsSentence,
   matchWikiTerms,
   resolveReaderSelection,
   type Block,
 } from './readerContent'
+
+function para(seq: number, id: string, text: string): Block {
+  return {
+    seq,
+    id,
+    kind: 'paragraph',
+    level: 0,
+    text,
+    md: null,
+    chapterTitle: 'Chapter',
+    isChapterStart: false,
+  }
+}
 
 const blocks: Block[] = [
   {
@@ -107,5 +121,53 @@ describe('resolveReaderSelection', () => {
     expect(termByWord.get(tempo.global)).toBe('e1')
     const resolved = resolveReaderSelection(wordBlocks, [tempo.global], termByWord)
     expect(resolved!.entryId).toBe('e1')
+  })
+})
+
+describe('endsSentence', () => {
+  it('recognizes plain terminators and closers after them', () => {
+    expect(endsSentence('combat.')).toBe(true)
+    expect(endsSentence('right.”')).toBe(true)
+    expect(endsSentence('Go."')).toBe(true)
+    expect(endsSentence('looking!”')).toBe(true)
+    expect(endsSentence('why?”')).toBe(true)
+    expect(endsSentence('end.)')).toBe(true)
+    expect(endsSentence('looking')).toBe(false)
+    expect(endsSentence('Mr.')).toBe(true) // conservative; abbreviations still terminate
+  })
+})
+
+describe('buildNarration', () => {
+  it('keeps quoted epigraphs from sharing a sentence id with the next body paragraph', () => {
+    const { wordBlocks } = buildNarration([
+      para(0, 'q1', 'Hit the other fellow as hard as you can, when he ain’t looking.”'),
+      para(1, 'q2', 'Hit the other fellow, as quick as you can.”'),
+      para(2, 'body', 'This book is about winning in combat. Winning requires more.'),
+    ])
+    const quote1 = wordBlocks[0].words[0].sentence
+    const quote2 = wordBlocks[1].words[0].sentence
+    const bodyFirst = wordBlocks[2].words[0].sentence
+    const bodySecond = wordBlocks[2].words.find((w) => w.text === 'Winning')!.sentence
+    expect(quote1).not.toBe(quote2)
+    expect(quote1).not.toBe(bodyFirst)
+    expect(quote2).not.toBe(bodyFirst)
+    expect(bodyFirst).not.toBe(bodySecond)
+  })
+
+  it('starts a new sentence after a closer-terminated token in the same paragraph', () => {
+    const { wordBlocks } = buildNarration([para(0, 'p', 'Said “Go.” Then left.')])
+    const go = wordBlocks[0].words.find((w) => w.text.endsWith('.”'))!
+    const then = wordBlocks[0].words.find((w) => w.text === 'Then')!
+    expect(go).toBeTruthy()
+    expect(endsSentence(go.text)).toBe(true)
+    expect(then.sentence).toBe(go.sentence + 1)
+  })
+
+  it('resets the sentence id at paragraph boundaries even without terminal punctuation', () => {
+    const { wordBlocks } = buildNarration([
+      para(0, 'a', 'No terminator here'),
+      para(1, 'b', 'Next paragraph starts fresh'),
+    ])
+    expect(wordBlocks[0].words[0].sentence).not.toBe(wordBlocks[1].words[0].sentence)
   })
 })

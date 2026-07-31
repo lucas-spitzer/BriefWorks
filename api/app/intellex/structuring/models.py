@@ -16,6 +16,10 @@ class Element:
     kind of section heading is emitted as L1 in one place and L2 in another, so
     chapter-vs-section is decided by the chapter pattern, not depth.
     `md` keeps the original markdown so inline emphasis survives to the EPUB.
+    The compact layout fields preserve LlamaParse's bbox provenance without
+    carrying the full coordinate payload through every stage. They let
+    classification distinguish authored prose/headings from OCR summaries of
+    maps and diagrams. Empty/default values keep legacy fixtures compatible.
     """
 
     index: int
@@ -24,6 +28,10 @@ class Element:
     level: int | None
     text: str
     md: str
+    layout_labels: tuple[str, ...] = ()
+    min_layout_confidence: float | None = None
+    max_layout_confidence: float | None = None
+    layout_fragment_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -33,6 +41,10 @@ class Element:
             "level": self.level,
             "text": self.text,
             "md": self.md,
+            "layout_labels": list(self.layout_labels),
+            "min_layout_confidence": self.min_layout_confidence,
+            "max_layout_confidence": self.max_layout_confidence,
+            "layout_fragment_count": self.layout_fragment_count,
         }
 
 

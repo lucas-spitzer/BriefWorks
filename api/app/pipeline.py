@@ -31,7 +31,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "normalize-document",
-        "stage_version": "1.0",
+        "stage_version": "1.1",
         "status": "pending",
     },
     {
@@ -47,7 +47,7 @@ BASE_PIPELINE: list[dict[str, Any]] = [
         "type": "stage",
         "module": "intellex",
         "stage_id": "structure-document",
-        "stage_version": "1.2",
+        "stage_version": "1.3",
         "status": "pending",
     },
     {

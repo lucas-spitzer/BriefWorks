@@ -10,17 +10,26 @@ from app.intellex.structuring.validate import StructureValidationError, validate
 from app.mathesys.structured_epub import book_to_epub_chapters
 
 
-def _item(itype, md, *, value=None, level=None):
+def _item(itype, md, *, value=None, level=None, bbox=None):
     item = {"type": itype, "md": md}
     if value is not None:
         item["value"] = value
     if level is not None:
         item["level"] = level
+    if bbox is not None:
+        item["bbox"] = bbox
     return item
 
 
 def _page(page_number, items):
     return {"page_number": page_number, "items": items}
+
+
+def _bbox(label: str, confidence: float, *, count: int = 1):
+    return [
+        {"label": label, "confidence": confidence, "x": index, "y": index}
+        for index in range(count)
+    ]
 
 
 def _doc_pages():
@@ -77,6 +86,30 @@ def test_normalize_drops_headers_and_footers_and_indexes_in_order() -> None:
     # Indices are sequential reading order; page numbers are preserved.
     assert [e.index for e in elements] == list(range(len(elements)))
     assert elements[0].text == "Warfighting" and elements[0].page == 1
+
+
+def test_normalize_preserves_compact_layout_provenance() -> None:
+    pages = [
+        _page(1, [
+            _item(
+                "heading",
+                "# TEST",
+                value="TEST",
+                bbox=[
+                    {"label": "paragraph_title", "confidence": 0.94},
+                    {"label": "text", "confidence": 0.81},
+                ],
+            ),
+        ]),
+    ]
+
+    elements, _ = normalize_structured_pages(pages)
+
+    assert elements[0].layout_labels == ("paragraph_title", "text")
+    assert elements[0].min_layout_confidence == pytest.approx(0.81)
+    assert elements[0].max_layout_confidence == pytest.approx(0.94)
+    assert elements[0].layout_fragment_count == 2
+    assert elements[0].to_dict()["layout_labels"] == ["paragraph_title", "text"]
 
 
 def test_auto_boundaries_detects_first_chapter_and_repeated_title_back_matter() -> None:
@@ -394,6 +427,195 @@ def test_classify_drops_standalone_visual_captions_but_keeps_inline_references()
     assert "As shown in Figure 1" in segment_text
 
 
+def test_visual_map_pages_do_not_pollute_structure_segments_or_epub() -> None:
+    pages = [
+        _page(1, [
+            _item(
+                "heading",
+                "# Chapter 2",
+                value="Chapter 2",
+                level=1,
+                bbox=_bbox("paragraph_title", 0.95),
+            ),
+            _item(
+                "heading",
+                "# Achieving a Decision",
+                value="Achieving a Decision",
+                level=1,
+                bbox=_bbox("paragraph_title", 0.95),
+            ),
+            _item(
+                "heading",
+                "## ANZIO: A MODEL OF TACTICAL INDECISIVENESS",
+                value="ANZIO: A MODEL OF TACTICAL INDECISIVENESS",
+                level=2,
+                bbox=_bbox("paragraph_title", 0.96),
+            ),
+            _item(
+                "text",
+                "The Allies sought a decision in Italy.",
+                value="The Allies sought a decision in Italy.",
+                bbox=_bbox("text", 0.99),
+            ),
+        ]),
+        _page(2, [
+            _item(
+                "heading",
+                "# Indecisiveness: Anzio, 1944. THE OPPORTUNITY",
+                value="Indecisiveness: Anzio, 1944. THE OPPORTUNITY",
+                level=1,
+                bbox=_bbox("text", 0.70),
+            ),
+            _item(
+                "text",
+                "Map of Italy showing forces around Rome and Anzio.",
+                value="Map of Italy showing forces around Rome and Anzio.",
+                bbox=_bbox("text", 0.40, count=8),
+            ),
+        ]),
+        _page(3, [
+            _item(
+                "text",
+                "The Allies achieved surprise but failed to press their advantage.",
+                value="The Allies achieved surprise but failed to press their advantage.",
+                bbox=_bbox("text", 0.99),
+            ),
+        ]),
+        _page(4, [
+            _item(
+                "heading",
+                "# Indecisiveness: Anzio, 1944. OPPORTUNITY LOST",
+                value="Indecisiveness: Anzio, 1944. OPPORTUNITY LOST",
+                level=1,
+                bbox=_bbox("text", 0.71),
+            ),
+            _item(
+                "text",
+                "Map of the Anzio beachhead showing Allied and enemy positions.",
+                value="Map of the Anzio beachhead showing Allied and enemy positions.",
+                bbox=_bbox("text", 0.40, count=8),
+            ),
+        ]),
+        _page(5, [
+            _item(
+                "heading",
+                "# CANNAE: A CLEAR TACTICAL DECISION ACHIEVED",
+                value="CANNAE: A CLEAR TACTICAL DECISION ACHIEVED",
+                level=1,
+                bbox=_bbox("paragraph_title", 0.96),
+            ),
+            _item(
+                "text",
+                "Hannibal tailored his tactics to the opposing force.",
+                value="Hannibal tailored his tactics to the opposing force.",
+                bbox=_bbox("text", 0.99),
+            ),
+        ]),
+        _page(6, [
+            _item(
+                "heading",
+                "# Visualizing the Battle: Gettysburg, 1863",
+                value="Visualizing the Battle: Gettysburg, 1863",
+                level=1,
+                bbox=_bbox("image", 0.73),
+            ),
+            _item(
+                "text",
+                "Map of Gettysburg showing troop positions and key terrain.",
+                value="Map of Gettysburg showing troop positions and key terrain.",
+                bbox=_bbox("image", 0.90),
+            ),
+        ]),
+        _page(7, [
+            _item(
+                "heading",
+                "# Acting Decisively",
+                value="Acting Decisively",
+                level=1,
+                bbox=_bbox("paragraph_title", 0.96),
+            ),
+            _item(
+                "text",
+                "Leaders must exploit opportunities fully and aggressively.",
+                value="Leaders must exploit opportunities fully and aggressively.",
+                bbox=_bbox("text", 0.99),
+            ),
+        ]),
+    ]
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    section_titles = [section.title for section in book.chapters[0].sections]
+    assert section_titles == [
+        "ANZIO: A MODEL OF TACTICAL INDECISIVENESS",
+        "CANNAE: A CLEAR TACTICAL DECISION ACHIEVED",
+        "Acting Decisively",
+    ]
+    assert book.dropped_nontext == {
+        "visual_heading": 3,
+        "visual_description": 3,
+    }
+    anzio_body = [paragraph.md for paragraph in book.chapters[0].sections[0].body]
+    assert anzio_body == [
+        "The Allies sought a decision in Italy.",
+        "The Allies achieved surprise but failed to press their advantage.",
+    ]
+
+    segments, chapters = build_segments_and_chapters(
+        book,
+        source_id="src-1",
+        workspace_id="ws-1",
+    )
+    output_text = " ".join(segment["text"] for segment in segments)
+    assert [section["title"] for section in chapters[0]["sections"]] == section_titles
+    assert "THE OPPORTUNITY" not in output_text
+    assert "OPPORTUNITY LOST" not in output_text
+    assert "Visualizing the Battle" not in output_text
+    assert "Map of" not in output_text
+
+    xhtml = book_to_epub_chapters(book)[0]["xhtml_body"]
+    assert xhtml.count("<h2>") == 3
+    assert "THE OPPORTUNITY" not in xhtml
+    assert "Visualizing the Battle" not in xhtml
+    assert "Map of" not in xhtml
+
+    pdf = _pdf_with_pages([
+        "Chapter 2 Achieving a Decision",
+        "ANZIO A MODEL OF TACTICAL INDECISIVENESS",
+        "CANNAE A CLEAR TACTICAL DECISION ACHIEVED",
+        "Acting Decisively",
+    ])
+    assert validate_against_pdf(book, pdf)["valid"] is True
+
+
+def test_visual_cleanup_keeps_high_confidence_prose_on_chart_page() -> None:
+    pages = [
+        _page(1, [
+            _item("heading", "# Chapter 1", value="Chapter 1"),
+            _item("heading", "# Cooperation", value="Cooperation"),
+            _item("code", "graph TD", value="graph TD", bbox=_bbox("chart", 0.95)),
+            _item("text", "COMMANDER", value="COMMANDER"),
+            _item(
+                "text",
+                "This body of thought helps form tacticians through education.",
+                value="This body of thought helps form tacticians through education.",
+                bbox=[
+                    {"label": "chart", "confidence": 0.99},
+                    {"label": "text", "confidence": 0.99},
+                ],
+            ),
+        ]),
+    ]
+
+    elements, _ = normalize_structured_pages(pages)
+    book = classify(elements)
+
+    assert [paragraph.md for paragraph in book.chapters[0].intro] == [
+        "This body of thought helps form tacticians through education."
+    ]
+    assert book.dropped_nontext == {"code": 1, "visual_description": 1}
+
+
 def test_book_round_trips_through_dict() -> None:
     _, book = _build_book()
     rebuilt = book_from_dict(book.to_dict())
@@ -430,4 +652,16 @@ def test_validate_raises_when_front_matter_leaks() -> None:
     pdf = _pdf_with_pages(["FOREWORD", "Chapter 2 The Theory of War"])
 
     with pytest.raises(StructureValidationError, match="Front/back-matter heading leaked"):
+        validate_against_pdf(book, pdf)
+
+
+def test_validate_still_raises_for_unsupported_section_title() -> None:
+    _, book = _build_book()
+    book.chapters[0].sections[0].title = "INVENTED SECTION"
+    pdf = _pdf_with_pages([
+        "Chapter 1 The Nature of War FRICTION",
+        "Chapter 2 The Theory of War CONCLUSION",
+    ])
+
+    with pytest.raises(StructureValidationError, match="INVENTED SECTION.*in the PDF at all"):
         validate_against_pdf(book, pdf)

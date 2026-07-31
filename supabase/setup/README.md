@@ -45,6 +45,7 @@ Run these only on databases that already have a BriefWorks schema and need a tar
 |------|-------------|
 | `alter-wiki-ingest-file-ingest.sql` | DB was created before wiki file-ingest support. Adds `attachments`, `transcription_error`, expands the status check (`transcribing`, `transcribed`, …), and sets `raw_notes` default to `''`. |
 | `alter-drop-artifacts-bucket.sql` | Operator note only (SQL no-op). Supabase blocks dropping `storage.buckets` / `storage.objects` from SQL. After migrating objects into the `sources` bucket, purge the legacy `artifacts` bucket via the Storage API or Dashboard. |
+| `alter-discussion-threads.sql` | DB was created before persisted discussion threads. Adds `discussion_threads` and `discussion_messages` with RLS + role revokes. Idempotent. |
 | `restore-stages.sql` | Short pointer: re-run `03-seed-stages.sql` to repair a wiped or stale `stages` table. |
 
 ### Wiki file-ingest columns
@@ -100,6 +101,10 @@ supabase db execute --file supabase/setup/alter-wiki-ingest-file-ingest.sql
 - `assessment_sets` — canonical linked assessment JSON
 - `flashcards`, `quizzes`, `scenarios` — denormalized promoted items
 
+### Assistant
+
+- `discussion_threads`, `discussion_messages` — persisted Discussions conversations
+
 ### Seeded stages
 
 Stage versions use **major.minor** format only (`1.0`, `2.0` — never `1.0.0`).
@@ -109,9 +114,9 @@ To repair a wiped or stale `stages` table on an existing project, re-run `supaba
 | Module | Stage ID | Version |
 |--------|----------|---------|
 | intellex | `parse` | 1.0 |
-| intellex | `normalize-document` | 1.0 |
+| intellex | `normalize-document` | 1.0, **1.1** (pipeline) |
 | intellex | `trim-document-boundaries` | 1.0 |
-| intellex | `structure-document` | 1.0, 1.1, **1.2** (pipeline) |
+| intellex | `structure-document` | 1.0, 1.1, 1.2, **1.3** (pipeline) |
 | intellex | `validate-structure` | 1.0 |
 | intellex | `source-research` | 1.0, 2.0, **2.1** (pipeline) |
 | intellex | `web-enrichment` | **1.0** (pipeline) |

@@ -1,12 +1,18 @@
-import { Send } from 'lucide-react'
+import { MessageCircle, MessagesSquare, Plus, Send, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../features/workspace/workspaceContext'
 import {
-  assistantChat,
-  type Citation,
+  createThread,
+  deleteThread,
+  getThread,
+  listThreads,
+  sendThreadMessage,
+  updateThread,
+  type DiscussionMessage,
   type DiscussionSubmode,
+  type DiscussionThread,
 } from '../../lib/assistantApi'
+import { ChatRichText } from './ChatRichText'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { useOutputs } from '../../lib/learnerOutputs'
 import {
@@ -16,18 +22,20 @@ import {
 } from './StudySessionChrome'
 import { useStudyFullscreen } from './useStudyFullscreen'
 
-type ChatMessage = { role: 'ai' | 'user'; text: string; citations?: Citation[] }
-
-type DiscussionItem = {
-  id: string
+type SuggestedPrompt = {
+  key: string
   source_id: string | null
   title: string
   prompt: string
 }
 
-/* Discussions mirror the Scenario lab structure: an itemized set of
-   source-grounded prompts worked one at a time. Prompts are derived from the
-   workspace's canonical knowledge-base entries. */
+const DEFAULT_SEED_PROMPT =
+  'Ask any question and receive thought-provoking responses with canonical references to the wiki.'
+
+/* Discussions are persisted conversation threads. A side panel (opened from
+   the conversations icon in the panel bar) lists existing threads and lets the
+   learner start a new one, either free-form or seeded from a knowledge-base
+   prompt. */
 
 export function DiscussionsView({ sourceId: initialSource = null }: { sourceId?: string | null }) {
   const { activeWorkspace } = useWorkspace()
@@ -35,200 +43,461 @@ export function DiscussionsView({ sourceId: initialSource = null }: { sourceId?:
   const { sources } = useOutputs()
   const { fullscreen, toggle } = useStudyFullscreen()
 
-  const [mode, setMode] = useState<DiscussionSubmode>('socratic')
-
-  const items = useMemo<DiscussionItem[]>(() => {
-    const derived = wikiEntries
+  const suggestions = useMemo<SuggestedPrompt[]>(() => {
+    return wikiEntries
       .filter((entry) => entry.status === 'canonical')
       .map((entry) => ({
-        id: entry.id,
-        source_id: entry.evidence.find((e) => e.source_id)?.source_id ?? null,
+        key: entry.id,
+        source_id: entry.evidence.find((evidence) => evidence.source_id)?.source_id ?? null,
         title: `Explain ${entry.preferred_label}.`,
         prompt: `Explain the concept of ${entry.preferred_label} and why it matters. Ground your answer in the source.`,
       }))
-      .filter((item) => !initialSource || item.source_id === initialSource)
-    return derived.sort(
-      (a, b) => (a.source_id ?? '').localeCompare(b.source_id ?? '') || a.title.localeCompare(b.title),
-    )
+      .filter((prompt) => !initialSource || prompt.source_id === initialSource)
+      .sort((a, b) => a.title.localeCompare(b.title))
   }, [wikiEntries, initialSource])
 
-  const [dIndex, setDIndex] = useState(0)
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [threads, setThreads] = useState<DiscussionThread[]>([])
+  const [threadsLoaded, setThreadsLoaded] = useState(false)
+  const [activeThread, setActiveThread] = useState<DiscussionThread | null>(null)
+  const [messages, setMessages] = useState<DiscussionMessage[]>([])
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [newTitle, setNewTitle] = useState('')
+  const [creating, setCreating] = useState(false)
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [animatingMessageId, setAnimatingMessageId] = useState<string | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
 
-  const safeIndex = Math.min(dIndex, Math.max(items.length - 1, 0))
-  const item = items[safeIndex]
+  const scrollLogToBottom = () => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+  }
 
-  // Reseed the opening prompt whenever the active item changes (covers filter
-  // and sort changes as well as paging). Intentional state sync.
+  const workspaceId = activeWorkspace?.id ?? null
+
+  // Load persisted threads whenever the active workspace changes.
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (item) setMessages([{ role: 'ai', text: item.prompt }])
-  }, [item])
+    if (!workspaceId) return
+    let cancelled = false
+    setThreadsLoaded(false)
+    listThreads(workspaceId)
+      .then((rows) => {
+        if (cancelled) return
+        setThreads(rows)
+        setThreadsLoaded(true)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setError(err instanceof Error ? err.message : 'Could not load conversations.')
+        setThreadsLoaded(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId])
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+    scrollLogToBottom()
   }, [messages, sending])
 
-  const resetItemState = () => {
-    setDraft('')
+  const openThread = async (thread: DiscussionThread) => {
+    if (!workspaceId) return
     setError(null)
+    setPanelOpen(false)
+    setActiveThread(thread)
+    setMessages([])
+    setAnimatingMessageId(null)
+    try {
+      const detail = await getThread(workspaceId, thread.id)
+      setActiveThread(detail)
+      setMessages(detail.messages)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the conversation.')
+    }
   }
 
-  const goTo = (index: number) => {
-    if (index < 0 || index >= items.length) return
-    setDIndex(index)
-    resetItemState()
+  const startThread = async (options: {
+    title: string
+    seedPrompt?: string
+    sourceId?: string | null
+  }) => {
+    if (!workspaceId || creating) return
+    setCreating(true)
+    setError(null)
+    try {
+      const detail = await createThread(workspaceId, {
+        title: options.title,
+        submode: activeThread?.submode ?? 'socratic',
+        source_id: options.sourceId ?? null,
+        seed_prompt: options.seedPrompt ?? DEFAULT_SEED_PROMPT,
+      })
+      setThreads((rows) => [detail, ...rows])
+      setActiveThread(detail)
+      setMessages(detail.messages)
+      setNewTitle('')
+      setPanelOpen(false)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start the conversation.')
+    } finally {
+      setCreating(false)
+    }
   }
 
-  const send = async (e: FormEvent) => {
-    e.preventDefault()
+  const removeThread = async (thread: DiscussionThread) => {
+    if (!workspaceId) return
+    try {
+      await deleteThread(workspaceId, thread.id)
+      setThreads((rows) => rows.filter((row) => row.id !== thread.id))
+      if (activeThread?.id === thread.id) {
+        setActiveThread(null)
+        setMessages([])
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the conversation.')
+    }
+  }
+
+  const setSubmode = async (submode: DiscussionSubmode) => {
+    if (!activeThread || !workspaceId || activeThread.submode === submode) return
+    const previous = activeThread
+    setActiveThread({ ...activeThread, submode })
+    try {
+      const updated = await updateThread(workspaceId, activeThread.id, { submode })
+      setThreads((rows) => rows.map((row) => (row.id === updated.id ? updated : row)))
+    } catch (err) {
+      setActiveThread(previous)
+      setError(err instanceof Error ? err.message : 'Could not update discussion style.')
+    }
+  }
+
+  const send = async (event: FormEvent) => {
+    event.preventDefault()
     const text = draft.trim()
-    if (!text || sending || !item || !activeWorkspace) return
+    if (!text || sending || !activeThread || !workspaceId) return
 
-    const next: ChatMessage[] = [...messages, { role: 'user', text }]
-    setMessages(next)
     setDraft('')
     setError(null)
     setSending(true)
+    const threadId = activeThread.id
+    const optimistic: DiscussionMessage = {
+      id: `pending-${Date.now()}`,
+      thread_id: threadId,
+      role: 'user',
+      content: text,
+      citations: [],
+      created_at: new Date().toISOString(),
+    }
+    setMessages((current) => [...current, optimistic])
     try {
-      const response = await assistantChat(activeWorkspace.id, {
-        mode: 'discussion',
-        submode: mode,
-        source_ids: item.source_id ? [item.source_id] : undefined,
-        messages: next.map((m) => ({
-          role: m.role === 'ai' ? 'assistant' : 'user',
-          content: m.text,
-        })),
+      const response = await sendThreadMessage(workspaceId, threadId, text)
+      setAnimatingMessageId(response.assistant_message.id)
+      setMessages((current) => [
+        ...current.filter((message) => message.id !== optimistic.id),
+        response.user_message,
+        response.assistant_message,
+      ])
+      setThreads((rows) => {
+        const updated = rows.find((row) => row.id === threadId)
+        if (!updated) return rows
+        const bumped = { ...updated, updated_at: new Date().toISOString() }
+        return [bumped, ...rows.filter((row) => row.id !== threadId)]
       })
-      setMessages((m) => [...m, { role: 'ai', text: response.answer, citations: response.citations }])
     } catch (err) {
+      setMessages((current) => current.filter((message) => message.id !== optimistic.id))
+      setDraft(text)
       setError(err instanceof Error ? err.message : 'Something went wrong.')
     } finally {
       setSending(false)
     }
   }
 
-  const sourceName = item
-    ? sources.find((s) => s.id === item.source_id)?.name ?? 'Unassigned'
-    : 'Unassigned'
-  const isLast = safeIndex === items.length - 1
+  const submode = activeThread?.submode ?? 'socratic'
+  const sourceName = activeThread?.source_id
+    ? sources.find((source) => source.id === activeThread.source_id)?.name ?? 'Unassigned'
+    : null
 
   return (
     <section className="study-session">
       <StudyHead
         eyebrow="Guided inquiry"
         title="Discussion room"
-        description="Develop an argument through source-grounded questions."
-        stats={[
-          { value: items.length, label: 'prompts' },
-          { value: new Set(items.map((d) => d.source_id ?? '')).size, label: 'sources' },
-        ]}
+        description="Develop an argument through source-grounded conversations."
+        stats={[{ value: threads.length, label: 'threads' }]}
       />
 
-      {item ? (
-        <>
-          <StudyPanel
-            fullscreen={fullscreen}
-            onToggleFullscreen={toggle}
-            meta={<span className="study-session__panel-title">{item.title}</span>}
-            center={
-              <div className="disc__seg" role="group" aria-label="Discussion style">
-                <button
-                  type="button"
-                  className={`disc__seg-btn${mode === 'socratic' ? ' is-active' : ''}`}
-                  onClick={() => setMode('socratic')}
-                  aria-pressed={mode === 'socratic'}
+      <StudyPanel
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggle}
+        meta={
+          <>
+            <button
+              type="button"
+              className="disc-threads__toggle"
+              onClick={() => setPanelOpen((open) => !open)}
+              aria-expanded={panelOpen}
+              aria-label="Conversations"
+              title="Conversations"
+            >
+              <MessagesSquare size={16} />
+            </button>
+            <span className="study-session__panel-title">
+              {activeThread ? activeThread.title : 'No conversation selected'}
+            </span>
+          </>
+        }
+        center={
+          activeThread ? (
+            <div className="disc__seg" role="group" aria-label="Discussion style">
+              <button
+                type="button"
+                className={`disc__seg-btn${submode === 'socratic' ? ' is-active' : ''}`}
+                onClick={() => setSubmode('socratic')}
+                aria-pressed={submode === 'socratic'}
+              >
+                Socratic
+              </button>
+              <button
+                type="button"
+                className={`disc__seg-btn${submode === 'euclidean' ? ' is-active' : ''}`}
+                onClick={() => setSubmode('euclidean')}
+                aria-pressed={submode === 'euclidean'}
+              >
+                Euclidean
+              </button>
+            </div>
+          ) : undefined
+        }
+      >
+        {activeThread ? (
+          <div className="chat">
+            <div className="chat__log" ref={logRef}>
+              {messages.map((message) => (
+                <div
+                  key={message.id}
+                  className={`chat__msg chat__msg--${message.role === 'assistant' ? 'ai' : 'user'}`}
                 >
-                  Socratic
-                </button>
-                <button
-                  type="button"
-                  className={`disc__seg-btn${mode === 'euclidean' ? ' is-active' : ''}`}
-                  onClick={() => setMode('euclidean')}
-                  aria-pressed={mode === 'euclidean'}
-                >
-                  Euclidean
-                </button>
-              </div>
-            }
-            pager={{
-              onPrev: () => goTo(safeIndex - 1),
-              onNext: () => goTo(safeIndex + 1),
-              prevDisabled: safeIndex <= 0,
-              nextDisabled: isLast,
-              label: sourceName,
-            }}
-          >
-            <div className="chat">
-              <div className="chat__log" ref={logRef}>
-                {messages.map((m, i) => (
-                  <div key={i} className={`chat__msg chat__msg--${m.role}`}>
-                    <span className="chat__role">{m.role === 'ai' ? 'Tutor' : 'You'}</span>
-                    <p className="chat__text">{m.text}</p>
-                    {m.citations && m.citations.length > 0 && <Citations citations={m.citations} />}
+                  <span className="chat__role">
+                    {message.role === 'assistant' ? 'Tutor' : 'You'}
+                  </span>
+                  <ChatRichText
+                    text={message.content}
+                    citations={message.citations}
+                    animate={message.id === animatingMessageId}
+                    onProgress={scrollLogToBottom}
+                    onDone={() => setAnimatingMessageId(null)}
+                  />
+                </div>
+              ))}
+              {sending && (
+                <div className="chat__msg chat__msg--ai">
+                  <span className="chat__role">Tutor</span>
+                  <span className="chat__thinking" aria-label="Tutor is thinking">
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {error && <p className="chat__error">{error}</p>}
+
+            <form className="chat__compose" onSubmit={send}>
+              <input
+                className="chat__input"
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                placeholder={submode === 'socratic' ? 'Share your thinking…' : 'Ask a question…'}
+                aria-label="Your message"
+                disabled={sending}
+              />
+              <button type="submit" className="chat__send" disabled={!draft.trim() || sending}>
+                <Send size={16} /> Send
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="disc-starters">
+            {!threadsLoaded ? (
+              <p className="disc__sub">Loading conversations…</p>
+            ) : (
+              <>
+                <div className="disc__label">
+                  <h3>Suggested starters</h3>
+                  <span className="disc__label-line" aria-hidden />
+                </div>
+                {suggestions.length > 0 ? (
+                  <div className="disc__grid">
+                    {suggestions.slice(0, 8).map((suggestion) => (
+                      <button
+                        key={suggestion.key}
+                        type="button"
+                        className="disc__prompt"
+                        disabled={creating}
+                        onClick={() =>
+                          void startThread({
+                            title: suggestion.title,
+                            seedPrompt: suggestion.prompt,
+                            sourceId: suggestion.source_id,
+                          })
+                        }
+                      >
+                        <MessageCircle size={16} aria-hidden />
+                        {suggestion.title}
+                      </button>
+                    ))}
                   </div>
-                ))}
-                {sending && (
-                  <div className="chat__msg chat__msg--ai">
-                    <span className="chat__role">Tutor</span>
-                    <p className="chat__text chat__text--typing">Thinking…</p>
-                  </div>
+                ) : (
+                  <p className="disc__sub">
+                    Starters are generated from the knowledge base. Ingest a source to see
+                    suggestions, or begin your own conversation below.
+                  </p>
                 )}
+
+                <div className="disc__own">
+                  <div className="disc__label">
+                    <h3>Start your own</h3>
+                    <span className="disc__label-line" aria-hidden />
+                  </div>
+                  <form
+                    className="disc__field"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      const title = newTitle.trim()
+                      if (title) void startThread({ title, sourceId: initialSource })
+                    }}
+                  >
+                    <input
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      placeholder="What would you like to discuss?"
+                      aria-label="New conversation topic"
+                      disabled={creating}
+                    />
+                    <button type="submit" className="disc__start" disabled={!newTitle.trim() || creating}>
+                      <MessagesSquare size={16} /> Start
+                    </button>
+                  </form>
+                </div>
+              </>
+            )}
+            {error && <p className="chat__error">{error}</p>}
+          </div>
+        )}
+
+        {panelOpen && (
+          <>
+            <div
+              className="disc-threads__backdrop"
+              onClick={() => setPanelOpen(false)}
+              aria-hidden
+            />
+            <aside className="disc-threads" aria-label="Conversations">
+              <div className="disc-threads__head">
+                <span>Conversations</span>
+                <button
+                  type="button"
+                  className="disc-threads__close"
+                  onClick={() => setPanelOpen(false)}
+                  aria-label="Close conversations"
+                >
+                  <X size={15} />
+                </button>
               </div>
 
-              {error && <p className="chat__error">{error}</p>}
-
-              <form className="chat__compose" onSubmit={send}>
+              <form
+                className="disc-threads__new"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const title = newTitle.trim()
+                  if (title) void startThread({ title, sourceId: initialSource })
+                }}
+              >
                 <input
-                  className="chat__input"
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder={mode === 'socratic' ? 'Share your thinking…' : 'Ask a question…'}
-                  aria-label="Your message"
-                  disabled={sending}
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Start a new conversation…"
+                  aria-label="New conversation topic"
+                  disabled={creating}
                 />
-                <button type="submit" className="chat__send" disabled={!draft.trim() || sending}>
-                  <Send size={16} /> Send
+                <button type="submit" disabled={!newTitle.trim() || creating} aria-label="Start conversation">
+                  <Plus size={15} />
                 </button>
               </form>
-            </div>
-          </StudyPanel>
 
-          <StudySourceReference sourceId={item.source_id} sourceName={sourceName} />
-        </>
-      ) : (
-        <div className="quiz quiz--result">
-          <p className="quiz__score">No discussion prompts</p>
-          <p className="quiz__score-note">
-            Prompts are generated from the knowledge base. Ingest a source to begin.
-          </p>
-        </div>
+              {threads.length > 0 && (
+                <div className="disc-threads__list">
+                  {threads.map((thread) => (
+                    <div
+                      key={thread.id}
+                      className={`disc-threads__item${activeThread?.id === thread.id ? ' is-active' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        className="disc-threads__item-open"
+                        onClick={() => void openThread(thread)}
+                      >
+                        <span className="disc-threads__item-title">{thread.title}</span>
+                        <span className="disc-threads__item-meta">
+                          {formatRelativeTime(thread.updated_at)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="disc-threads__item-delete"
+                        onClick={() => void removeThread(thread)}
+                        aria-label={`Delete "${thread.title}"`}
+                        title="Delete conversation"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {suggestions.length > 0 && (
+                <div className="disc-threads__suggestions">
+                  <span className="disc-threads__section-label">Suggested topics</span>
+                  {suggestions.slice(0, 8).map((suggestion) => (
+                    <button
+                      key={suggestion.key}
+                      type="button"
+                      className="disc-threads__suggestion"
+                      disabled={creating}
+                      onClick={() =>
+                        void startThread({
+                          title: suggestion.title,
+                          seedPrompt: suggestion.prompt,
+                          sourceId: suggestion.source_id,
+                        })
+                      }
+                    >
+                      {suggestion.title}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </aside>
+          </>
+        )}
+      </StudyPanel>
+
+      {activeThread?.source_id && sourceName && (
+        <StudySourceReference sourceId={activeThread.source_id} sourceName={sourceName} />
       )}
     </section>
   )
 }
 
-function Citations({ citations }: { citations: Citation[] }) {
-  const navigate = useNavigate()
-  return (
-    <div className="chat__cites">
-      {citations.map((c, i) => (
-        <button
-          key={i}
-          type="button"
-          className="chat__cite"
-          title={c.snippet}
-          disabled={!c.reader_link}
-          onClick={() => c.reader_link && navigate(c.reader_link)}
-        >
-          [{i + 1}] {c.label}
-        </button>
-      ))}
-    </div>
-  )
+function formatRelativeTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const now = new Date()
+  const sameDay = date.toDateString() === now.toDateString()
+  return sameDay
+    ? date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+    : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

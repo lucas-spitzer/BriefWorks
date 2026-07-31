@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from app.intellex.models import ParsedDocument
+from app.intellex.models import ParsedDocument, ParsedLine
 from app.intellex.ingest import structured_pages_artifact_path
 from app.intellex.source_readiness import (
     source_intellex_complete,
@@ -234,6 +234,39 @@ class PipelineRunner:
             f"Structured pages artifact for source {source['id']} is empty or malformed: {path}"
         )
 
+    @staticmethod
+    def _parsed_document_from_elements(
+        source: dict[str, Any],
+        elements: list[Element],
+    ) -> ParsedDocument:
+        """Rebuild research input when parse was reused from stored layout."""
+        parse_meta = (source.get("source_metadata") or {}).get("parse") or {}
+        if not isinstance(parse_meta, dict):
+            parse_meta = {}
+
+        lines = [
+            ParsedLine(
+                line_id=f"p{element.page or 0}-l{element.index}",
+                text=element.text,
+                page=element.page or 1,
+                kind="heading" if element.type == "heading" else "paragraph",
+            )
+            for element in elements
+            if element.type in {"heading", "text"} and element.text.strip()
+        ]
+        metadata_page_count = parse_meta.get("page_count")
+        page_count = (
+            metadata_page_count
+            if isinstance(metadata_page_count, int)
+            else max((line.page for line in lines), default=0)
+        )
+        return ParsedDocument(
+            page_count=page_count,
+            lines=lines,
+            parser=str(parse_meta.get("parser") or "llamaparse"),
+            job_id=parse_meta.get("llamaparse_job_id"),
+        )
+
     def _run_structuring_step(
         self,
         context: PipelineContext,
@@ -433,7 +466,11 @@ class PipelineRunner:
 
             parsed_document = context.parsed_documents.get(source_id)
             if not parsed_document:
-                raise RuntimeError(f"Parsed document missing for source {source_id}.")
+                elements = context.normalized_elements.get(source_id)
+                if elements is None:
+                    raise RuntimeError(f"Parsed document missing for source {source_id}.")
+                parsed_document = self._parsed_document_from_elements(source, elements)
+                context.parsed_documents[source_id] = parsed_document
 
             stage_run_id = self.source_research.run_for_source(
                 production_run_id=context.production_run_id,

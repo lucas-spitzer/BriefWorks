@@ -24,6 +24,38 @@ def _clean_text(item: dict[str, Any]) -> str:
     return md.strip()
 
 
+def _layout_provenance(
+    item: dict[str, Any],
+) -> tuple[tuple[str, ...], float | None, float | None, int]:
+    """Return compact semantic evidence from an item's bbox fragments."""
+    raw_boxes = item.get("bbox")
+    if not isinstance(raw_boxes, list):
+        return (), None, None, 0
+
+    boxes = [box for box in raw_boxes if isinstance(box, dict)]
+    labels = tuple(
+        sorted(
+            {
+                label.strip().lower()
+                for box in boxes
+                if isinstance((label := box.get("label")), str) and label.strip()
+            }
+        )
+    )
+    confidences = [
+        float(confidence)
+        for box in boxes
+        if isinstance((confidence := box.get("confidence")), (int, float))
+        and not isinstance(confidence, bool)
+    ]
+    return (
+        labels,
+        min(confidences) if confidences else None,
+        max(confidences) if confidences else None,
+        len(boxes),
+    )
+
+
 def normalize_structured_pages(
     pages: Iterable[dict[str, Any]],
     *,
@@ -46,6 +78,9 @@ def normalize_structured_pages(
             if itype in furniture:
                 dropped[itype] = dropped.get(itype, 0) + 1
                 continue
+            labels, min_confidence, max_confidence, fragment_count = (
+                _layout_provenance(item)
+            )
             elements.append(
                 Element(
                     index=index,
@@ -54,6 +89,10 @@ def normalize_structured_pages(
                     level=item.get("level"),
                     text=_clean_text(item),
                     md=item.get("md") or "",
+                    layout_labels=labels,
+                    min_layout_confidence=min_confidence,
+                    max_layout_confidence=max_confidence,
+                    layout_fragment_count=fragment_count,
                 )
             )
             index += 1

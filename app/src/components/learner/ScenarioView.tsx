@@ -4,6 +4,7 @@ import { useWorkspace } from '../../features/workspace/workspaceContext'
 import { useWorkspaceData } from '../../features/workspace/workspaceDataContext'
 import { assistantChat } from '../../lib/assistantApi'
 import { filterAndSortRecords, useOutputs } from '../../lib/learnerOutputs'
+import { ChatRichText } from './ChatRichText'
 import {
   StudyHead,
   StudyPanel,
@@ -46,8 +47,13 @@ export function ScenarioView({
   const [done, setDone] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [animatingMessageIndex, setAnimatingMessageIndex] = useState<number | null>(null)
   const logRef = useRef<HTMLDivElement | null>(null)
   const targetAppliedRef = useRef<string | null>(null)
+
+  const scrollLogToBottom = () => {
+    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+  }
 
   // Apply Library deep-link focus once the matching scenario is in the loaded list.
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -78,7 +84,7 @@ export function ScenarioView({
   /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
-    if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight
+    scrollLogToBottom()
   }, [messages, sending])
 
   const resetRun = () => {
@@ -87,6 +93,7 @@ export function ScenarioView({
     setDone(false)
     setDraft('')
     setError(null)
+    setAnimatingMessageIndex(null)
   }
   const send = async (e: FormEvent) => {
     e.preventDefault()
@@ -110,7 +117,8 @@ export function ScenarioView({
       })
       const verdict = response.evaluation
       const feedback = verdict?.feedback || response.answer
-      setMessages((m) => [...m, { role: 'ai', text: feedback }])
+      setAnimatingMessageIndex(nextMessages.length)
+      setMessages([...nextMessages, { role: 'ai', text: feedback }])
       if (verdict?.passed) setPassed(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -125,6 +133,7 @@ export function ScenarioView({
     setPassed(false)
     setDraft('')
     setError(null)
+    setAnimatingMessageIndex(null)
   }
 
   const nextItem = () => {
@@ -197,13 +206,22 @@ export function ScenarioView({
                 {messages.map((m, i) => (
                   <div key={i} className={`chat__msg chat__msg--${m.role}`}>
                     <span className="chat__role">{m.role === 'ai' ? 'Grader' : 'You'}</span>
-                    <p className="chat__text">{m.text}</p>
+                    <ChatRichText
+                      text={m.text}
+                      animate={i === animatingMessageIndex}
+                      onProgress={scrollLogToBottom}
+                      onDone={() => setAnimatingMessageIndex(null)}
+                    />
                   </div>
                 ))}
                 {sending && (
                   <div className="chat__msg chat__msg--ai">
                     <span className="chat__role">Grader</span>
-                    <p className="chat__text chat__text--typing">Assessing…</p>
+                    <span className="chat__thinking" aria-label="Grader is assessing">
+                      <span />
+                      <span />
+                      <span />
+                    </span>
                   </div>
                 )}
               </div>

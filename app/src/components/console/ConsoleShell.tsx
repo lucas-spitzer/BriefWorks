@@ -1,5 +1,5 @@
 import { LogOut } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { matchPath, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { LearnerContent } from '../learner/LearnerContent'
 import {
@@ -22,13 +22,78 @@ import { railIconSize, railItems, type ConsolePage } from './types'
 
 type AppMode = 'console' | 'learner'
 
+const SHELL_STORAGE_KEY = 'briefworks.consoleShell'
+
+const consolePageIds = new Set(railItems.map((item) => item.id))
+const learnerPageIds = new Set(learnerRailItems.map((item) => item.id))
+
+type ShellState = {
+  mode: AppMode
+  consolePage: ConsolePage
+  learnerPage: LearnerPage
+  learnerScope: LearnerScope
+}
+
+const defaultShellState: ShellState = {
+  mode: 'console',
+  consolePage: 'ops',
+  learnerPage: 'library',
+  learnerScope: emptyLearnerScope,
+}
+
+function readShellState(): ShellState {
+  try {
+    const raw = sessionStorage.getItem(SHELL_STORAGE_KEY)
+    if (!raw) return defaultShellState
+    const parsed = JSON.parse(raw) as Partial<ShellState>
+    const mode = parsed.mode === 'learner' || parsed.mode === 'console' ? parsed.mode : 'console'
+    const consolePage =
+      typeof parsed.consolePage === 'string' && consolePageIds.has(parsed.consolePage as ConsolePage)
+        ? (parsed.consolePage as ConsolePage)
+        : 'ops'
+    const learnerPage =
+      typeof parsed.learnerPage === 'string' && learnerPageIds.has(parsed.learnerPage as LearnerPage)
+        ? (parsed.learnerPage as LearnerPage)
+        : 'library'
+    const scope = parsed.learnerScope
+    const learnerScope: LearnerScope =
+      scope && typeof scope === 'object'
+        ? {
+            sourceId: typeof scope.sourceId === 'string' ? scope.sourceId : null,
+            targetId: typeof scope.targetId === 'string' ? scope.targetId : null,
+          }
+        : emptyLearnerScope
+    return { mode, consolePage, learnerPage, learnerScope }
+  } catch {
+    return defaultShellState
+  }
+}
+
 export function ConsoleShell() {
-  const [mode, setMode] = useState<AppMode>('console')
-  const [consolePage, setConsolePage] = useState<ConsolePage>('ops')
-  const [learnerPage, setLearnerPage] = useState<LearnerPage>('library')
-  const [learnerScope, setLearnerScope] = useState<LearnerScope>(emptyLearnerScope)
+  const [shell, setShell] = useState<ShellState>(readShellState)
+  const { mode, consolePage, learnerPage, learnerScope } = shell
   const { approvedUser, user } = useAuth()
   const displayEmail = approvedUser?.email ?? user?.email ?? 'Signed in'
+
+  useEffect(() => {
+    sessionStorage.setItem(SHELL_STORAGE_KEY, JSON.stringify(shell))
+  }, [shell])
+
+  const setMode = (next: AppMode | ((prev: AppMode) => AppMode)) => {
+    setShell((shellState) => ({
+      ...shellState,
+      mode: typeof next === 'function' ? next(shellState.mode) : next,
+    }))
+  }
+  const setConsolePage = (nextPage: ConsolePage) => {
+    setShell((shellState) => ({ ...shellState, consolePage: nextPage }))
+  }
+  const setLearnerPage = (nextPage: LearnerPage) => {
+    setShell((shellState) => ({ ...shellState, learnerPage: nextPage }))
+  }
+  const setLearnerScope = (nextScope: LearnerScope) => {
+    setShell((shellState) => ({ ...shellState, learnerScope: nextScope }))
+  }
 
   // Reader is the one URL-addressable screen: /app/reader/:sourceId?seg=N.
   // When that route is active it overrides the state-driven tabs.

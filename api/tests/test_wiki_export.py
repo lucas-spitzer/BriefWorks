@@ -67,7 +67,7 @@ def test_export_selects_source_and_workspace_scoped_entries() -> None:
     assert labels == {"Enemy System", "Tempo", "OODA Loop"}
     assert export["entry_count"] == 3
     assert export["scope_counts"] == {"source": 2, "workspace": 1}
-    assert export["briefworks_wiki_export"] == "1.0"
+    assert export["arsenal_wiki_export"] == "1.0"
 
 
 def test_export_resolves_prerequisites_to_labels() -> None:

@@ -169,7 +169,7 @@ before any UI or pipeline change.
 
 ## Phase 2 — Frontend: Wiki console
 
-New console section (pattern-match `ConsoleAssessments` / `ConsoleStages`):
+New Foundry section (pattern-match `FoundryAssessments` / `FoundryStages`):
 
 - **Entry browser** — list with kind/importance/status chips, search (existing
   endpoint already supports it), inline editor, deprecate action, evidence
@@ -184,9 +184,9 @@ New console section (pattern-match `ConsoleAssessments` / `ConsoleStages`):
 - **Batch list** — drafts resumable across sessions, committed/discarded
   history.
 
-Files: `app/src/components/console/ConsoleWiki.tsx` (+ subcomponents),
-`app/src/lib/wikiApi.ts`, wiring in `ConsoleShell.tsx`/`ConsolePage.tsx`,
-`app/src/console.css`.
+Files: `app/src/components/foundry/FoundryWiki.tsx` (+ subcomponents),
+`app/src/lib/wikiApi.ts`, wiring in `FoundryShell.tsx`/`FoundryPage.tsx`,
+`app/src/foundry.css`.
 
 ---
 
@@ -302,7 +302,7 @@ from `BASE_PIPELINE`.
 |-------|-------|
 | 0 | `supabase/migrations/33-…`, `config.py`, `models/wiki_ingest.py`, `models/wiki_entry.py` |
 | 1 | `services/wiki_authoring.py` (new), `routers/wiki.py`, `repositories/wiki_entries.py`, `repositories/wiki_ingest_batches.py` (new), promotion refactor (`intellex/stages/wiki_promotion.py` → shared), `dependencies/services.py` |
-| 2 | `components/console/ConsoleWiki.tsx` (new), `lib/wikiApi.ts` (new), `ConsoleShell.tsx`, `ConsolePage.tsx`, `console.css` |
+| 2 | `components/foundry/FoundryWiki.tsx` (new), `lib/wikiApi.ts` (new), `FoundryShell.tsx`, `FoundryPage.tsx`, `foundry.css` |
 | 3 | `pipeline.py`, `source_readiness.py`, `pipeline_runner.py`, `stage_executor.py`, console run-launcher |
 | 4 | `qngen/canonical_context.py`, `stage_executor.py`, `config.py`, skill docs |
 | 5 | deletions + `docs/internal/system/system-overview.md`, plan cross-links |

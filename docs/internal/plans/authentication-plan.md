@@ -1,8 +1,8 @@
-# BriefWorks Authentication Implementation Plan
+# Foundry Authentication Implementation Plan
 
 ## Purpose
 
-BriefWorks is a private educational production studio, not a public SaaS product. Authentication should be designed around controlled access, manual approval, and defense in depth.
+Foundry is a private educational production studio, not a public SaaS product. Authentication should be designed around controlled access, manual approval, and defense in depth.
 
 The first version of the application should support secure login without public account creation. Users should not be able to create accounts through the frontend. Account creation and approval should be handled through Supabase and, later, Cloudflare Access policies.
 
@@ -17,7 +17,7 @@ Supabase RLS              = database-level protection
 Private Supabase Storage  = protected source and generated files
 ```
 
-BriefWorks should begin as:
+Foundry should begin as:
 
 ```text
 Private app
@@ -64,7 +64,7 @@ Cloudflare device posture checks
 
 7. **Cloudflare Access before public deployment**
    - Local development can proceed without Cloudflare Access.
-   - No public BriefWorks deployment should exist without an outer access gate.
+   - No public Foundry deployment should exist without an outer access gate.
 
 ---
 
@@ -96,7 +96,7 @@ supabase/            Future Supabase migrations and local config
 
 Earlier drafts may refer to `apps/web`. For this repository, use `app` unless the project is later converted into a monorepo.
 
-The initial implementation should replace the default Vite starter screen with the authenticated BriefWorks shell. Do not preserve Vite sample UI, sample logos, or counter state as part of the auth work.
+The initial implementation should replace the default Vite starter screen with the authenticated Foundry shell. Do not preserve Vite sample UI, sample logos, or counter state as part of the auth work.
 
 ---
 
@@ -139,7 +139,7 @@ Recommended redirect URLs:
 
 ```text
 http://localhost:5173/auth/callback
-https://briefworks.yourdomain.com/auth/callback
+https://arsenal.yourdomain.com/auth/callback
 ```
 
 Supabase callback URL pattern:
@@ -185,7 +185,7 @@ Do not build:
 ## Recommended Login Page Copy
 
 ```text
-BriefWorks
+Foundry
 
 Private educational production studio.
 Access is restricted to approved accounts.
@@ -202,7 +202,7 @@ Continue with Google
 Optional supporting text:
 
 ```text
-Only approved Google accounts may access BriefWorks.
+Only approved Google accounts may access Foundry.
 ```
 
 ## Login UI Design Requirements
@@ -223,7 +223,7 @@ Layout: left-aligned, structured, generous spacing
 The login page should include:
 
 ```text
-BriefWorks wordmark or text heading
+Foundry wordmark or text heading
 Private access notice
 Continue with Google primary action
 Short approved-account helper text
@@ -239,7 +239,7 @@ Recommended login labels:
 Access Restricted
 Private educational production studio
 Continue with Google
-Only approved Google accounts may access BriefWorks.
+Only approved Google accounts may access Foundry.
 ```
 
 Avoid:
@@ -295,7 +295,7 @@ For production:
 ```bash
 VITE_SUPABASE_URL="https://your-project-ref.supabase.co"
 VITE_SUPABASE_PUBLISHABLE_KEY="your-public-publishable-key"
-VITE_API_BASE_URL="https://api.briefworks.yourdomain.com"
+VITE_API_BASE_URL="https://api.arsenal.yourdomain.com"
 ```
 
 Important:
@@ -536,7 +536,7 @@ export function LoginPage() {
     <main className="auth-page">
       <section className="auth-card" aria-labelledby="auth-title">
         <p className="auth-eyebrow">Access Restricted</p>
-        <h1 id="auth-title">BriefWorks</h1>
+        <h1 id="auth-title">Foundry</h1>
         <p className="auth-copy">
           Private educational production studio. Access is restricted to approved accounts.
         </p>
@@ -550,7 +550,7 @@ export function LoginPage() {
           {isSubmitting ? 'Redirecting...' : 'Continue with Google'}
         </button>
 
-        <p className="auth-helper">Only approved Google accounts may access BriefWorks.</p>
+        <p className="auth-helper">Only approved Google accounts may access Foundry.</p>
 
         {errorMessage ? (
           <p className="auth-error" role="alert">
@@ -726,7 +726,7 @@ import { AuthCallbackPage } from './pages/AuthCallbackPage';
 import { LoginPage } from './pages/LoginPage';
 
 function AppHomePage() {
-  return <div>BriefWorks App</div>;
+  return <div>Foundry App</div>;
 }
 
 function ProjectsPage() {
@@ -825,7 +825,7 @@ export async function getCurrentUser(): Promise<CurrentUserResponse> {
 
 ## Frontend Approval Handshake
 
-A Supabase session only proves that Google login succeeded. It does not prove that the user is approved for BriefWorks.
+A Supabase session only proves that Google login succeeded. It does not prove that the user is approved for Foundry.
 
 After login and on protected app load:
 
@@ -842,13 +842,13 @@ The protected route should eventually gate on both values:
 
 ```text
 Has Supabase session
-Has approved BriefWorks user from `/me`
+Has approved Foundry user from `/me`
 ```
 
 Recommended 403 copy:
 
 ```text
-This Google account is not approved for BriefWorks access.
+This Google account is not approved for Foundry access.
 ```
 
 ---
@@ -996,7 +996,7 @@ def require_approved_user(
     if not approved_user or not approved_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account is not approved for BriefWorks access.",
+            detail="This account is not approved for Foundry access.",
         )
 
     return CurrentUser(
@@ -1016,7 +1016,7 @@ Later option: Store stable role claims in Supabase `app_metadata`.
 Avoid: `user_metadata`, because users can modify it.
 ```
 
-On access denial, return `403` rather than redirecting or silently creating a user. The frontend may show a restrained message: `This Google account is not approved for BriefWorks access.`
+On access denial, return `403` rather than redirecting or silently creating a user. The frontend may show a restrained message: `This Google account is not approved for Foundry access.`
 
 ---
 
@@ -1159,7 +1159,7 @@ revoke all on table approved_users from anon;
 revoke all on table approved_users from authenticated;
 ```
 
-The FastAPI backend can query `approved_users` with the server-only service role key. If BriefWorks later needs an admin UI, add narrow admin-only policies at that time.
+The FastAPI backend can query `approved_users` with the server-only service role key. If Foundry later needs an admin UI, add narrow admin-only policies at that time.
 
 Profile policies:
 
@@ -1245,7 +1245,7 @@ using ((select auth.uid()) is not null and owner_id = (select auth.uid()));
 Important:
 
 ```text
-Use RLS even if BriefWorks begins as a one-user application.
+Use RLS even if Foundry begins as a one-user application.
 It prevents weak assumptions from becoming security debt later.
 Always include `to authenticated` in policies intended for logged-in users.
 Remember that UPDATE requires a matching SELECT policy.
@@ -1267,7 +1267,7 @@ thumbnails
 
 All should be private.
 
-Do not store private BriefWorks data in public buckets.
+Do not store private Foundry data in public buckets.
 
 Protected file types include:
 
@@ -1380,8 +1380,8 @@ Cloudflare Access is not required for local development, but it should be requir
 Protect:
 
 ```text
-briefworks.yourdomain.com
-api.briefworks.yourdomain.com
+arsenal.yourdomain.com
+api.arsenal.yourdomain.com
 ```
 
 Initial policy:
@@ -1404,7 +1404,7 @@ Require device posture checks
 Recommended deployment rule:
 
 ```text
-No public BriefWorks URL without Cloudflare Access or equivalent private access control.
+No public Foundry URL without Cloudflare Access or equivalent private access control.
 ```
 
 ---
@@ -1424,7 +1424,7 @@ Active security client required
 Certificate-based device identity
 ```
 
-Use device posture checks when BriefWorks contains enough valuable data or trusted users that device-level security is worth the added operational complexity.
+Use device posture checks when Foundry contains enough valuable data or trusted users that device-level security is worth the added operational complexity.
 
 ---
 
@@ -1505,7 +1505,7 @@ FastAPI verifies JWT
     ↓
 FastAPI checks approved_users
     ↓
-User enters BriefWorks
+User enters Foundry
 ```
 
 ---
@@ -1513,7 +1513,7 @@ User enters BriefWorks
 # Public Deployment Security Flow
 
 ```text
-User opens briefworks.yourdomain.com
+User opens arsenal.yourdomain.com
     ↓
 Cloudflare Access checks identity/device policy
     ↓
@@ -1559,7 +1559,7 @@ Private Storage policies protect files
 - [ ] Add `VITE_SUPABASE_PUBLISHABLE_KEY`.
 - [ ] Add `VITE_API_BASE_URL`.
 - [ ] Replace the default Vite starter UI.
-- [ ] Add BriefWorks theme tokens from `.cursor/rules/style.md`.
+- [ ] Add Foundry theme tokens from `.cursor/rules/style.md`.
 - [ ] Create Supabase client.
 - [ ] Create auth service.
 - [ ] Create auth provider.
@@ -1599,7 +1599,7 @@ Private Storage policies protect files
 
 # Final Recommendation
 
-For BriefWorks v1, use:
+For Foundry v1, use:
 
 ```text
 Supabase Auth
@@ -1623,7 +1623,7 @@ Supabase Auth     = app session authority
 FastAPI           = backend permission checkpoint
 Supabase RLS      = database guardrail
 Private Storage   = protected file vault
-BriefWorks        = private educational production studio
+Foundry        = private educational production studio
 ```
 
 This design keeps the first version simple while avoiding weak security assumptions that would become expensive to fix later.

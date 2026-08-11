@@ -62,7 +62,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         wasApprovedRef.current = false
         setApprovedUser(null)
         setApprovalStatus('unavailable')
-        setApprovalError('Set VITE_API_BASE_URL to enable the BriefWorks approval check.')
+        setApprovalError('Set VITE_API_BASE_URL to enable the Arsenal approval check.')
         return
       }
 
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         if (error instanceof ApiError && error.status === 403) {
           setApprovedUser(null)
           setApprovalStatus('rejected')
-          setApprovalError('This Google account is not approved for BriefWorks access.')
+          setApprovalError('This Google account is not approved for Arsenal access.')
           return
         }
 
@@ -102,7 +102,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         }
 
         console.error(
-          'BriefWorks approval check failed:',
+          'Arsenal approval check failed:',
           error instanceof Error ? error.message : error,
         )
         // Keep an already-approved session usable if a transient network blip
@@ -111,7 +111,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
         setApprovedUser(null)
         setApprovalStatus('unavailable')
-        setApprovalError('BriefWorks could not reach the approval service.')
+        setApprovalError('Arsenal could not reach the approval service.')
       }
     }
 

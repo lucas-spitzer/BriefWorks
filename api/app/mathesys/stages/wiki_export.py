@@ -119,7 +119,7 @@ def build_wiki_export(
     )
 
     return {
-        "briefworks_wiki_export": EXPORT_FORMAT_VERSION,
+        "arsenal_wiki_export": EXPORT_FORMAT_VERSION,
         "workspace_id": workspace_id,
         "source_id": source_id,
         "source_filename": source_filename,

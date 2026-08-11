@@ -1,6 +1,6 @@
-# BriefWorks API
+# Arsenal API
 
-FastAPI service for BriefWorks backend authorization, workspaces, sources, stages, and production-run orchestration.
+FastAPI service for Arsenal backend authorization, workspaces, sources, stages, and production-run orchestration.
 
 ## Local Setup
 
@@ -61,7 +61,7 @@ uvicorn app.main:app --reload --port 8000
 
 ## Run Redis + Worker
 
-BriefWorks uses Redis for the RQ job queue. Use **either** Docker or Homebrew.
+Foundry uses Redis for the RQ job queue. Use **either** Docker or Homebrew.
 
 ### Option A — Docker (recommended if you use Docker Desktop)
 

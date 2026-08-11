@@ -9,8 +9,8 @@ from app.services.supabase_storage import SupabaseStorageError
 
 logger = logging.getLogger(__name__)
 
-DATABASE_ERROR_MESSAGE = "BriefWorks could not reach the database."
-STORAGE_ERROR_MESSAGE = "BriefWorks could not reach file storage."
+DATABASE_ERROR_MESSAGE = "Arsenal could not reach the database."
+STORAGE_ERROR_MESSAGE = "Arsenal could not reach file storage."
 
 
 def is_duplicate_key_error(exc: SupabaseRestError) -> bool:

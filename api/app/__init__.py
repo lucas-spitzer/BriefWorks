@@ -1,1 +1,1 @@
-"""BriefWorks API package."""
+"""Arsenal API package."""

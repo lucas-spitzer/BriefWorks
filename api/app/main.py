@@ -25,7 +25,7 @@ from app.routers import (
 configure_logging()
 settings = get_settings()
 
-app = FastAPI(title="BriefWorks API")
+app = FastAPI(title="Arsenal API")
 register_exception_handlers(app)
 
 def frontend_url(path: str) -> str:

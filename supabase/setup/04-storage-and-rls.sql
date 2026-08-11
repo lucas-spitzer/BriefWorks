@@ -1,4 +1,4 @@
--- BriefWorks fresh setup: storage buckets and row-level security.
+-- Foundry fresh setup: storage buckets and row-level security.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values

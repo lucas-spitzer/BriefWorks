@@ -1,4 +1,4 @@
-# BriefWorks Supabase Setup
+# Foundry Supabase Setup
 
 Use the numbered scripts (`01`–`04`) to bootstrap a **fresh** Supabase project. They contain the full current schema and stage seeds.
 
@@ -39,7 +39,7 @@ After running setup, replace the placeholder owner email in `approved_users` wit
 
 ## Existing database patches
 
-Run these only on databases that already have a BriefWorks schema and need a targeted upgrade. Fresh installs from `01`–`04` already include the current shape.
+Run these only on databases that already have a Foundry schema and need a targeted upgrade. Fresh installs from `01`–`04` already include the current shape.
 
 | File | When to run |
 |------|-------------|

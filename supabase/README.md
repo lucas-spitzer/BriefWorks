@@ -1,6 +1,6 @@
-# BriefWorks Supabase
+# Foundry Supabase
 
-Database bootstrap for BriefWorks.
+Database bootstrap for Foundry.
 
 | Path | Use when |
 |------|----------|
@@ -48,7 +48,7 @@ See [`setup/README.md`](setup/README.md) for the full inventory of tables, bucke
 
 ## Existing databases
 
-Do **not** re-run `01`–`04` on a database that already has BriefWorks tables. Apply the relevant operator patch from `setup/` instead:
+Do **not** re-run `01`–`04` on a database that already has Foundry tables. Apply the relevant operator patch from `setup/` instead:
 
 | File | Purpose |
 |------|---------|

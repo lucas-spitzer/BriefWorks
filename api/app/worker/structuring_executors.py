@@ -310,7 +310,7 @@ class CreateEbookStageExecutor(_ExecutorBase):
         elif research.get("issuing_authority"):
             author = str(research.get("issuing_authority"))
         else:
-            author = "BriefWorks"
+            author = "Foundry"
         identifier = research.get("identifier")
         pub_date = research.get("publication_date_public") or research.get("publication_date_in_document")
         return {

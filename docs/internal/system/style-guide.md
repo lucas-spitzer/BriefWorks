@@ -1,10 +1,10 @@
-# BriefWorks Style Guide
+# Foundry Style Guide
 
-BriefWorks should use a restrained, professional visual system derived from the official United States Marine Corps digital style guide. The interface should feel authoritative, disciplined, readable, and operational—not decorative.
+Foundry should use a restrained, professional visual system derived from the official United States Marine Corps digital style guide. The interface should feel authoritative, disciplined, readable, and operational—not decorative.
 
 ## 1. Brand Direction
 
-BriefWorks is a private educational production webapp. The Marine Corps visual language should be used as a design influence for color, typography, hierarchy, and tone, not as a claim that BriefWorks is an official Marine Corps product unless formally authorized.
+Foundry is a private educational production webapp. The Marine Corps visual language should be used as a design influence for color, typography, hierarchy, and tone, not as a claim that Foundry is an official Marine Corps product unless formally authorized.
 
 Design principles:
 
@@ -29,7 +29,7 @@ Use the official Marines.mil palette as the foundation.
 | `--color-light-gray` | `#A7A7A7` | Disabled states, subtle borders, background separation |
 | `--color-white` | `#FFFFFF` | Primary background, text on dark surfaces |
 
-## 3. Recommended BriefWorks Theme
+## 3. Recommended Foundry Theme
 
 Use the official palette, but tune it for software usability.
 
@@ -136,7 +136,7 @@ Official guide direction:
 - Buttons use Colossalis, scarlet, 2px stroke, wide horizontal padding, letter spacing.
 - Links use Colossalis, scarlet, letter spacing, and animated underline behavior.
 
-BriefWorks implementation:
+Foundry implementation:
 
 ```css
 .button-primary {
@@ -205,12 +205,12 @@ Button rules:
 
 #### Registry card footers (workspace, source, stage, artifact)
 
-Console registry cards pin a metadata footer (`.bw-console__artifact-foot`) to the card bottom with a top border divider. Spacing above that divider must stay consistent—this has been a recurring layout issue.
+Console registry cards pin a metadata footer (`.as-console__artifact-foot`) to the card bottom with a top border divider. Spacing above that divider must stay consistent—this has been a recurring layout issue.
 
 Rules:
 
 - The **last body block** before the footer (description, tags/chips, or stats row) gets `margin-bottom: var(--space-3)` (12px). Do not rely on the footer’s `padding-top` alone; the border sits at the top edge of the footer.
-- In equal-height grid cards (`display: flex; flex-direction: column; height: 100%`), insert `.bw-console__card-fill` between the last body block and the footer so `margin-top: auto` on the footer pins it to the bottom **without** opening a large gap above the divider.
+- In equal-height grid cards (`display: flex; flex-direction: column; height: 100%`), insert `.as-console__card-fill` between the last body block and the footer so `margin-top: auto` on the footer pins it to the bottom **without** opening a large gap above the divider.
 - Do not stack `margin-bottom` on the description **and** `margin-top` on the next row (e.g. stats)—use one intentional gap (typically `margin-top: var(--space-3)` on the secondary row only).
 - Match source cards as the reference: description → metadata/tags → **12px** → divider → footer segments.
 
@@ -267,7 +267,7 @@ Avoid:
 
 ## 10. Voice and Copy
 
-BriefWorks copy should be direct, precise, and professional.
+Foundry copy should be direct, precise, and professional.
 
 Preferred language:
 
@@ -315,7 +315,7 @@ Before merging UI work, verify:
 - Body text uses Arial/Helvetica fallback stack.
 - Primary actions are scarlet and visually dominant.
 - Layout is clean, left-aligned, and structured.
-- Registry cards keep `var(--space-3)` between the last body block and the footer divider; grid cards use `.bw-console__card-fill` so the footer stays bottom-aligned without extra vertical gap.
+- Registry cards keep `var(--space-3)` between the last body block and the footer divider; grid cards use `.as-console__card-fill` so the footer stays bottom-aligned without extra vertical gap.
 - Icons are functional and consistent.
 - UI does not imply official Marine Corps endorsement.
 - Accessibility contrast and keyboard navigation are acceptable.
@@ -323,4 +323,4 @@ Before merging UI work, verify:
 
 ## 13. Design Rule of Thumb
 
-BriefWorks should look like a disciplined Marine Corps-inspired knowledge production system: scarlet for command emphasis, navy for operational structure, gold for prestige and metadata, black and white for clarity, and typography that communicates authority without sacrificing usability.
+Foundry should look like a disciplined Marine Corps-inspired knowledge production system: scarlet for command emphasis, navy for operational structure, gold for prestige and metadata, black and white for clarity, and typography that communicates authority without sacrificing usability.

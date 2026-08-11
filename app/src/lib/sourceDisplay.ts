@@ -7,7 +7,7 @@ export function filenameStem(filename: string): string {
 }
 
 /**
- * Canonical label for a source across console, learner, and run UI.
+ * Canonical label for a source across Foundry, Academy, and run UI.
  * Always derived from the uploaded filename (minus extension).
  */
 export function sourceDisplayName(source: Pick<Source, 'filename'>): string {

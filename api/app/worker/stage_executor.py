@@ -431,7 +431,7 @@ class ExportWikiJsonStageExecutor:
             )
             filename = f"{source_slug}-wiki.json"
             manifest = {
-                "export_version": export["briefworks_wiki_export"],
+                "export_version": export["arsenal_wiki_export"],
                 "entry_count": export["entry_count"],
                 "entry_kind_counts": export["entry_kind_counts"],
                 "scope_counts": export["scope_counts"],

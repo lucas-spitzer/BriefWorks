@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import type { OutputItem } from './learnerOutputs'
+import type { OutputItem } from './academyOutputs'
 
 // Per-workspace "focus" flags for library items, persisted in localStorage
 // (same pattern as the reader bookmark). Focused items float to the top of
@@ -15,14 +15,14 @@ export interface LibraryFocusState {
 }
 
 const EMPTY_FOCUS: LibraryFocusState = { keys: [], ebookKey: null, ebookSourceId: null }
-const FOCUS_EVENT = 'briefworks:library-focus'
+const FOCUS_EVENT = 'arsenal:library-focus'
 
 export function focusItemKey(item: Pick<OutputItem, 'kind' | 'id'>): string {
   return `${item.kind}-${item.id}`
 }
 
 function storageKey(workspaceId: string): string {
-  return `briefworks:library-focus:${workspaceId}`
+  return `arsenal:library-focus:${workspaceId}`
 }
 
 // Cache parsed snapshots so useSyncExternalStore gets referentially stable

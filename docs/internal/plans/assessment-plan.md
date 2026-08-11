@@ -325,7 +325,7 @@ Attempts and Feedback
 Exports and Review Artifacts
 ```
 
-This lets BriefWorks generate one trusted assessment object and reuse it across multiple learning modes:
+This lets Foundry generate one trusted assessment object and reuse it across multiple learning modes:
 
 * Memorization
 * Understanding

@@ -63,29 +63,29 @@ export function LoginPage() {
   }
 
   return (
-    <main className="bw-gate">
-      <div className="bw-gate__login">
-        <section className="bw-gate__brand" aria-label="About BriefWorks">
-          <div className="bw-gate__brand-head">
-            <div className="bw-gate__mark">BW</div>
+    <main className="as-gate">
+      <div className="as-gate__login">
+        <section className="as-gate__brand" aria-label="About Arsenal">
+          <div className="as-gate__brand-head">
+            <div className="as-gate__mark">AS</div>
             <div>
-              <div className="bw-gate__wordmark">BriefWorks</div>
-              <div className="bw-gate__tagline">Private Educational Production Studio</div>
+              <div className="as-gate__wordmark">Arsenal</div>
+              <div className="as-gate__tagline">Private Educational Production Studio</div>
             </div>
           </div>
 
-          <ol className="bw-gate__modules">
+          <ol className="as-gate__modules">
             {systemModules.map((module, index) => (
               <li
                 key={module.name}
-                className="bw-gate__module"
+                className="as-gate__module"
                 style={{ '--i': index } as CSSProperties}
               >
-                <span className="bw-gate__module-dot">{String(index + 1).padStart(2, '0')}</span>
+                <span className="as-gate__module-dot">{String(index + 1).padStart(2, '0')}</span>
                 <div>
-                  <div className="bw-gate__module-name">
+                  <div className="as-gate__module-name">
                     {module.name}
-                    <span className="bw-gate__module-tag">{module.tag}</span>
+                    <span className="as-gate__module-tag">{module.tag}</span>
                   </div>
                   <p>{module.description}</p>
                 </div>
@@ -93,17 +93,17 @@ export function LoginPage() {
             ))}
           </ol>
 
-          <div className="bw-gate__sysline">
-            <span className="bw-gate__livedot" aria-hidden="true" />
+          <div className="as-gate__sysline">
+            <span className="as-gate__livedot" aria-hidden="true" />
             Systems nominal · Intellex / Mathesys / QnGen
           </div>
         </section>
 
-        <section className="bw-gate__panel" aria-labelledby="auth-title">
-          <p className="bw-gate__eyebrow">Access Restricted</p>
+        <section className="as-gate__panel" aria-labelledby="auth-title">
+          <p className="as-gate__eyebrow">Access Restricted</p>
           <h1 id="auth-title">Operator Sign-In</h1>
-          <p className="bw-gate__copy">
-            BriefWorks is a private production environment. Access is restricted to approved
+          <p className="as-gate__copy">
+            Arsenal is a private production environment. Access is restricted to approved
             accounts.
           </p>
 
@@ -111,24 +111,24 @@ export function LoginPage() {
             type="button"
             onClick={handleGoogleLogin}
             disabled={isSubmitting || isLoading}
-            className="bw-gate__cta"
+            className="as-gate__cta"
           >
             {isSubmitting ? 'Redirecting…' : 'Continue with Google'}
           </button>
 
-          <p className="bw-gate__helper">Only approved Google accounts may access BriefWorks.</p>
+          <p className="as-gate__helper">Only approved Google accounts may access Arsenal.</p>
 
           {approvalStatus === 'rejected' ? (
-            <div className="bw-gate__error" role="alert">
-              <p>{approvalError ?? 'This Google account is not approved for BriefWorks access.'}</p>
-              <button type="button" className="bw-gate__inline-action" onClick={handleSignOut}>
+            <div className="as-gate__error" role="alert">
+              <p>{approvalError ?? 'This Google account is not approved for Arsenal access.'}</p>
+              <button type="button" className="as-gate__inline-action" onClick={handleSignOut}>
                 Sign out
               </button>
             </div>
           ) : null}
 
           {errorMessage ? (
-            <div className="bw-gate__error" role="alert">
+            <div className="as-gate__error" role="alert">
               <p>{errorMessage}</p>
             </div>
           ) : null}

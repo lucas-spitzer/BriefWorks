@@ -11,7 +11,7 @@ class SupabaseAuthError(Exception):
 
 
 class SupabaseApprovalError(Exception):
-    """Raised when BriefWorks cannot complete the approval lookup."""
+    """Raised when Arsenal cannot complete the approval lookup."""
 
 
 class SupabaseRequestError(Exception):
@@ -19,7 +19,7 @@ class SupabaseRequestError(Exception):
 
 
 class SupabaseUserNotApprovedError(Exception):
-    """Raised when a valid Supabase user is not approved for BriefWorks."""
+    """Raised when a valid Supabase user is not approved for Arsenal."""
 
 
 class SupabaseService:
@@ -87,14 +87,14 @@ class SupabaseService:
 
         if not approved_users:
             raise SupabaseUserNotApprovedError(
-                "This account is not approved for BriefWorks access.",
+                "This account is not approved for Arsenal access.",
             )
 
         approved_user = approved_users[0]
 
         if not approved_user.get("is_active"):
             raise SupabaseUserNotApprovedError(
-                "This account is not approved for BriefWorks access.",
+                "This account is not approved for Arsenal access.",
             )
 
         return approved_user

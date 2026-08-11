@@ -1,4 +1,4 @@
-# BriefWorks icon assets
+# Foundry icon assets
 
 Icons exported from [RealFaviconGenerator](https://realfavicongenerator.net) (Canva source).
 Used for favicons, Apple touch icons, and PWA install.

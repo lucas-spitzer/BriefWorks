@@ -254,7 +254,7 @@ def _get_settings_cached() -> Settings:
             frontend_origins=parse_csv_env("FRONTEND_ORIGINS", "http://localhost:5173"),
             redis_url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
             sources_bucket=os.getenv("SOURCES_BUCKET", "sources"),
-            rq_queue_name=os.getenv("RQ_QUEUE_NAME", "briefworks"),
+            rq_queue_name=os.getenv("RQ_QUEUE_NAME", "arsenal"),
             production_run_job_timeout=os.getenv("PRODUCTION_RUN_JOB_TIMEOUT", "2h"),
             signed_url_expires_seconds=int(os.getenv("SIGNED_URL_EXPIRES_SECONDS", "3600")),
             max_source_upload_bytes=int(

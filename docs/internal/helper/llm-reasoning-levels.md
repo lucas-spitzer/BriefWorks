@@ -1,6 +1,6 @@
-# LLM Reasoning Levels — Provider Guide & BriefWorks Integration Plan
+# LLM Reasoning Levels — Provider Guide & Foundry Integration Plan
 
-This document describes how to control reasoning / thinking depth across LLM providers, and how BriefWorks should wire those controls through configuration and client code.
+This document describes how to control reasoning / thinking depth across LLM providers, and how Foundry should wire those controls through configuration and client code.
 
 Use this as the reference when implementing reasoning-level support in `api/app/config.py` and the provider clients under `api/app/services/llm/`.
 
@@ -19,9 +19,9 @@ Reasoning controls affect **latency, cost, and quality**. Higher effort improves
 
 ---
 
-## Current BriefWorks State
+## Current Foundry State
 
-As of this writing, BriefWorks **does not expose reasoning controls**. Model selection is configurable; reasoning depth is not.
+As of this writing, Foundry **does not expose reasoning controls**. Model selection is configurable; reasoning depth is not.
 
 | Call site | Client | Model env var | Reasoning control |
 |-----------|--------|---------------|-------------------|
@@ -38,7 +38,7 @@ Relevant code today:
 
 ---
 
-## Proposed BriefWorks Configuration
+## Proposed Foundry Configuration
 
 When implemented, use **provider-specific env vars** with optional **per-action overrides**. Reasoning semantics differ too much across providers for a single universal enum.
 
@@ -92,7 +92,7 @@ Each client translates this into its native API parameters. Stages and the `LLMC
 | **Responses API** | `reasoning: { effort: "..." }` | `text.format` with JSON schema | **Preferred** for GPT-5.x and o-series |
 | **Chat Completions** | `reasoning_effort: "..."` (top-level) | `response_format: { type: "json_object" }` | Works but limited; OpenAI recommends Responses for reasoning models |
 
-BriefWorks currently uses Chat Completions. Migrating `OpenAIClient` to Responses is the main engineering task for proper GPT-5.4 support.
+Foundry currently uses Chat Completions. Migrating `OpenAIClient` to Responses is the main engineering task for proper GPT-5.4 support.
 
 ### Effort levels
 
@@ -143,14 +143,14 @@ response = client.chat.completions.create(
 )
 ```
 
-### OpenAI caveats for BriefWorks
+### OpenAI caveats for Foundry
 
 1. **Output parsing** — Responses return an `output` array (messages, tool calls, reasoning summaries). Do not assume text is at `output[0]`. Use `response.output_text` when available.
 2. **Reasoning token billing** — Reasoning tokens appear in usage metadata. Extend `api/app/services/api_pricing.py` if reasoning tokens are priced differently.
 3. **Structured output** — Prefer JSON schema via Responses `text.format` over free-form `json_object` when migrating.
 4. **Role names** — Responses uses `instructions` + `input` (or `developer` / `user` roles), not always `system`.
 
-### Suggested BriefWorks defaults (OpenAI stages)
+### Suggested Foundry defaults (OpenAI stages)
 
 | Stage | Suggested effort | Rationale |
 |-------|------------------|-----------|
@@ -211,14 +211,14 @@ Rules:
 - Minimum budget varies by model (often 1024+).
 - Set `thinking: { type: "disabled" }` or omit thinking to turn off (where supported).
 
-### Anthropic caveats for BriefWorks
+### Anthropic caveats for Foundry
 
 1. **JSON prefill** — `AnthropicClient` uses assistant prefill `{"` for structured JSON. Extended thinking may interact with prefill; test per model. Prefill is already disabled for some models (see `_PREFILL_UNSUPPORTED_MODELS`).
 2. **Temperature** — Some Opus 4.8+ models reject non-default `temperature` / `top_p` when thinking is enabled.
 3. **Output parsing** — Thinking blocks appear in `content` with `type: "thinking"`. Extract only `type: "text"` blocks for JSON parsing.
 4. **Token usage** — Billing includes thinking tokens separately from output tokens in some cases; normalize in `LLMCompletionResult.token_usage`.
 
-### Suggested BriefWorks defaults (Anthropic stages)
+### Suggested Foundry defaults (Anthropic stages)
 
 | Stage | Suggested config | Rationale |
 |-------|------------------|-----------|
@@ -230,7 +230,7 @@ Rules:
 
 ## Google Gemini (future provider)
 
-BriefWorks does not use Gemini today. Include for factory extensibility.
+Foundry does not use Gemini today. Include for factory extensibility.
 
 ### Gemini 2.5 — `thinking_budget` (tokens)
 
@@ -278,7 +278,7 @@ GEMINI_THINKING_BUDGET_TOKENS=0
 
 ## Provider Comparison
 
-| Provider | Primary control | Disable reasoning | Structured JSON | BriefWorks client |
+| Provider | Primary control | Disable reasoning | Structured JSON | Foundry client |
 |----------|----------------|-------------------|-----------------|-------------------|
 | OpenAI GPT-5.x | `reasoning.effort` (Responses) or `reasoning_effort` (Chat) | `none` / `minimal` (model-dependent) | JSON schema via Responses | `OpenAIClient` |
 | Anthropic 4.6+ | `thinking.type=adaptive` + `output_config.effort` | `effort: low` or omit adaptive on some models | Assistant prefill + parse | `AnthropicClient` |
@@ -286,13 +286,13 @@ GEMINI_THINKING_BUDGET_TOKENS=0
 | Google Gemini 2.5 | `thinking_budget` (int) | `0` where supported | `response_schema` | Not implemented |
 | Google Gemini 3.x | `thinking_level` (enum) | `minimal` (cannot fully disable on some models) | `response_schema` | Not implemented |
 
-There is **no safe cross-provider enum**. Map a BriefWorks `effort` hint per provider inside each client.
+There is **no safe cross-provider enum**. Map a Foundry `effort` hint per provider inside each client.
 
 ---
 
 ## Implementation Checklist
 
-When wiring this into BriefWorks:
+When wiring this into Foundry:
 
 - [ ] Add `ReasoningSettings` (or equivalent) to `api/app/config.py` with global + per-action resolution.
 - [ ] Extend `LLMSettings` dataclass; document vars in `api/README.md`.
@@ -372,7 +372,7 @@ def _anthropic_reasoning_kwargs(model: str, settings: ReasoningSettings) -> dict
 - [Anthropic — Model migration guide](https://platform.claude.com/docs/en/about-claude/models/migration-guide)
 - [Google — Gemini thinking](https://ai.google.dev/gemini-api/docs/thinking)
 
-### BriefWorks code
+### Foundry code
 
 - `api/app/config.py` — env resolution, `LLM_ACTION_DEFAULTS`
 - `api/app/services/openai_client.py` — OpenAI Chat Completions (migration target)

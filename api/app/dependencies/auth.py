@@ -48,15 +48,15 @@ async def require_approved_user(
     except SupabaseUserNotApprovedError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account is not approved for BriefWorks access.",
+            detail="This account is not approved for Arsenal access.",
         ) from exc
     except SupabaseApprovalError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="BriefWorks could not complete the approval lookup.",
+            detail="Arsenal could not complete the approval lookup.",
         ) from exc
     except SupabaseRequestError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="BriefWorks could not reach Supabase.",
+            detail="Arsenal could not reach Supabase.",
         ) from exc

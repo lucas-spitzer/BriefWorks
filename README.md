@@ -1,8 +1,11 @@
-# BriefWorks
+# Arsenal
 
-BriefWorks is a private, browser-based **educational production studio**. It transforms raw source documents into structured knowledge, listenable narration artifacts, and assessment questions through three coordinated automation systems running over a queued worker pipeline.
+Arsenal is a private educational system with two surfaces in one SPA:
 
-| System | Role | Module |
+- **Foundry** — browser-based **educational production studio**. It transforms raw source documents into structured knowledge, listenable narration artifacts, and assessment questions through three coordinated automation systems running over a queued worker pipeline.
+- **Academy** — learning surface for viewing and interacting with artifacts produced by Foundry.
+
+| Foundry system | Role | Module |
 |--------|------|--------|
 | **Intellex** | The library — ingests, parses, researches, and deconstructs sources into a grounded knowledge base. | `intellex` |
 | **Mathesys** | The teacher — turns the knowledge base into narration scripts and audio-ready artifacts. | `mathesys` |
@@ -15,7 +18,7 @@ BriefWorks is a private, browser-based **educational production studio**. It tra
 ```mermaid
 flowchart TD
     subgraph client["Browser — React / Vite SPA"]
-        UI[Console UI]
+        UI[Foundry + Academy UI]
         SBJS[supabase-js auth]
     end
 
@@ -260,7 +263,7 @@ Stages are **versioned definitions** (`stage_id` + `version`, major.minor format
 ## Repository Layout
 
 ```text
-BriefWorks/
+Arsenal/
 ├── api/                      FastAPI backend + worker
 │   └── app/
 │       ├── routers/          HTTP endpoints
@@ -274,7 +277,8 @@ BriefWorks/
 ├── app/                      React + Vite frontend
 │   └── src/
 │       ├── features/         auth + workspace providers
-│       ├── components/console/  production console UI
+│       ├── components/foundry/   Foundry production UI
+│       ├── components/academy/   Academy learning UI
 │       └── lib/              API client + mappers
 ├── supabase/
 │   └── setup/                greenfield SQL (01–04) + alter patches for existing DBs
@@ -293,4 +297,4 @@ Setup, environment variables, and the full endpoint reference live in [`api/READ
 3. **Database** — for a new Supabase project, run `01`–`04` in order (see [`supabase/setup/README.md`](supabase/setup/README.md)). Existing databases use the `alter-*.sql` patches in that same folder — see [`supabase/README.md`](supabase/README.md).
 4. **Frontend** — point `VITE_API_BASE_URL` at the API and run the Vite dev server (see [`app/README.md`](app/README.md)).
 
-For architectural rationale and the design narrative, see [`docs/internal/system-overview.md`](docs/internal/system-overview.md).
+For architectural rationale and the design narrative, see [`docs/internal/system/system-overview.md`](docs/internal/system/system-overview.md).

@@ -1,12 +1,12 @@
 services:
   redis:
     image: redis:7-alpine
-    container_name: briefworks-redis
+    container_name: arsenal-redis
     restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
-      - briefworks_redis_data:/data
+      - arsenal_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -14,4 +14,4 @@ services:
       retries: 5
 
 volumes:
-  briefworks_redis_data:
+  arsenal_redis_data:

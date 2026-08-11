@@ -1,4 +1,4 @@
--- BriefWorks fresh setup: extensions, helpers, and auth allowlist.
+-- Foundry fresh setup: extensions, helpers, and auth allowlist.
 
 create extension if not exists citext;
 create extension if not exists pgcrypto;

@@ -4,7 +4,7 @@ import { ProtectedRoute } from './features/auth/ProtectedRoute'
 import { WorkspaceProvider } from './features/workspace/WorkspaceProvider'
 import './App.css'
 import { AuthCallbackPage } from './pages/AuthCallbackPage'
-import { ConsolePage } from './pages/ConsolePage'
+import { FoundryPage } from './pages/FoundryPage'
 import { LoginPage } from './pages/LoginPage'
 
 function App() {
@@ -21,7 +21,7 @@ function App() {
               path="/app/*"
               element={
                 <WorkspaceProvider>
-                  <ConsolePage />
+                  <FoundryPage />
                 </WorkspaceProvider>
               }
             />

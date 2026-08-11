@@ -1,4 +1,4 @@
--- BriefWorks fresh setup: all application tables (final schema).
+-- Foundry fresh setup: all application tables (final schema).
 
 -- ---------------------------------------------------------------------------
 -- Workspaces

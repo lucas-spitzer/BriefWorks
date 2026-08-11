@@ -5,12 +5,12 @@ import '../../gate.css'
 
 function SecurityCheckStatus({ message }: { message: string }) {
   return (
-    <main className="bw-gate" aria-live="polite">
-      <section className="bw-gate__status">
-        <div className="bw-gate__mark">BW</div>
-        <p className="bw-gate__eyebrow">Security Check</p>
-        <p className="bw-gate__status-msg">{message}</p>
-        <div className="bw-gate__scanner" aria-hidden="true" />
+    <main className="as-gate" aria-live="polite">
+      <section className="as-gate__status">
+        <div className="as-gate__mark">AS</div>
+        <p className="as-gate__eyebrow">Security Check</p>
+        <p className="as-gate__status-msg">{message}</p>
+        <div className="as-gate__scanner" aria-hidden="true" />
       </section>
     </main>
   )
@@ -22,19 +22,19 @@ function AccessNotice({ title, message }: { title: string; message: string }) {
   }
 
   return (
-    <main className="bw-gate">
+    <main className="as-gate">
       <section
-        className="bw-gate__status bw-gate__status--alert"
+        className="as-gate__status as-gate__status--alert"
         role="alert"
         aria-labelledby="access-notice-title"
       >
-        <div className="bw-gate__mark">BW</div>
-        <p className="bw-gate__eyebrow">Access Restricted</p>
-        <p className="bw-gate__status-msg" id="access-notice-title">
+        <div className="as-gate__mark">AS</div>
+        <p className="as-gate__eyebrow">Access Restricted</p>
+        <p className="as-gate__status-msg" id="access-notice-title">
           {title}
         </p>
-        <p className="bw-gate__copy">{message}</p>
-        <button type="button" className="bw-gate__cta" onClick={() => void handleSignOut()}>
+        <p className="as-gate__copy">{message}</p>
+        <button type="button" className="as-gate__cta" onClick={() => void handleSignOut()}>
           Sign Out
         </button>
       </section>
@@ -47,7 +47,7 @@ export function ProtectedRoute() {
   const location = useLocation()
 
   if (isLoading) {
-    return <SecurityCheckStatus message="Verifying your BriefWorks session." />
+    return <SecurityCheckStatus message="Verifying your Arsenal session." />
   }
 
   if (!isAuthenticated) {
@@ -58,7 +58,7 @@ export function ProtectedRoute() {
     return (
       <AccessNotice
         title="Account Not Approved"
-        message={approvalError ?? 'This Google account is not approved for BriefWorks access.'}
+        message={approvalError ?? 'This Google account is not approved for Arsenal access.'}
       />
     )
   }
@@ -67,7 +67,7 @@ export function ProtectedRoute() {
     return (
       <AccessNotice
         title="Approval Service Unavailable"
-        message={approvalError ?? 'BriefWorks could not complete the approval check.'}
+        message={approvalError ?? 'Arsenal could not complete the approval check.'}
       />
     )
   }

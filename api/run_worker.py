@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the BriefWorks RQ worker."""
+"""Start the Arsenal RQ worker."""
 
 import os
 

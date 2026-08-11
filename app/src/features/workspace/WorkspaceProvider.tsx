@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../auth/authContext'
 import { WorkspaceContext } from './workspaceContext'
 
-const STORAGE_KEY = 'briefworks.activeWorkspaceId'
+const STORAGE_KEY = 'arsenal.activeWorkspaceId'
 
 interface WorkspaceProviderProps {
   children: ReactNode

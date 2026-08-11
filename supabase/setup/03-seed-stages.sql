@@ -1,4 +1,4 @@
--- BriefWorks fresh setup: stage definitions (current names, schemas, and prompts).
+-- Foundry fresh setup: stage definitions (current names, schemas, and prompts).
 -- Uses ON CONFLICT upserts so re-running is safe. For repairing an existing
 -- project's stages table, prefer restore-stages.sql (identical upserts).
 

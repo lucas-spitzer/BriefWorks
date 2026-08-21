@@ -154,7 +154,7 @@ export function FoundryShell() {
           title={isAcademy ? 'Switch to Foundry' : 'Switch to Academy'}
           aria-label={isAcademy ? 'Academy — switch to Foundry' : 'Foundry — switch to Academy'}
         >
-          {isAcademy ? 'AC' : 'FY'}
+          {isAcademy ? 'A' : 'F'}
         </button>
         {navItems.map((item) => {
           const Icon = item.icon

@@ -7,11 +7,11 @@ from typing import Any
 from anthropic import Anthropic, BadRequestError
 
 from app.config import get_settings
-from app.llm_defaults import HAIKU_45_MODEL
+from app.llm_defaults import SONNET_5_MODEL
 from app.services.llm.base import LLMCompletionResult
 from app.services.llm.reasoning import ReasoningSettings
 
-_DEFAULT_MODEL = HAIKU_45_MODEL
+_DEFAULT_MODEL = SONNET_5_MODEL
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
 _PREFILL_ERROR_MARKERS = ("prefill", "must end with a user message")
@@ -23,6 +23,8 @@ _PREFILL_UNSUPPORTED_MODELS: set[str] = set()
 # families (Haiku 4.5, *-4-5) instead use a manual thinking.budget_tokens cap.
 # See docs/internal/llm-reasoning-levels.md for the full mode matrix.
 _ADAPTIVE_MODEL_MARKERS = (
+    "sonnet-5",
+    "opus-5",
     "sonnet-4-6",
     "opus-4-6",
     "opus-4-7",

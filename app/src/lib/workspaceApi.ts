@@ -155,10 +155,11 @@ export interface StageRun {
   completed_at: string | null
 }
 
-// Reading/listening outputs; any combination may be generated.
-export const NARRATION_ARTIFACT_OPTIONS = [
+// Learning/export outputs; any combination may be generated.
+export const ARTIFACT_OPTIONS = [
   { value: 'electronic_book', label: 'Electronic Book' },
   { value: 'narration_audio', label: 'Audio Narration' },
+  { value: 'wiki_json', label: 'Wiki Export' },
 ] as const
 
 // Assessment outputs are selected individually; any combination may be generated.
@@ -166,11 +167,6 @@ export const ASSESSMENT_ARTIFACT_OPTIONS = [
   { value: 'flashcards', label: 'Flashcards' },
   { value: 'quizzes', label: 'Quizzes' },
   { value: 'scenarios', label: 'Scenarios' },
-] as const
-
-// Knowledge outputs: the curated wiki snapshotted as a downloadable JSON artifact.
-export const KNOWLEDGE_ARTIFACT_OPTIONS = [
-  { value: 'wiki_json', label: 'Wiki JSON Export' },
 ] as const
 
 export async function listWorkspaces(): Promise<Workspace[]> {
@@ -295,6 +291,21 @@ export interface CatalogModel {
   output_per_million: number | null
 }
 
+export interface TtsVoice {
+  id: string
+  display_name: string
+}
+
+export interface TtsCatalogModel {
+  model: string
+  provider: string
+  display_name: string
+  default_voice_id: string
+  voices: TtsVoice[]
+  price_per_million: number | null
+  capability_tier: number
+}
+
 export interface StageSetting {
   stage_action: string
   label: string
@@ -302,13 +313,20 @@ export interface StageSetting {
   model: string
   reasoning_effort: string | null
   reasoning_tokens: number | null
+  voice_id: string | null
   is_overridden: boolean
   default_provider: string
   default_model: string
+  default_voice_id: string | null
 }
 
 export async function getModelCatalog(): Promise<CatalogModel[]> {
   const response = await apiRequest<{ models: CatalogModel[] }>('/llm/catalog')
+  return response.models
+}
+
+export async function getTtsCatalog(): Promise<TtsCatalogModel[]> {
+  const response = await apiRequest<{ models: TtsCatalogModel[] }>('/tts/catalog')
   return response.models
 }
 
@@ -327,6 +345,7 @@ export async function putStageSetting(
     model: string
     reasoning_effort?: string | null
     reasoning_tokens?: number | null
+    voice_id?: string | null
   },
 ): Promise<StageSetting> {
   return apiRequest<StageSetting>(

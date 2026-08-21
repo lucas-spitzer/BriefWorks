@@ -412,7 +412,7 @@ values
     '1.0',
     'mathesys',
     'Generate Narration',
-    'Synthesize per-paragraph ElevenLabs narration with character-level timing, stored as narration_segments rows for the Reader''s read-while-listen mode.',
+    'Synthesize per-chapter TTS narration with word-level timing. Chapters that exceed the provider character cap are split on paragraph boundaries. Stored as narration_segments rows (shared chapter audio_path) for the Reader''s read-while-listen mode.',
     array['text', 'audio'],
     '{"type":"object","properties":{"source_id":{"type":"string"},"voice_id":{"type":"string"},"model_id":{"type":"string"}}}'::jsonb,
     '{"type":"object","properties":{"segments_narrated":{"type":"integer"},"segments_reused":{"type":"integer"},"segments_skipped":{"type":"integer"},"character_count":{"type":"integer"}}}'::jsonb,

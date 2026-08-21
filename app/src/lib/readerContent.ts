@@ -112,6 +112,14 @@ export type SpokenWord = {
 }
 export type WordBlock = { block: Block; words: SpokenWord[] }
 
+export type NarrationClip = {
+  fetchSegmentId: string
+  audioKey: string
+  base: number
+  count: number
+  timings: { s: number; e: number }[]
+}
+
 type StyledWord = { text: string; em: boolean; strong: boolean }
 
 // Tokenize a markdown paragraph into words, tracking *em* / **strong** state.
@@ -375,4 +383,36 @@ export function buildNarration(blocks: Block[]): { wordBlocks: WordBlock[]; tota
     wordBlocks.push({ block, words })
   }
   return { wordBlocks, total: global }
+}
+
+/** Group paragraph timings that share an audio file into one playable clip. */
+export function buildNarrationClips(
+  wordBlocks: WordBlock[],
+  narration: Map<
+    string,
+    { audio_path?: string | null; words: { s: number; e: number }[] }
+  >,
+): NarrationClip[] {
+  const clips: NarrationClip[] = []
+  for (const wb of wordBlocks) {
+    if (wb.words.length === 0) continue
+    const row = narration.get(wb.block.id)
+    if (!row || row.words.length === 0) continue
+    const audioKey = row.audio_path || wb.block.id
+    const last = clips[clips.length - 1]
+    const timings = row.words.map((w) => ({ s: w.s, e: w.e }))
+    if (last && last.audioKey === audioKey) {
+      last.count += wb.words.length
+      last.timings.push(...timings)
+      continue
+    }
+    clips.push({
+      fetchSegmentId: wb.block.id,
+      audioKey,
+      base: wb.words[0].global,
+      count: wb.words.length,
+      timings,
+    })
+  }
+  return clips
 }

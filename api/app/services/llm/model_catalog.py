@@ -20,7 +20,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.llm_defaults import HAIKU_45_MODEL
+from app.llm_defaults import (
+    GEMINI_37_FLASH_MODEL,
+    GPT_56_LUNA_MODEL,
+    GPT_56_SOL_MODEL,
+    GPT_56_TERRA_MODEL,
+    HAIKU_45_MODEL,
+    OPUS_5_MODEL,
+    SONNET_5_MODEL,
+)
 
 
 @dataclass(frozen=True)
@@ -37,32 +45,31 @@ class CatalogModel:
 
 
 # Prices are USD per million tokens (standard on-demand, paid tier), from the
-# June 2026 pricing snapshot. Only providers with a working client (OpenAI,
-# Anthropic) are listed — adding Google here would let the UI pick a model the
-# factory cannot build. context_window is left None where not reliably known.
+# August 2026 pricing snapshot. Only providers with a working client are listed.
+# Gemini 3.7 Flash uses introductory list prices through 2026-12-31.
 MODEL_CATALOG: tuple[CatalogModel, ...] = (
     # --- Anthropic ---
     CatalogModel(
-        model="claude-opus-4-8",
+        model=OPUS_5_MODEL,
         provider="anthropic",
-        display_name="Claude Opus 4.8",
+        display_name="Claude Opus 5",
         capability_tier=5,
         supports_reasoning=True,
         reasoning_modes=("adaptive",),
-        context_window=200_000,
+        context_window=1_000_000,
         input_per_million=5.00,
         output_per_million=25.00,
     ),
     CatalogModel(
-        model="claude-sonnet-4-6",
+        model=SONNET_5_MODEL,
         provider="anthropic",
-        display_name="Claude Sonnet 4.6",
+        display_name="Claude Sonnet 5",
         capability_tier=4,
         supports_reasoning=True,
         reasoning_modes=("adaptive",),
-        context_window=200_000,
-        input_per_million=3.00,
-        output_per_million=15.00,
+        context_window=1_000_000,
+        input_per_million=2.00,
+        output_per_million=10.00,
     ),
     CatalogModel(
         model=HAIKU_45_MODEL,
@@ -77,37 +84,49 @@ MODEL_CATALOG: tuple[CatalogModel, ...] = (
     ),
     # --- OpenAI ---
     CatalogModel(
-        model="gpt-5.5",
+        model=GPT_56_SOL_MODEL,
         provider="openai",
-        display_name="GPT-5.5",
+        display_name="GPT-5.6 Sol",
         capability_tier=5,
         supports_reasoning=True,
         reasoning_modes=("effort",),
-        context_window=None,
+        context_window=1_050_000,
         input_per_million=5.00,
         output_per_million=30.00,
     ),
     CatalogModel(
-        model="gpt-5.4",
+        model=GPT_56_TERRA_MODEL,
         provider="openai",
-        display_name="GPT-5.4",
+        display_name="GPT-5.6 Terra",
         capability_tier=4,
         supports_reasoning=True,
         reasoning_modes=("effort",),
-        context_window=None,
-        input_per_million=2.50,
-        output_per_million=15.00,
+        context_window=1_050_000,
+        input_per_million=2.00,
+        output_per_million=12.00,
     ),
     CatalogModel(
-        model="gpt-5.4-mini",
+        model=GPT_56_LUNA_MODEL,
         provider="openai",
-        display_name="GPT-5.4 mini",
+        display_name="GPT-5.6 Luna",
+        capability_tier=2,
+        supports_reasoning=True,
+        reasoning_modes=("effort",),
+        context_window=1_050_000,
+        input_per_million=0.20,
+        output_per_million=1.20,
+    ),
+    # --- Google ---
+    CatalogModel(
+        model=GEMINI_37_FLASH_MODEL,
+        provider="google",
+        display_name="Gemini 3.7 Flash",
         capability_tier=3,
         supports_reasoning=True,
         reasoning_modes=("effort",),
-        context_window=None,
+        context_window=1_048_576,
         input_per_million=0.75,
-        output_per_million=4.50,
+        output_per_million=3.75,
     ),
 )
 
@@ -123,7 +142,7 @@ def get_catalog_model(model: str | None) -> CatalogModel | None:
         if entry.model.lower() == normalized:
             return entry
 
-    # Longest prefix first so "gpt-5.4-mini-..." beats "gpt-5.4".
+    # Longest prefix first so "gpt-5.6-luna-..." beats a shorter family prefix.
     for entry in sorted(MODEL_CATALOG, key=lambda e: len(e.model), reverse=True):
         if normalized.startswith(entry.model.lower()):
             return entry
@@ -131,7 +150,7 @@ def get_catalog_model(model: str | None) -> CatalogModel | None:
     return None
 
 
-SELECTABLE_PROVIDERS: frozenset[str] = frozenset({"openai", "anthropic"})
+SELECTABLE_PROVIDERS: frozenset[str] = frozenset({"openai", "anthropic", "google"})
 
 
 def validate_selection(provider: str | None, model: str | None) -> str | None:

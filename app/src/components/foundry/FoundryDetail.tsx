@@ -104,7 +104,7 @@ export function FoundryDetail({ run }: FoundryDetailProps) {
                   {pipelineStepDetail(step, run.pipeline, stageRuns, run.status)}
                 </div>
                 {narrationProgress ? (
-                  <div className="as-console__progress as-console__progress--step" title={`${narrationProgress.done}/${narrationProgress.total} segments`}>
+                  <div className="as-console__progress as-console__progress--step" title={`${narrationProgress.done}/${narrationProgress.total} clips`}>
                     <span style={{ width: `${narrationPct}%` }} />
                   </div>
                 ) : null}

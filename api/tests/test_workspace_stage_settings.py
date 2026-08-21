@@ -39,13 +39,15 @@ def test_workspace_override_wins_over_env(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_resolve_falls_through_when_no_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # First resolve reloads .env with override=True; set the env after that.
+    resolve_action("qngen_draft")
     monkeypatch.setenv("LLM_QNGEN_DRAFT_PROVIDER", "openai")
-    monkeypatch.setenv("LLM_QNGEN_DRAFT_MODEL", "gpt-4o")
+    monkeypatch.setenv("DRAFT_MODEL", "gpt-5.6-sol")
 
     provider, model = resolve_action("qngen_draft")
 
     assert provider == "openai"
-    assert model == "gpt-4o"
+    assert model == "gpt-5.6-sol"
 
 
 def test_get_llm_client_honors_override(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -81,9 +83,30 @@ def test_overrides_from_rows_builds_map_and_normalizes() -> None:
     assert overrides["source_web_enrichment"].model == "claude-sonnet-4-6"
 
 
+def test_overrides_from_rows_ignores_tts_providers() -> None:
+    rows = [
+        {
+            "stage_action": "audio_narration",
+            "provider": "speechify",
+            "model": "simba-3.2",
+            "voice_id": "hugh_32",
+        },
+        {
+            "stage_action": "wiki_structuring",
+            "provider": "openai",
+            "model": "gpt-5.4",
+        },
+    ]
+
+    overrides = overrides_from_rows(rows)
+
+    assert "audio_narration" not in overrides
+    assert overrides["wiki_structuring"].model == "gpt-5.4"
+
+
 def test_overrides_from_rows_drops_unbuildable_or_empty() -> None:
     rows = [
-        {"stage_action": "wiki_structuring", "provider": "google", "model": "gemini-3"},
+        {"stage_action": "wiki_structuring", "provider": "cohere", "model": "command-r"},
         {"stage_action": "", "provider": "openai", "model": "gpt-4o"},
         {"stage_action": "source_web_enrichment", "provider": "anthropic", "model": ""},
     ]
@@ -102,13 +125,13 @@ def test_overrides_from_rows_allows_uncatalogued_model() -> None:
 
 
 def test_validate_selection_accepts_known_and_unknown_models() -> None:
-    assert validate_selection("anthropic", "claude-opus-4-8") is None
+    assert validate_selection("anthropic", "claude-opus-5") is None
     # A model not yet in the catalog is still selectable.
     assert validate_selection("openai", "gpt-6-future") is None
 
 
 def test_validate_selection_rejects_bad_input() -> None:
-    assert validate_selection("google", "gemini-3") is not None
+    assert validate_selection("cohere", "command-r") is not None
     assert validate_selection("openai", "") is not None
     # Known model paired with the wrong provider is rejected.
-    assert validate_selection("openai", "claude-opus-4-8") is not None
+    assert validate_selection("openai", "claude-opus-5") is not None

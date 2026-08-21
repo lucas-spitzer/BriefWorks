@@ -1,12 +1,11 @@
 """ElevenLabs text-to-speech with character-level timing.
 
-Narration is synthesized one ndr_segment (paragraph) at a time via
+Narration is synthesized one chapter clip at a time via
 POST /v1/text-to-speech/{voice_id}/with-timestamps, which returns the audio
 plus per-character start/end times. Character times are folded into word
 timings using the same whitespace tokenization the Reader applies to the
-segment's plain text, so the frontend can highlight the spoken word by index
-without re-deriving alignment. Prosody continuity across paragraphs comes from
-request stitching (previous_request_ids) plus next_text hints.
+clip's plain text. When a chapter exceeds the character cap it is packed into
+multiple clips on paragraph boundaries.
 """
 
 from __future__ import annotations
@@ -108,7 +107,7 @@ class ElevenLabsClient:
         max_retries: int | None = None,
     ) -> None:
         settings = get_settings().narration
-        self.api_key = api_key if api_key is not None else settings.api_key
+        self.api_key = api_key if api_key is not None else settings.elevenlabs_api_key
         self.voice_id = voice_id or settings.voice_id
         self.model_id = model_id or settings.model_id
         self.output_format = output_format or settings.output_format
@@ -116,6 +115,8 @@ class ElevenLabsClient:
             request_timeout_seconds or settings.request_timeout_seconds
         )
         self.max_retries = max_retries or settings.max_retries
+        self.provider = "elevenlabs"
+        self.max_segment_chars = settings.elevenlabs_max_segment_chars
 
     @property
     def enabled(self) -> bool:

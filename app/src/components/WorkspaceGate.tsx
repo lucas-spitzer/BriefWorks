@@ -1,4 +1,5 @@
 import { Fragment, useState, type CSSProperties, type ReactNode } from 'react'
+import { ArsenalMark } from './brand/ArsenalMark'
 import { useWorkspace } from '../features/workspace/workspaceContext'
 import '../gate.css'
 
@@ -24,7 +25,7 @@ export function WorkspaceGate({ children }: WorkspaceGateProps) {
     return (
       <main className="as-gate" aria-live="polite">
         <section className="as-gate__status">
-          <div className="as-gate__mark">AS</div>
+          <ArsenalMark className="as-gate__mark" />
           <p className="as-gate__eyebrow">Workspace Registry</p>
           <p className="as-gate__status-msg">Retrieving workspaces…</p>
           <div className="as-gate__scanner" aria-hidden="true" />
@@ -37,7 +38,7 @@ export function WorkspaceGate({ children }: WorkspaceGateProps) {
     return (
       <main className="as-gate">
         <section className="as-gate__status as-gate__status--alert" role="alert">
-          <div className="as-gate__mark">AS</div>
+          <ArsenalMark className="as-gate__mark" />
           <p className="as-gate__eyebrow">Workspace Registry</p>
           <p className="as-gate__status-msg">{error}</p>
         </section>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   READER_DEFINE_MAX_WORDS,
   buildNarration,
+  buildNarrationClips,
   endsSentence,
   matchWikiTerms,
   resolveReaderSelection,
@@ -169,5 +170,59 @@ describe('buildNarration', () => {
       para(1, 'b', 'Next paragraph starts fresh'),
     ])
     expect(wordBlocks[0].words[0].sentence).not.toBe(wordBlocks[1].words[0].sentence)
+  })
+})
+
+describe('buildNarrationClips', () => {
+  it('groups paragraphs that share an audio_path into one clip', () => {
+    const { wordBlocks } = buildNarration(blocks)
+    const narration = new Map([
+      [
+        'p1',
+        {
+          audio_path: 'chapter-0.mp3',
+          words: [
+            { s: 0, e: 0.2 },
+            { s: 0.2, e: 0.4 },
+            { s: 0.4, e: 0.6 },
+            { s: 0.6, e: 0.8 },
+          ],
+        },
+      ],
+      [
+        'p2',
+        {
+          audio_path: 'chapter-0.mp3',
+          words: [
+            { s: 0.9, e: 1.1 },
+            { s: 1.1, e: 1.3 },
+            { s: 1.3, e: 1.5 },
+            { s: 1.5, e: 1.7 },
+            { s: 1.7, e: 1.9 },
+            { s: 1.9, e: 2.1 },
+          ],
+        },
+      ],
+      [
+        'p3',
+        {
+          audio_path: 'chapter-1.mp3',
+          words: [
+            { s: 0, e: 0.2 },
+            { s: 0.2, e: 0.4 },
+            { s: 0.4, e: 0.6 },
+            { s: 0.6, e: 0.8 },
+          ],
+        },
+      ],
+    ])
+    const clips = buildNarrationClips(wordBlocks, narration)
+    expect(clips).toHaveLength(2)
+    expect(clips[0].audioKey).toBe('chapter-0.mp3')
+    expect(clips[0].fetchSegmentId).toBe('p1')
+    expect(clips[0].count).toBe(10)
+    expect(clips[0].timings).toHaveLength(10)
+    expect(clips[1].audioKey).toBe('chapter-1.mp3')
+    expect(clips[1].count).toBe(4)
   })
 })

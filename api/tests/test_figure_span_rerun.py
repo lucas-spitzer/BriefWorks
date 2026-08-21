@@ -62,6 +62,9 @@ def test_create_ebook_prefers_prior_manifest_publication_metadata() -> None:
     assert created["manifest"]["author"] == "United States Marine Corps"
     assert created["manifest"]["identifier"] == "MCDP 1"
     assert created["filename"] == "warfighting.epub"
+    assert storage.upload.call_args.args[0] == (
+        "workspaces/ws/sources/src-1/artifacts/ebook/art-new/warfighting.epub"
+    )
 
 
 def test_create_ebook_falls_back_to_research_when_no_prior_snapshot() -> None:

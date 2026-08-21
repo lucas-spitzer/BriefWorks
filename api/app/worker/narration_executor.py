@@ -1,20 +1,17 @@
-"""Generate Narration stage: per-paragraph ElevenLabs TTS with word timings.
+"""Generate Narration stage: per-chapter TTS with word timings.
 
-Walks each source's document_chapters in reading order and synthesizes every
-paragraph ndr_segment that does not yet have narration for the configured
-voice (idempotent re-runs). Audio is stored per segment in the sources bucket
-(`<source dir>/narration/<voice_id>/<segment_id>.mp3`) and the word-level
-timings land on the narration_segments row, so the Reader can highlight the
-spoken word from the row alone — no alignment files to fetch.
+Walks each source's document_chapters in reading order and synthesizes one
+MP3 per chapter for the configured voice (idempotent re-runs). If a chapter's
+joined paragraph text exceeds the provider character cap, it is packed into
+the fewest clips that fit, always splitting on paragraph boundaries. A single
+paragraph over the cap is skipped.
 
-Per-segment requests keep every alignment scoped to exactly one segment's
-plain text (the same tokenization the Reader uses), which is what makes the
-word indexes trustworthy. Prosody continuity across paragraph boundaries comes
-from ElevenLabs request stitching (previous_request_ids + next_text).
+Audio is stored at `<source dir>/narration/<voice_id>/<chapter_id>-<clip>.mp3`.
+Each paragraph keeps a `narration_segments` row pointing at that shared file,
+with word timings on the clip timeline so the Reader can highlight and seek.
 
 The downloadable artifact is a small JSON manifest (chapter grouping, timings,
-and sources-bucket audio paths) — not a zip of MP3s — so stage completion stays
-under Storage size limits while the Reader uses the per-segment files.
+and sources-bucket audio paths) — not a zip of MP3s.
 """
 
 from __future__ import annotations
@@ -24,9 +21,12 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.artifact_paths import downloadable_artifact_path
 from app.intellex.wiki_slug import normalize_slug
-from app.services.api_pricing import cost_elevenlabs_usage
-from app.services.elevenlabs_client import ElevenLabsClient, ElevenLabsError
+from app.services.api_pricing import cost_tts_usage
+from app.services.elevenlabs_client import ElevenLabsError, WordTiming
+from app.services.speechify_client import SpeechifyError
+from app.services.tts.factory import TtsClient, get_tts_client
 from app.services.stage_run_billing import stage_run_completion_fields
 from app.worker.db import WorkerDatabase
 from app.worker.storage import WorkerStorage
@@ -38,16 +38,92 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _narration_path(storage_path: str, voice_id: str, segment_id: str) -> str:
-    parent = storage_path.rsplit("/", 1)[0]
-    return f"{parent}/narration/{voice_id}/{segment_id}.mp3"
-
-
-def _downloadable_artifact_path(
-    source_storage_path: str, artifact_id: str, filename: str
+def _narration_path(
+    storage_path: str, voice_id: str, chapter_id: str, clip_index: int
 ) -> str:
-    parent = source_storage_path.rsplit("/", 1)[0]
-    return f"{parent}/artifacts/{artifact_id}/{filename}"
+    parent = storage_path.rsplit("/", 1)[0]
+    return f"{parent}/narration/{voice_id}/{chapter_id}-{clip_index:02d}.mp3"
+
+
+_CLIP_JOIN = "\n\n"
+
+
+def _paragraph_text(row: dict[str, Any]) -> str:
+    return str(row.get("text") or "").strip()
+
+
+def _joined_clip_text(paragraphs: list[dict[str, Any]]) -> str:
+    return _CLIP_JOIN.join(
+        text for text in (_paragraph_text(row) for row in paragraphs) if text
+    )
+
+
+def pack_chapter_clips(
+    paragraphs: list[dict[str, Any]],
+    max_chars: int,
+) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]], int]:
+    """Pack chapter paragraphs into TTS clips that fit under `max_chars`.
+
+    Returns (clips, oversize_paragraphs, empty_count). Clips never split a
+    paragraph. A paragraph longer than the cap is omitted rather than truncated.
+    """
+    clips: list[list[dict[str, Any]]] = []
+    oversize: list[dict[str, Any]] = []
+    empty_count = 0
+    current: list[dict[str, Any]] = []
+    current_len = 0
+
+    for row in paragraphs:
+        text = _paragraph_text(row)
+        if not text:
+            empty_count += 1
+            continue
+        if len(text) > max_chars:
+            if current:
+                clips.append(current)
+                current = []
+                current_len = 0
+            oversize.append(row)
+            continue
+        extra = len(text) if not current else len(_CLIP_JOIN) + len(text)
+        if current and current_len + extra > max_chars:
+            clips.append(current)
+            current = [row]
+            current_len = len(text)
+        else:
+            current.append(row)
+            current_len += extra
+
+    if current:
+        clips.append(current)
+    return clips, oversize, empty_count
+
+
+def assign_words_to_paragraphs(
+    paragraphs: list[dict[str, Any]],
+    words: list[WordTiming],
+) -> list[list[WordTiming]]:
+    """Slice clip-level word timings onto each paragraph's token stream."""
+    assigned: list[list[WordTiming]] = []
+    cursor = 0
+    for row in paragraphs:
+        n = len(_paragraph_text(row).split())
+        chunk = words[cursor : cursor + n]
+        assigned.append(
+            [
+                WordTiming(index=i, word=word.word, start=word.start, end=word.end)
+                for i, word in enumerate(chunk)
+            ]
+        )
+        cursor += n
+    if cursor != len(words):
+        logger.warning(
+            "Clip alignment produced %d words for %d expected tokens; "
+            "highlighting may drift in this chapter clip.",
+            len(words),
+            cursor,
+        )
+    return assigned
 
 
 def _progress_output(
@@ -63,7 +139,7 @@ def _progress_output(
 ) -> dict[str, Any]:
     """Stage-run output shape used both mid-run (live UI) and at completion."""
     return {
-        "summary": f"{done}/{total} segments",
+        "summary": f"{done}/{total} clips",
         "segments_done": done,
         "segments_total": total,
         "segments_narrated": narrated,
@@ -97,17 +173,25 @@ class NarrationStageExecutor:
         self,
         db: WorkerDatabase | None = None,
         storage: WorkerStorage | None = None,
-        client: ElevenLabsClient | None = None,
+        client: TtsClient | None = None,
         max_segment_chars: int | None = None,
     ) -> None:
-        from app.config import get_settings
-
         self.db = db or WorkerDatabase()
         self.storage = storage or WorkerStorage()
-        self.client = client or ElevenLabsClient()
-        self.max_segment_chars = (
-            max_segment_chars or get_settings().narration.max_segment_chars
-        )
+        self._client = client
+        self._max_segment_chars = max_segment_chars
+
+    @property
+    def client(self) -> TtsClient:
+        if self._client is None:
+            self._client = get_tts_client()
+        return self._client
+
+    @property
+    def max_segment_chars(self) -> int:
+        if self._max_segment_chars is not None:
+            return self._max_segment_chars
+        return self.client.max_segment_chars
 
     def run_for_source(
         self,
@@ -153,7 +237,8 @@ class NarrationStageExecutor:
                 promoted["artifact_ids"] = [artifact_file["artifact_id"]]
             extra_calls = (
                 [
-                    cost_elevenlabs_usage(
+                    cost_tts_usage(
+                        provider=getattr(self.client, "provider", "elevenlabs"),
                         model=self.client.model_id,
                         character_count=character_count,
                     )
@@ -177,10 +262,30 @@ class NarrationStageExecutor:
             return stage_run_id
         except Exception as exc:
             logger.exception("Narration stage run %s failed", stage_run_id)
-            self.db.update_stage_run(
-                stage_run_id,
-                {"status": "failed", "error": str(exc), "completed_at": utc_now_iso()},
-            )
+            fail_payload: dict[str, Any] = {
+                "status": "failed",
+                "error": str(exc),
+                "completed_at": utc_now_iso(),
+            }
+            try:
+                artifact_file = self._publish_artifact(
+                    workspace_id=workspace_id,
+                    production_run_id=production_run_id,
+                    stage_run_id=stage_run_id,
+                    source=source,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to publish partial narration artifact for stage run %s",
+                    stage_run_id,
+                )
+                artifact_file = None
+            if artifact_file:
+                fail_payload["promoted"] = {
+                    "source_ids": [source["id"]],
+                    "artifact_ids": [artifact_file["artifact_id"]],
+                }
+            self.db.update_stage_run(stage_run_id, fail_payload)
             raise
 
     def _publish_progress(
@@ -215,8 +320,13 @@ class NarrationStageExecutor:
         stage_run_id: str,
     ) -> tuple[dict[str, Any], int, dict[str, Any]]:
         if not self.client.enabled:
-            raise ElevenLabsError(
-                "ELEVENLABS_API_KEY is not configured; cannot generate narration."
+            provider = getattr(self.client, "provider", "tts")
+            key_name = (
+                "SPEECHIFY_API_KEY" if provider == "speechify" else "ELEVENLABS_API_KEY"
+            )
+            error_cls = SpeechifyError if provider == "speechify" else ElevenLabsError
+            raise error_cls(
+                f"{key_name} is not configured; cannot generate narration."
             )
 
         source_id = source["id"]
@@ -233,18 +343,35 @@ class NarrationStageExecutor:
                 f"Source {source_id} has no document chapters; run the base pipeline first."
             )
 
-        already = self.db.list_narrated_segment_ids_for_source(
-            source_id, self.client.voice_id
-        )
+        existing_rows = {
+            row["segment_id"]: row
+            for row in self.db.list_narration_segments_for_source(
+                source_id, self.client.voice_id
+            )
+        }
 
-        chapter_paragraphs = [
-            _paragraph_rows_for_chapter(chapter, segments) for chapter in chapters
-        ]
-        segments_total = sum(len(rows) for rows in chapter_paragraphs)
+        packed: list[tuple[dict[str, Any], int, list[dict[str, Any]]]] = []
+        skipped = 0
+        for chapter in chapters:
+            paragraph_rows = _paragraph_rows_for_chapter(chapter, segments)
+            clips, oversize, empty_count = pack_chapter_clips(
+                paragraph_rows, self.max_segment_chars
+            )
+            skipped += empty_count
+            for row in oversize:
+                logger.warning(
+                    "Paragraph %s is %d chars (> %d); skipping narration for it.",
+                    row["id"],
+                    len(_paragraph_text(row)),
+                    self.max_segment_chars,
+                )
+                skipped += 1
+            for clip_index, clip_rows in enumerate(clips):
+                packed.append((chapter, clip_index, clip_rows))
 
+        clips_total = len(packed)
         narrated = 0
         reused = 0
-        skipped = 0
         done = 0
         character_count = 0
         previous_request_ids: list[str] = []
@@ -253,7 +380,7 @@ class NarrationStageExecutor:
             return self._publish_progress(
                 stage_run_id,
                 done=done,
-                total=segments_total,
+                total=clips_total,
                 narrated=narrated,
                 reused=reused,
                 skipped=skipped,
@@ -263,56 +390,42 @@ class NarrationStageExecutor:
         # Seed progress so the console shows 0/N before the first TTS round-trip.
         output = publish()
 
-        for chapter, paragraph_rows in zip(chapters, chapter_paragraphs, strict=True):
-            for index, row in enumerate(paragraph_rows):
-                if row["id"] in already:
-                    reused += 1
-                    # A gap in request stitching; the next request starts fresh.
-                    previous_request_ids = []
-                    done += 1
-                    output = publish()
-                    continue
+        last_chapter_id: str | None = None
+        for chapter, clip_index, clip_rows in packed:
+            chapter_id = str(chapter.get("id") or "")
+            if last_chapter_id is not None and chapter_id != last_chapter_id:
+                previous_request_ids = []
+            last_chapter_id = chapter_id
 
-                text = (row.get("text") or "").strip()
-                if not text:
-                    skipped += 1
-                    done += 1
-                    output = publish()
-                    continue
-                if len(text) > self.max_segment_chars:
-                    logger.warning(
-                        "Segment %s is %d chars (> %d); skipping narration for it.",
-                        row["id"],
-                        len(text),
-                        self.max_segment_chars,
-                    )
-                    skipped += 1
-                    previous_request_ids = []
-                    done += 1
-                    output = publish()
-                    continue
+            audio_path = _narration_path(
+                storage_path, self.client.voice_id, chapter_id, clip_index
+            )
+            clip_ids = [str(row["id"]) for row in clip_rows]
+            if clip_ids and all(
+                existing_rows.get(segment_id, {}).get("audio_path") == audio_path
+                for segment_id in clip_ids
+            ):
+                reused += 1
+                previous_request_ids = []
+                done += 1
+                output = publish()
+                continue
 
-                next_text = (
-                    paragraph_rows[index + 1].get("text")
-                    if index + 1 < len(paragraph_rows)
-                    else None
-                )
-                result = self.client.synthesize_with_timestamps(
-                    text,
-                    previous_request_ids=previous_request_ids,
-                    next_text=next_text,
-                )
+            text = _joined_clip_text(clip_rows)
+            result = self.client.synthesize_with_timestamps(
+                text,
+                previous_request_ids=previous_request_ids,
+            )
+            per_paragraph_words = assign_words_to_paragraphs(clip_rows, result.words)
 
-                audio_path = _narration_path(
-                    storage_path, self.client.voice_id, row["id"]
-                )
-                self.storage.upload(
-                    audio_path,
-                    result.audio,
-                    bucket=self.storage.sources_bucket,
-                    content_type="audio/mpeg",
-                )
-                self.db.insert_narration_segment(
+            self.storage.upload(
+                audio_path,
+                result.audio,
+                bucket=self.storage.sources_bucket,
+                content_type="audio/mpeg",
+            )
+            for row, words in zip(clip_rows, per_paragraph_words, strict=True):
+                self.db.upsert_narration_segment(
                     {
                         "workspace_id": workspace_id,
                         "source_id": source_id,
@@ -322,22 +435,20 @@ class NarrationStageExecutor:
                         "model_id": self.client.model_id,
                         "audio_path": audio_path,
                         "duration_seconds": result.duration_seconds,
-                        "words": [word.to_dict() for word in result.words],
+                        "words": [word.to_dict() for word in words],
                         "request_id": result.request_id,
                         "character_count": result.character_cost,
                     }
                 )
+                existing_rows[str(row["id"])] = {"audio_path": audio_path}
 
-                narrated += 1
-                character_count += result.character_cost
-                if result.request_id:
-                    previous_request_ids = (previous_request_ids + [result.request_id])[-3:]
+            narrated += 1
+            character_count += result.character_cost
+            if result.request_id:
+                previous_request_ids = (previous_request_ids + [result.request_id])[-3:]
 
-                done += 1
-                output = publish()
-
-            # Chapters are natural narration breaks; do not stitch across them.
-            previous_request_ids = []
+            done += 1
+            output = publish()
 
         publish_context = {
             "chapters": chapters,
@@ -358,17 +469,28 @@ class NarrationStageExecutor:
         production_run_id: str,
         stage_run_id: str,
         source: dict[str, Any],
-        chapters: list[dict[str, Any]],
-        segments: dict[str, dict[str, Any]],
+        chapters: list[dict[str, Any]] | None = None,
+        segments: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any] | None:
-        """Publish a JSON manifest of narrated segments as the downloadable artifact.
+        """Publish a JSON manifest of narrated chapter clips as the downloadable artifact.
 
-        Per-segment MP3s stay in the sources bucket (Reader source of truth). The
+        Per-chapter MP3s stay in the sources bucket (Reader source of truth). The
         artifact is a small export: chapter grouping, word timings, and each
-        segment's audio_path — usable without embedding audio bytes.
+        paragraph's shared audio_path — usable without embedding audio bytes.
+
+        Called on success and after a partial failure so clips already written
+        still get an `artifacts` row.
         """
+        source_id = source["id"]
+        if chapters is None:
+            chapters = self.db.list_document_chapters_for_source(source_id)
+        if segments is None:
+            segments = {
+                row["id"]: row
+                for row in self.db.list_ndr_segments_for_source(source_id)
+            }
         rows = self.db.list_narration_segments_for_source(
-            source["id"], self.client.voice_id
+            source_id, self.client.voice_id
         )
         by_segment = {row["segment_id"]: row for row in rows}
         if not by_segment:
@@ -380,6 +502,7 @@ class NarrationStageExecutor:
         manifest_chapters: list[dict[str, Any]] = []
         total_duration = 0.0
         segment_total = 0
+        billed_paths: set[str] = set()
 
         for chapter in chapters:
             entries: list[dict[str, Any]] = []
@@ -390,7 +513,10 @@ class NarrationStageExecutor:
                 segment = segments.get(segment_id) or {}
                 sequence_index = int(segment.get("sequence_index") or 0)
                 duration = float(row.get("duration_seconds") or 0)
-                total_duration += duration
+                path = str(row.get("audio_path") or "")
+                if path and path not in billed_paths:
+                    billed_paths.add(path)
+                    total_duration += duration
                 segment_total += 1
                 entries.append(
                     {
@@ -418,6 +544,7 @@ class NarrationStageExecutor:
             "model_id": self.client.model_id,
             "generated_at": utc_now_iso(),
             "segment_count": segment_total,
+            "clip_count": len(billed_paths),
             "total_duration_seconds": round(total_duration, 3),
             "chapters": manifest_chapters,
         }
@@ -439,6 +566,7 @@ class NarrationStageExecutor:
                     "voice_id": self.client.voice_id,
                     "model_id": self.client.model_id,
                     "segment_count": segment_total,
+                    "clip_count": len(billed_paths),
                     "chapter_count": len(manifest_chapters),
                     "chapter_titles": [c["title"] for c in manifest_chapters],
                     "total_duration_seconds": round(total_duration, 3),
@@ -451,8 +579,8 @@ class NarrationStageExecutor:
             }
         )
         artifact_id = artifact["id"]
-        storage_path = _downloadable_artifact_path(
-            source["storage_path"], artifact_id, filename
+        storage_path = downloadable_artifact_path(
+            source["storage_path"], "narration_audio", artifact_id, filename
         )
         self.storage.upload(
             storage_path,

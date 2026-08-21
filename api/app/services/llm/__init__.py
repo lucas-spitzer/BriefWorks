@@ -17,12 +17,14 @@ from app.services.llm.factory import (
     resolve_action,
     set_workspace_overrides,
 )
+from app.services.llm.gemini_client import GeminiClient
 from app.services.llm.openai_adapter import OpenAILLMClient
 from app.services.llm.reasoning import ReasoningSettings
 
 __all__ = [
     "ActionOverride",
     "AnthropicClient",
+    "GeminiClient",
     "HAIKU_45_MODEL",
     "LLMClient",
     "LLMCompletionResult",

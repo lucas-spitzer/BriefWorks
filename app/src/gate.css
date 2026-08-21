@@ -82,13 +82,10 @@
   height: 44px;
   flex: none;
   border-radius: 10px;
-  display: grid;
-  place-items: center;
+  display: block;
+  overflow: hidden;
   background: var(--color-scarlet);
-  color: var(--color-white);
-  font-family: var(--bwg-grotesk);
-  font-size: 1.05rem;
-  font-weight: 700;
+  object-fit: cover;
 }
 
 .as-gate__cta {

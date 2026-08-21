@@ -19,22 +19,38 @@ def test_every_action_default_model_is_in_catalog() -> None:
         assert model in catalog_ids, f"{model} ({provider}) missing from catalog"
 
 
+def test_catalog_contains_only_selected_models() -> None:
+    catalog_ids = {entry.model for entry in MODEL_CATALOG}
+
+    assert catalog_ids == {
+        "claude-opus-5",
+        "claude-sonnet-5",
+        "claude-haiku-4-5-20251001",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+        "gemini-3.7-flash",
+    }
+
+
 def test_capability_tiers_within_range() -> None:
     for entry in MODEL_CATALOG:
         assert 1 <= entry.capability_tier <= 5
 
 
 def test_get_catalog_model_exact_and_prefix() -> None:
-    assert get_catalog_model("gpt-5.4-mini").display_name == "GPT-5.4 mini"
-    # A dated snapshot should resolve by longest-prefix, not collapse to gpt-5.4.
-    assert get_catalog_model("gpt-5.4-mini-2026-01-01").model == "gpt-5.4-mini"
-    assert get_catalog_model("gpt-5.4-2026-01-01").model == "gpt-5.4"
+    assert get_catalog_model("gpt-5.6-luna").display_name == "GPT-5.6 Luna"
+    # A dated snapshot should resolve by longest-prefix, not collapse to a sibling.
+    assert get_catalog_model("gpt-5.6-luna-2026-01-01").model == "gpt-5.6-luna"
+    assert get_catalog_model("gpt-5.6-sol-2026-01-01").model == "gpt-5.6-sol"
+    assert get_catalog_model("gemini-3.7-flash").display_name == "Gemini 3.7 Flash"
     assert get_catalog_model("nonexistent-model") is None
     assert get_catalog_model(None) is None
 
 
 def test_catalog_list_price_known_and_unknown() -> None:
     assert catalog_list_price("claude-haiku-4-5-20251001") == (1.00, 5.00)
+    assert catalog_list_price("gemini-3.7-flash") == (0.75, 3.75)
     # A model absent from the catalog has no list price.
     assert catalog_list_price("nonexistent-model") is None
 
@@ -65,17 +81,30 @@ def test_anthropic_rates_fall_back_to_catalog(monkeypatch: pytest.MonkeyPatch) -
     assert rates.output_per_million == 8.00
 
 
-def test_explicit_rate_table_wins_over_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
-    # gpt-4o-mini is in the explicit table; catalog fallback must not be consulted.
+def test_google_rates_use_catalog_and_explicit_table(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         api_pricing,
         "catalog_list_price",
         lambda model: (999.0, 999.0),
     )
 
-    rates = api_pricing.openai_rates_for_model("gpt-4o-mini")
+    rates = api_pricing.google_rates_for_model("gemini-3.7-flash")
 
-    assert rates.input_per_million == 0.15
+    assert rates.input_per_million == 0.75
+    assert rates.output_per_million == 3.75
+
+
+def test_explicit_rate_table_wins_over_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    # gpt-5.6-luna is in the explicit table; catalog fallback must not be consulted.
+    monkeypatch.setattr(
+        api_pricing,
+        "catalog_list_price",
+        lambda model: (999.0, 999.0),
+    )
+
+    rates = api_pricing.openai_rates_for_model("gpt-5.6-luna")
+
+    assert rates.input_per_million == 0.20
 
 
 def test_build_model_catalog_response_serializes_all_entries() -> None:

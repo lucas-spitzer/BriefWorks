@@ -252,7 +252,27 @@ class WorkerDatabase:
         return {row["segment_id"] for row in rows or []}
 
     def insert_narration_segment(self, payload: dict[str, Any]) -> dict[str, Any]:
-        rows = self._request("POST", "narration_segments", json_body=payload)
+        return self.upsert_narration_segment(payload)
+
+    def upsert_narration_segment(self, payload: dict[str, Any]) -> dict[str, Any]:
+        headers = {
+            **self.headers,
+            "Prefer": "resolution=merge-duplicates,return=representation",
+        }
+        with httpx.Client(timeout=60) as client:
+            response = client.request(
+                "POST",
+                f"{self.base_url}/narration_segments",
+                headers=headers,
+                params={"on_conflict": "segment_id,voice_id"},
+                json=payload,
+            )
+        if response.status_code >= 400:
+            detail = response.text.strip() or response.reason_phrase
+            raise RuntimeError(
+                f"Supabase REST request failed ({response.status_code}): {detail}",
+            )
+        rows = response.json() if response.content else []
         return rows[0] if isinstance(rows, list) and rows else {}
 
     def list_workspace_stage_settings(self, workspace_id: str) -> list[dict[str, Any]]:

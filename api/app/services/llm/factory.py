@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from app.config import get_settings
 from app.services.llm.anthropic_client import AnthropicClient
 from app.services.llm.base import LLMClient
+from app.services.llm.gemini_client import GeminiClient
 from app.services.llm.openai_adapter import OpenAILLMClient
 from app.services.llm.reasoning import ReasoningSettings
 
 _BUILDERS = {
     "anthropic": lambda model, reasoning: AnthropicClient(model=model, reasoning=reasoning),
     "openai": lambda model, reasoning: OpenAILLMClient(model=model, reasoning=reasoning),
+    "google": lambda model, reasoning: GeminiClient(model=model, reasoning=reasoning),
 }
 
 
@@ -93,7 +95,7 @@ def _reasoning_from_row(row: dict[str, object]) -> ReasoningSettings | None:
 def resolve_action(action: str) -> tuple[str, str]:
     """Return the (provider, model) for an action.
 
-    Resolution order: workspace override → env var → in-code registry default.
+    Resolution order: workspace override → dedicated model env var → in-code registry default.
     """
     override = _workspace_overrides.get().get(action)
     if override is not None:

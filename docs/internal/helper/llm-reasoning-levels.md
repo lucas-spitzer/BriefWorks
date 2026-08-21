@@ -25,16 +25,16 @@ As of this writing, Foundry **does not expose reasoning controls**. Model select
 
 | Call site | Client | Model env var | Reasoning control |
 |-----------|--------|---------------|-------------------|
-| `source-research` | `OpenAIClient` | `OPENAI_MODEL` | None (Chat Completions, no `reasoning` param) |
-| `prepare` | `OpenAIClient` | `OPENAI_MODEL` | None |
-| `extract-knowledge` | `AnthropicClient` via factory | `LLM_EXTRACT_KNOWLEDGE_MODEL` | None |
-| QnGen draft / critique | `AnthropicClient` via factory | `LLM_QNGEN_DRAFT_MODEL`, `LLM_QNGEN_CRITIQUE_MODEL` | None |
+| `source-research` | `OpenAIClient` | `SOURCE_RESEARCH_MODEL` | None (Chat Completions, no `reasoning` param) |
+| `prepare` | `OpenAIClient` | — (removed) | None |
+| `extract-knowledge` | `AnthropicClient` via factory | — (removed) | None |
+| QnGen draft / critique | factory | `DRAFT_MODEL`, `CRITIQUE_MODEL` | None |
 
 Relevant code today:
 
 - OpenAI: `api/app/services/openai_client.py` — `chat.completions.create` with `response_format: json_object`
 - Anthropic: `api/app/services/llm/anthropic_client.py` — `messages.create` with `model`, `max_tokens`, `system`, `messages`
-- Routing: `api/app/config.py` — `LLM_<ACTION>_PROVIDER` / `LLM_<ACTION>_MODEL`
+- Routing: `api/app/config.py` — dedicated per-action model env vars (`SOURCE_RESEARCH_MODEL`, `DRAFT_MODEL`, …)
 
 ---
 
@@ -45,8 +45,11 @@ When implemented, use **provider-specific env vars** with optional **per-action 
 ### Global defaults (`.env`)
 
 ```bash
-# OpenAI — used by source-research, prepare, and any openai factory action
-OPENAI_MODEL=gpt-5.4
+# OpenAI — used by source-research, wiki structuring, reader define, qngen draft
+SOURCE_RESEARCH_MODEL=gpt-5.4-mini
+WIKI_STRUCTURING_MODEL=gpt-5.4
+READER_DEFINE_MODEL=gpt-5.4-mini
+DRAFT_MODEL=gpt-5.4-mini
 OPENAI_REASONING_EFFORT=medium          # none | minimal | low | medium | high | xhigh
 
 # Anthropic — used by extract-knowledge, qngen draft/critique

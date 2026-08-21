@@ -48,6 +48,7 @@ class FakeStageSettingsRepo:
             "model": kwargs["model"],
             "reasoning_effort": kwargs["reasoning_effort"],
             "reasoning_tokens": kwargs["reasoning_tokens"],
+            "voice_id": kwargs.get("voice_id"),
         }
 
     async def delete(self, *, workspace_id: str, stage_action: str) -> None:
@@ -59,7 +60,10 @@ def test_get_returns_one_entry_per_action_with_defaults() -> None:
 
     response = asyncio.run(get_stage_settings(_workspace(), repo))  # type: ignore[arg-type]
 
-    assert len(response.settings) == len(LLM_ACTIONS)
+    assert len(response.settings) == len(LLM_ACTIONS) + 1
+    narration = next(s for s in response.settings if s.stage_action == "audio_narration")
+    assert narration.label == "Audio Narration"
+    assert narration.voice_id == narration.default_voice_id
     for setting in response.settings:
         assert setting.is_overridden is False
         assert setting.provider == setting.default_provider
@@ -117,7 +121,7 @@ def test_put_unknown_action_404() -> None:
 def test_put_invalid_selection_422() -> None:
     repo = FakeStageSettingsRepo()
     # Known model paired with the wrong provider.
-    payload = StageSettingUpdate(provider="openai", model="claude-opus-4-8")
+    payload = StageSettingUpdate(provider="openai", model="claude-opus-5")
 
     with pytest.raises(HTTPException) as exc:
         asyncio.run(put_stage_setting("wiki_structuring", payload, _workspace(), repo))  # type: ignore[arg-type]
@@ -141,3 +145,34 @@ def test_delete_unknown_action_404() -> None:
         asyncio.run(delete_stage_setting("not_a_stage", _workspace(), repo))  # type: ignore[arg-type]
 
     assert exc.value.status_code == 404
+
+
+def test_put_audio_narration_requires_voice() -> None:
+    repo = FakeStageSettingsRepo()
+    payload = StageSettingUpdate(provider="speechify", model="simba-3.2")
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(put_stage_setting("audio_narration", payload, _workspace(), repo))  # type: ignore[arg-type]
+
+    assert exc.value.status_code == 422
+    assert repo.upserted == []
+
+
+def test_put_audio_narration_stores_voice() -> None:
+    repo = FakeStageSettingsRepo()
+    payload = StageSettingUpdate(
+        provider="speechify",
+        model="simba-3.2",
+        voice_id=" hugh_32 ",
+    )
+
+    result = asyncio.run(
+        put_stage_setting("audio_narration", payload, _workspace(), repo),  # type: ignore[arg-type]
+    )
+
+    assert repo.upserted[0]["provider"] == "speechify"
+    assert repo.upserted[0]["model"] == "simba-3.2"
+    assert repo.upserted[0]["voice_id"] == "hugh_32"
+    assert repo.upserted[0]["reasoning_effort"] is None
+    assert result.voice_id == "hugh_32"
+    assert result.is_overridden is True

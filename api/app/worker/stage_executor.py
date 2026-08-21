@@ -5,6 +5,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.artifact_paths import downloadable_artifact_path
 from app.config import get_settings
 from app.intellex.ingest import parse_artifact_path, structured_pages_artifact_path
 from app.intellex.models import ParsedDocument
@@ -456,8 +457,12 @@ class ExportWikiJsonStageExecutor:
                 },
             )
             artifact_id = artifact_row["id"]
-            parent = str(source["storage_path"]).rsplit("/", 1)[0]
-            storage_path = f"{parent}/artifacts/{artifact_id}/{filename}"
+            storage_path = downloadable_artifact_path(
+                str(source["storage_path"]),
+                "wiki_json",
+                artifact_id,
+                filename,
+            )
 
             self.storage.upload(
                 storage_path,

@@ -8,6 +8,7 @@ class StageSettingUpdate(BaseModel):
     model: str = Field(min_length=1)
     reasoning_effort: str | None = Field(default=None, max_length=50)
     reasoning_tokens: int | None = Field(default=None, gt=0)
+    voice_id: str | None = Field(default=None, max_length=200)
 
 
 class StageSetting(BaseModel):
@@ -19,9 +20,11 @@ class StageSetting(BaseModel):
     model: str
     reasoning_effort: str | None = None
     reasoning_tokens: int | None = None
+    voice_id: str | None = None
     is_overridden: bool
     default_provider: str
     default_model: str
+    default_voice_id: str | None = None
 
 
 class StageSettingsResponse(BaseModel):

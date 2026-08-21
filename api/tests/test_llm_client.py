@@ -6,7 +6,7 @@ import pytest
 
 from app.services.api_pricing import cost_anthropic_usage, cost_llm_usage
 from app.services.llm.anthropic_client import _parse_json_object
-from app.llm_defaults import HAIKU_45_MODEL
+from app.llm_defaults import SONNET_5_MODEL
 from app.services.llm.factory import get_llm_client, resolve_action
 from app.services.llm.openai_adapter import OpenAILLMClient
 from app.services.openai_client import OpenAICompletionResult
@@ -31,12 +31,12 @@ def test_resolve_action_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     provider, model = resolve_action("extract_knowledge")
 
     assert provider == "anthropic"
-    assert model == HAIKU_45_MODEL
+    assert model == SONNET_5_MODEL
 
 
 def test_resolve_action_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_QNGEN_DRAFT_PROVIDER", "openai")
-    monkeypatch.setenv("LLM_QNGEN_DRAFT_MODEL", "gpt-4o")
+    monkeypatch.setenv("DRAFT_MODEL", "gpt-4o")
 
     provider, model = resolve_action("qngen_draft")
 
@@ -45,21 +45,20 @@ def test_resolve_action_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_resolve_action_openai_stage_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    for var in ("LLM_SOURCE_RESEARCH_PROVIDER", "LLM_SOURCE_RESEARCH_MODEL", "OPENAI_MODEL"):
+    for var in ("LLM_SOURCE_RESEARCH_PROVIDER", "SOURCE_RESEARCH_MODEL"):
         monkeypatch.delenv(var, raising=False)
 
     provider, model = resolve_action("source_research")
 
     assert provider == "openai"
-    assert model == "gpt-5.4-mini"
+    assert model == "gpt-5.6-luna"
 
 
-def test_resolve_action_openai_stage_uses_global_model_default(
+def test_resolve_action_uses_dedicated_model_env(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("LLM_WIKI_STRUCTURING_PROVIDER", raising=False)
-    monkeypatch.delenv("LLM_WIKI_STRUCTURING_MODEL", raising=False)
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-4o")
+    monkeypatch.setenv("WIKI_STRUCTURING_MODEL", "gpt-4o")
 
     provider, model = resolve_action("wiki_structuring")
 

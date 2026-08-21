@@ -1,5 +1,6 @@
 from app.services.api_pricing import (
     cost_anthropic_usage,
+    cost_google_usage,
     cost_llamaparse_usage,
     cost_openai_usage,
 )
@@ -10,17 +11,17 @@ from app.services.stage_run_billing import (
 
 
 def test_openai_cost_uses_model_rates() -> None:
-    call = cost_openai_usage(model="gpt-4o-mini", input_tokens=1_000_000, output_tokens=500_000)
+    call = cost_openai_usage(model="gpt-5.6-luna", input_tokens=1_000_000, output_tokens=500_000)
 
-    assert call["input_cost_usd"] == 0.15
-    assert call["output_cost_usd"] == 0.3
-    assert call["cost_usd"] == 0.45
+    assert call["input_cost_usd"] == 0.20
+    assert call["output_cost_usd"] == 0.60
+    assert call["cost_usd"] == 0.80
 
 
 def test_build_api_usage_from_execution() -> None:
     usage = build_api_usage(
         {
-            "model": "gpt-4o-mini",
+            "model": "gpt-5.6-luna",
             "token_usage": {
                 "input_tokens": 10_000,
                 "output_tokens": 2_000,
@@ -37,7 +38,7 @@ def test_build_api_usage_from_execution() -> None:
 def test_stage_run_completion_fields() -> None:
     fields = stage_run_completion_fields(
         {
-            "model": "gpt-4o-mini",
+            "model": "gpt-5.6-luna",
             "token_usage": {"input_tokens": 100, "output_tokens": 50},
         },
     )
@@ -71,7 +72,7 @@ def test_build_api_usage_includes_llamaparse_credits() -> None:
 def test_build_api_usage_routes_anthropic_provider() -> None:
     usage = build_api_usage(
         {
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-5",
             "provider": "anthropic",
             "token_usage": {
                 "input_tokens": 10_000,
@@ -83,7 +84,28 @@ def test_build_api_usage_routes_anthropic_provider() -> None:
     assert len(usage["calls"]) == 1
     assert usage["calls"][0]["provider"] == "anthropic"
     assert usage["totals"]["cost_usd"] == cost_anthropic_usage(
-        model="claude-sonnet-4-6",
+        model="claude-sonnet-5",
+        input_tokens=10_000,
+        output_tokens=2_000,
+    )["cost_usd"]
+
+
+def test_build_api_usage_routes_google_provider() -> None:
+    usage = build_api_usage(
+        {
+            "model": "gemini-3.7-flash",
+            "provider": "google",
+            "token_usage": {
+                "input_tokens": 10_000,
+                "output_tokens": 2_000,
+            },
+        },
+    )
+
+    assert len(usage["calls"]) == 1
+    assert usage["calls"][0]["provider"] == "google"
+    assert usage["totals"]["cost_usd"] == cost_google_usage(
+        model="gemini-3.7-flash",
         input_tokens=10_000,
         output_tokens=2_000,
     )["cost_usd"]

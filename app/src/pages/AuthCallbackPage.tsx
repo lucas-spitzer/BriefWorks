@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ArsenalMark } from '../components/brand/ArsenalMark'
 import { supabase } from '../lib/supabaseClient'
 import '../gate.css'
 
@@ -32,7 +33,7 @@ export function AuthCallbackPage() {
   return (
     <main className="as-gate" aria-live="polite">
       <section className="as-gate__status">
-        <div className="as-gate__mark">AS</div>
+        <ArsenalMark className="as-gate__mark" />
         <p className="as-gate__eyebrow">Secure Login</p>
         <p className="as-gate__status-msg">{message}</p>
         <div className="as-gate__scanner" aria-hidden="true" />

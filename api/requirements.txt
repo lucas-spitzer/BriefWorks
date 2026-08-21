@@ -2,6 +2,7 @@ fastapi
 httpx
 openai
 anthropic
+google-genai
 ebooklib
 pymupdf
 python-dotenv

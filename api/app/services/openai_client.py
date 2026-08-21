@@ -7,6 +7,7 @@ from typing import Any
 from openai import OpenAI
 
 from app.config import get_settings
+from app.llm_defaults import DEFAULT_OPENAI_MODEL
 
 
 @dataclass(frozen=True)
@@ -65,7 +66,7 @@ class OpenAIClient:
         if not resolved_key:
             raise RuntimeError("Missing required environment variable: OPENAI_API_KEY")
 
-        self.model = model or settings.llm.openai_model
+        self.model = model or DEFAULT_OPENAI_MODEL
         self.reasoning_effort = reasoning_effort
         self.client = OpenAI(api_key=resolved_key)
 

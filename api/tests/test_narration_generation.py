@@ -4,6 +4,8 @@ import base64
 import json
 from typing import Any
 
+import pytest
+
 from app.intellex.structuring.chunk import display_markdown, flatten_markdown
 from app.pipeline import SUPPORTED_TARGET_ARTIFACTS, build_pipeline
 from app.services.elevenlabs_client import (
@@ -57,7 +59,7 @@ def test_progress_output_summary_is_fraction() -> None:
         model_id="eleven_v3",
     )
 
-    assert output["summary"] == "2/280 segments"
+    assert output["summary"] == "2/280 clips"
     assert output["segments_done"] == 2
     assert output["segments_total"] == 280
     assert output["segments_narrated"] == 2
@@ -186,9 +188,32 @@ class _FakeWorkerDb:
         self.narration_rows = narration_rows
         self.created_artifacts: list[dict[str, Any]] = []
         self.updated_artifacts: list[tuple[str, dict[str, Any]]] = []
+        self.updated_stage_runs: list[tuple[str, dict[str, Any]]] = []
+        self.chapters: list[dict[str, Any]] = []
+        self.ndr_segments: list[dict[str, Any]] = []
+
+    def create_stage_run(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {**payload, "id": "sr-1"}
+
+    def update_stage_run(self, stage_run_id: str, payload: dict[str, Any]):
+        self.updated_stage_runs.append((stage_run_id, payload))
+        return payload
 
     def list_narration_segments_for_source(self, source_id: str, voice_id: str):
         return self.narration_rows
+
+    def list_document_chapters_for_source(self, source_id: str):
+        return self.chapters
+
+    def list_ndr_segments_for_source(self, source_id: str):
+        return self.ndr_segments
+
+    def insert_narration_segment(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.upsert_narration_segment(payload)
+
+    def upsert_narration_segment(self, payload: dict[str, Any]) -> dict[str, Any]:
+        self.narration_rows.append(payload)
+        return payload
 
     def create_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.created_artifacts.append(payload)
@@ -278,7 +303,8 @@ def test_publish_artifact_writes_json_manifest() -> None:
     assert file_info["artifact_id"] == "art-1"
     assert file_info["filename"].endswith("-narration.json")
     assert file_info["storage_path"] == (
-        "workspaces/ws-1/sources/src-1/artifacts/art-1/" + file_info["filename"]
+        "workspaces/ws-1/sources/src-1/artifacts/narration/art-1/"
+        + file_info["filename"]
     )
     assert storage.upload_buckets[file_info["storage_path"]] == "sources"
 
@@ -321,3 +347,269 @@ def test_publish_artifact_none_when_no_narration() -> None:
         )
         is None
     )
+
+
+def test_failed_run_still_publishes_artifact() -> None:
+    from app.services.elevenlabs_client import ElevenLabsError
+    from app.worker.narration_executor import NarrationStageExecutor
+
+    rows = [
+        {
+            "segment_id": "seg-a",
+            "audio_path": "workspaces/ws-1/sources/src-1/narration/v/seg-a.mp3",
+            "duration_seconds": 2.5,
+            "character_count": 40,
+            "words": [{"i": 0, "w": "Hello", "s": 0.0, "e": 0.5}],
+        }
+    ]
+    db = _FakeWorkerDb(rows)
+    db.chapters = [
+        {
+            "id": "ch-1",
+            "title": "Chapter One",
+            "sequence_index": 0,
+            "segment_ids": ["seg-a"],
+        }
+    ]
+    db.ndr_segments = [{"id": "seg-a", "sequence_index": 1}]
+    executor = NarrationStageExecutor(
+        db=db,  # type: ignore[arg-type]
+        storage=_FakeWorkerStorage(),  # type: ignore[arg-type]
+        client=ElevenLabsClient(api_key="k", voice_id="voice-1", model_id="eleven_v3"),
+        max_segment_chars=9500,
+    )
+
+    def _fail(**kwargs: Any) -> tuple[dict[str, Any], int, dict[str, Any]]:
+        raise ElevenLabsError("quota_exceeded")
+
+    executor._narrate_source = _fail  # type: ignore[method-assign]
+
+    with pytest.raises(ElevenLabsError, match="quota_exceeded"):
+        executor.run_for_source(
+            production_run_id="run-1",
+            workspace_id="ws-1",
+            source={
+                "id": "src-1",
+                "filename": "warfighting.pdf",
+                "storage_path": "workspaces/ws-1/sources/src-1/warfighting.pdf",
+                "source_metadata": {},
+            },
+        )
+
+    assert db.created_artifacts[0]["artifact_type"] == "narration_audio"
+    fail_update = db.updated_stage_runs[-1][1]
+    assert fail_update["status"] == "failed"
+    assert fail_update["promoted"]["artifact_ids"] == ["art-1"]
+
+
+def test_pack_chapter_clips_fits_and_splits() -> None:
+    from app.worker.narration_executor import pack_chapter_clips
+
+    short = [
+        {"id": "a", "text": "aaaa"},
+        {"id": "b", "text": "bbbb"},
+    ]
+    clips, oversize, empty = pack_chapter_clips(short, max_chars=20)
+    assert len(clips) == 1
+    assert [row["id"] for row in clips[0]] == ["a", "b"]
+    assert oversize == []
+    assert empty == 0
+
+    split = [
+        {"id": "a", "text": "aaaaaaaaaa"},
+        {"id": "b", "text": "bbbbbbbbbb"},
+    ]
+    clips, oversize, empty = pack_chapter_clips(split, max_chars=20)
+    assert [[row["id"] for row in clip] for clip in clips] == [["a"], ["b"]]
+    assert oversize == []
+
+    mixed = [
+        {"id": "empty", "text": "  "},
+        {"id": "huge", "text": "x" * 30},
+        {"id": "ok", "text": "hello"},
+    ]
+    clips, oversize, empty = pack_chapter_clips(mixed, max_chars=20)
+    assert empty == 1
+    assert [row["id"] for row in oversize] == ["huge"]
+    assert [[row["id"] for row in clip] for clip in clips] == [["ok"]]
+
+
+def test_assign_words_to_paragraphs_keeps_clip_timeline() -> None:
+    from app.services.elevenlabs_client import WordTiming
+    from app.worker.narration_executor import assign_words_to_paragraphs
+
+    paragraphs = [
+        {"id": "a", "text": "Hello world"},
+        {"id": "b", "text": "Go now"},
+    ]
+    words = [
+        WordTiming(0, "Hello", 0.0, 0.2),
+        WordTiming(1, "world", 0.2, 0.4),
+        WordTiming(2, "Go", 0.5, 0.6),
+        WordTiming(3, "now", 0.6, 0.8),
+    ]
+    assigned = assign_words_to_paragraphs(paragraphs, words)
+    assert [w.word for w in assigned[0]] == ["Hello", "world"]
+    assert assigned[0][0].index == 0
+    assert assigned[1][0].word == "Go"
+    assert assigned[1][0].index == 0
+    assert assigned[1][0].start == 0.5
+
+
+class _FakeTts:
+    provider = "speechify"
+    voice_id = "voice-1"
+    model_id = "simba-3.2"
+    max_segment_chars = 200
+    enabled = True
+
+    def __init__(self) -> None:
+        self.texts: list[str] = []
+
+    def synthesize_with_timestamps(self, text: str, **kwargs: Any) -> Any:
+        from app.services.elevenlabs_client import NarrationResult, WordTiming
+
+        self.texts.append(text)
+        words = []
+        t = 0.0
+        for i, token in enumerate(text.split()):
+            words.append(WordTiming(i, token, t, t + 0.1))
+            t += 0.1
+        return NarrationResult(
+            audio=b"mp3",
+            words=words,
+            duration_seconds=t,
+            request_id="req-1",
+            character_cost=len(text),
+        )
+
+
+def test_narrate_source_writes_one_clip_per_chapter() -> None:
+    from app.worker.narration_executor import NarrationStageExecutor
+
+    db = _FakeWorkerDb([])
+    db.chapters = [
+        {
+            "id": "ch-1",
+            "title": "One",
+            "sequence_index": 0,
+            "segment_ids": ["h1", "p1", "p2"],
+        }
+    ]
+    db.ndr_segments = [
+        {"id": "h1", "kind": "heading", "text": "One"},
+        {"id": "p1", "kind": "paragraph", "text": "Hello there."},
+        {"id": "p2", "kind": "paragraph", "text": "More words here."},
+    ]
+    storage = _FakeWorkerStorage()
+    client = _FakeTts()
+    executor = NarrationStageExecutor(
+        db=db,  # type: ignore[arg-type]
+        storage=storage,  # type: ignore[arg-type]
+        client=client,  # type: ignore[arg-type]
+        max_segment_chars=200,
+    )
+    output, chars, _ctx = executor._narrate_source(
+        workspace_id="ws-1",
+        source={
+            "id": "src-1",
+            "storage_path": "workspaces/ws-1/sources/src-1/file.pdf",
+        },
+        stage_run_id="sr-1",
+    )
+    assert len(client.texts) == 1
+    assert "Hello there." in client.texts[0]
+    assert "More words here." in client.texts[0]
+    paths = list(storage.uploads)
+    assert len(paths) == 1
+    assert paths[0].endswith("ch-1-00.mp3")
+    assert len(db.narration_rows) == 2
+    assert db.narration_rows[0]["audio_path"] == db.narration_rows[1]["audio_path"] == paths[0]
+    assert output["segments_narrated"] == 1
+    assert output["segments_total"] == 1
+    assert output["summary"] == "1/1 clips"
+    assert chars == len(client.texts[0])
+
+
+def test_narrate_source_splits_chapter_over_cap() -> None:
+    from app.worker.narration_executor import NarrationStageExecutor
+
+    db = _FakeWorkerDb([])
+    db.chapters = [
+        {
+            "id": "ch-1",
+            "title": "One",
+            "sequence_index": 0,
+            "segment_ids": ["p1", "p2"],
+        }
+    ]
+    db.ndr_segments = [
+        {"id": "p1", "kind": "paragraph", "text": "aaaaaaaaaa"},
+        {"id": "p2", "kind": "paragraph", "text": "bbbbbbbbbb"},
+    ]
+    storage = _FakeWorkerStorage()
+    client = _FakeTts()
+    executor = NarrationStageExecutor(
+        db=db,  # type: ignore[arg-type]
+        storage=storage,  # type: ignore[arg-type]
+        client=client,  # type: ignore[arg-type]
+        max_segment_chars=20,
+    )
+    output, _chars, _ctx = executor._narrate_source(
+        workspace_id="ws-1",
+        source={
+            "id": "src-1",
+            "storage_path": "workspaces/ws-1/sources/src-1/file.pdf",
+        },
+        stage_run_id="sr-1",
+    )
+    assert client.texts == ["aaaaaaaaaa", "bbbbbbbbbb"]
+    paths = sorted(storage.uploads)
+    assert paths[0].endswith("ch-1-00.mp3")
+    assert paths[1].endswith("ch-1-01.mp3")
+    assert output["segments_narrated"] == 2
+    assert output["segments_total"] == 2
+
+
+def test_narrate_source_reuses_matching_chapter_clip() -> None:
+    from app.worker.narration_executor import NarrationStageExecutor
+
+    audio_path = "workspaces/ws-1/sources/src-1/narration/voice-1/ch-1-00.mp3"
+    db = _FakeWorkerDb(
+        [
+            {"segment_id": "p1", "audio_path": audio_path},
+            {"segment_id": "p2", "audio_path": audio_path},
+        ]
+    )
+    db.chapters = [
+        {
+            "id": "ch-1",
+            "title": "One",
+            "sequence_index": 0,
+            "segment_ids": ["p1", "p2"],
+        }
+    ]
+    db.ndr_segments = [
+        {"id": "p1", "kind": "paragraph", "text": "Hello there."},
+        {"id": "p2", "kind": "paragraph", "text": "More words here."},
+    ]
+    client = _FakeTts()
+    executor = NarrationStageExecutor(
+        db=db,  # type: ignore[arg-type]
+        storage=_FakeWorkerStorage(),  # type: ignore[arg-type]
+        client=client,  # type: ignore[arg-type]
+        max_segment_chars=200,
+    )
+    output, chars, _ctx = executor._narrate_source(
+        workspace_id="ws-1",
+        source={
+            "id": "src-1",
+            "storage_path": "workspaces/ws-1/sources/src-1/file.pdf",
+        },
+        stage_run_id="sr-1",
+    )
+    assert client.texts == []
+    assert chars == 0
+    assert output["segments_reused"] == 1
+    assert output["segments_narrated"] == 0
+

@@ -1,5 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { ArsenalMark } from '../components/brand/ArsenalMark'
 import { signInWithGoogle, signOut } from '../features/auth/authService'
 import { useAuth } from '../features/auth/authContext'
 import '../gate.css'
@@ -67,7 +68,7 @@ export function LoginPage() {
       <div className="as-gate__login">
         <section className="as-gate__brand" aria-label="About Arsenal">
           <div className="as-gate__brand-head">
-            <div className="as-gate__mark">AS</div>
+            <ArsenalMark className="as-gate__mark" />
             <div>
               <div className="as-gate__wordmark">Arsenal</div>
               <div className="as-gate__tagline">Private Educational Production Studio</div>

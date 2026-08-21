@@ -20,6 +20,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from app.artifact_paths import downloadable_artifact_path
 from app.intellex.source_readiness import CURRENT_STRUCTURE_VERSION
 from app.intellex.structuring.boundaries import auto_boundaries, trim
 from app.intellex.structuring.classify import classify
@@ -414,8 +415,8 @@ class CreateEbookStageExecutor(_ExecutorBase):
                 }
             )
             artifact_id = artifact["id"]
-            storage_path = _artifact_path(
-                source["storage_path"], "artifacts", artifact_id, filename
+            storage_path = downloadable_artifact_path(
+                source["storage_path"], "electronic_book", artifact_id, filename
             )
             self.storage.upload(
                 storage_path,

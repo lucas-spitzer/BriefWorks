@@ -44,6 +44,7 @@ Run these only on databases that already have a Foundry schema and need a target
 | File | When to run |
 |------|-------------|
 | `alter-wiki-ingest-file-ingest.sql` | DB was created before wiki file-ingest support. Adds `attachments`, `transcription_error`, expands the status check (`transcribing`, `transcribed`, …), and sets `raw_notes` default to `''`. |
+| `alter-stage-settings-tts.sql` | DB was created before Speechify narration settings. Widens `workspace_stage_settings.provider` to include `speechify` / `elevenlabs` and adds nullable `voice_id`. |
 | `alter-drop-artifacts-bucket.sql` | Operator note only (SQL no-op). Supabase blocks dropping `storage.buckets` / `storage.objects` from SQL. After migrating objects into the `sources` bucket, purge the legacy `artifacts` bucket via the Storage API or Dashboard. |
 | `alter-discussion-threads.sql` | DB was created before persisted discussion threads. Adds `discussion_threads` and `discussion_messages` with RLS + role revokes. Idempotent. |
 | `restore-stages.sql` | Short pointer: re-run `03-seed-stages.sql` to repair a wiped or stale `stages` table. |
@@ -54,6 +55,12 @@ Run these only on databases that already have a Foundry schema and need a target
 supabase db execute --file supabase/setup/alter-wiki-ingest-file-ingest.sql
 ```
 
+### Stage settings TTS providers and voice_id
+
+```bash
+supabase db execute --file supabase/setup/alter-stage-settings-tts.sql
+```
+
 ### Legacy `artifacts` storage bucket
 
 1. Migrate objects: `cd api && python -m scripts.migrate_artifacts_into_sources`
@@ -62,6 +69,26 @@ supabase db execute --file supabase/setup/alter-wiki-ingest-file-ingest.sql
    Or Dashboard: Storage → `artifacts` → Empty bucket → Delete bucket.
 
 `alter-drop-artifacts-bucket.sql` is safe to open in the SQL editor but does not delete the bucket.
+
+### Nest colocated artifacts by type
+
+Rows already under `sources/.../artifacts/{artifact_id}/` (no type folder) can be copied into `artifacts/{ebook|narration|wiki}/{artifact_id}/`:
+
+```bash
+cd api && python -m scripts.nest_artifacts_by_type --dry-run
+cd api && python -m scripts.nest_artifacts_by_type
+```
+
+Old objects are left in place. Voice-id folders under `artifacts/` (working MP3 dumps) are skipped.
+
+### Publish missing narration artifacts
+
+`generate-narration` runs that fail mid-TTS still write per-segment MP3s. To create the missing `narration_audio` artifacts row from those clips:
+
+```bash
+cd api && python -m scripts.publish_narration_artifacts --dry-run
+cd api && python -m scripts.publish_narration_artifacts
+```
 
 ## What gets created
 
@@ -75,7 +102,7 @@ supabase db execute --file supabase/setup/alter-wiki-ingest-file-ingest.sql
 ### Core tables
 
 - `workspaces`, `sources`, `production_runs`, `stage_runs`, `stages`
-- `workspace_stage_settings` — per-workspace LLM provider/model overrides
+- `workspace_stage_settings` — per-workspace LLM and narration provider/model/voice overrides
 - API cost tracking columns on `stage_runs` and `production_runs`
 
 ### Intellex content
@@ -89,11 +116,11 @@ supabase db execute --file supabase/setup/alter-wiki-ingest-file-ingest.sql
 ### Mathesys outputs
 
 - `artifacts` — `electronic_book`, `narration_audio`, `wiki_json` (table rows; files live under `sources`)
-- `narration_segments` — per-paragraph audio paths and word timings
+- `narration_segments` — per-paragraph rows pointing at chapter (or chapter-split) audio paths and word timings
 - Storage bucket: `sources` — per-source tree under
   `workspaces/{workspace_id}/sources/{source_id}/` with the original upload
   plus sibling folders `parse/`, `structure/`, `narration/`, and
-  `artifacts/{artifact_id}/`
+  `artifacts/{type}/{artifact_id}/` (`ebook`, `narration`, `wiki`)
   (no standalone `artifacts` bucket on fresh installs)
 
 ### QnGen assessments

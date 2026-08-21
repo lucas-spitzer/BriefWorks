@@ -30,10 +30,12 @@ import {
   MOCK_BLOCKS,
   buildBlocks,
   buildNarration,
+  buildNarrationClips,
   globalsFromDomSelection,
   matchWikiTerms,
   resolveReaderSelection,
   type Block,
+  type NarrationClip,
   type SpokenWord,
 } from '../../lib/readerContent'
 import { defineReaderTerm, type ReaderDefineMode } from '../../lib/readerDefineApi'
@@ -89,15 +91,6 @@ type LiveContent = {
 }
 
 const NO_NARRATION = new Map<string, NarrationSegment>()
-
-// One playable unit: a narrated paragraph. `base` is the block's first word's
-// global index, so timing index i maps to spoken word `base + i`.
-type NarrationTrack = {
-  segmentId: string
-  base: number
-  count: number
-  timings: { s: number; e: number }[]
-}
 
 // Deep links land here as /app/reader/:sourceId?seg=N where `seg` is the
 // segment's stable sequence_index (see api build_reader_link) — never a page
@@ -686,25 +679,14 @@ export function ReaderView({
 
   // --- Narration playback -------------------------------------------------
   // Two engines share the `spoken` index. When synthesized audio exists
-  // (narration_segments rows), an HTMLAudioElement plays each narrated
-  // paragraph and word timings drive the highlight. Otherwise a simulated
-  // WPM cadence walks the words (reader-recommendations §6 fallback).
-  const tracks = useMemo<NarrationTrack[]>(() => {
-    if (live.narration.size === 0) return []
-    const out: NarrationTrack[] = []
-    for (const wb of wordBlocks) {
-      if (wb.words.length === 0) continue
-      const row = live.narration.get(wb.block.id)
-      if (!row) continue
-      out.push({
-        segmentId: wb.block.id,
-        base: wb.words[0].global,
-        count: wb.words.length,
-        timings: row.words.map((w) => ({ s: w.s, e: w.e })),
-      })
-    }
-    return out
-  }, [live.narration, wordBlocks])
+  // (narration_segments rows), an HTMLAudioElement plays each chapter clip
+  // and word timings drive the highlight. Consecutive paragraphs that share
+  // an audio_path stay on one file. Otherwise a simulated WPM cadence walks
+  // the words (reader-recommendations §6 fallback).
+  const tracks = useMemo<NarrationClip[]>(
+    () => buildNarrationClips(wordBlocks, live.narration),
+    [live.narration, wordBlocks],
+  )
   const hasAudio = isLive && tracks.length > 0
 
   const spokenRef = useRef(spoken)
@@ -751,15 +733,15 @@ export function ReaderView({
     let trackIndex = 0
     setAudioError(null)
 
-    const fetchUrl = async (segmentId: string): Promise<string> => {
-      const cached = urlCacheRef.current.get(segmentId)
+    const fetchUrl = async (clip: NarrationClip): Promise<string> => {
+      const cached = urlCacheRef.current.get(clip.audioKey)
       if (cached) return cached
-      const res = await getNarrationAudioUrl(workspaceId, sourceId, segmentId)
-      urlCacheRef.current.set(segmentId, res.audio_url)
+      const res = await getNarrationAudioUrl(workspaceId, sourceId, clip.fetchSegmentId)
+      urlCacheRef.current.set(clip.audioKey, res.audio_url)
       return res.audio_url
     }
 
-    const playIndex = async (index: number) => {
+    const playIndex = async (index: number, seekTo: number | null) => {
       const track = tracks[index]
       if (!track || disposed) {
         if (!disposed) setPlaying(false)
@@ -767,16 +749,40 @@ export function ReaderView({
       }
       trackIndex = index
       try {
-        const url = await fetchUrl(track.segmentId)
+        const url = await fetchUrl(track)
         if (disposed) return
         audio.src = url
         audio.playbackRate = speedRef.current
-        setSpoken(track.base)
+        const startAt = seekTo ?? 0
+        if (startAt > 0) {
+          if (audio.readyState >= 1) {
+            audio.currentTime = startAt
+          } else {
+            await new Promise<void>((resolve, reject) => {
+              const onReady = () => {
+                audio.removeEventListener('loadedmetadata', onReady)
+                audio.currentTime = startAt
+                resolve()
+              }
+              audio.addEventListener('loadedmetadata', onReady)
+              audio.addEventListener(
+                'error',
+                () => reject(new Error('audio load failed')),
+                { once: true },
+              )
+            })
+          }
+        }
+        let wordOffset = 0
+        if (startAt > 0) {
+          const found = track.timings.findIndex((t) => t.s >= startAt - 0.02)
+          wordOffset = found < 0 ? Math.max(0, track.timings.length - 1) : found
+        }
+        setSpoken(track.base + wordOffset)
         await audio.play()
         if (tracks[index + 1]) {
-          void fetchUrl(tracks[index + 1].segmentId).catch((error: unknown) => {
+          void fetchUrl(tracks[index + 1]).catch((error: unknown) => {
             if (disposed) return
-            // Prefetch failure is non-fatal; surface it so the next track isn't a surprise.
             setAudioError(
               error instanceof Error
                 ? `Couldn’t prefetch the next clip: ${error.message}`
@@ -808,16 +814,20 @@ export function ReaderView({
       setSpoken(track.base + Math.min(idx, track.count - 1))
     }
     audio.onended = () => {
-      void playIndex(trackIndex + 1)
+      void playIndex(trackIndex + 1, 0)
     }
 
-    // Resume from the track holding the current word; otherwise the next
-    // narrated track after it; from the top when finished or not started.
+    // Resume from the clip holding the current word; otherwise the next
+    // narrated clip after it; from the top when finished or not started.
     const resumeAt = spokenRef.current
     let start = tracks.findIndex((tr) => resumeAt >= tr.base && resumeAt < tr.base + tr.count)
     if (start < 0) start = tracks.findIndex((tr) => tr.base > resumeAt)
     if (start < 0) start = 0
-    void playIndex(start)
+    const clip = tracks[start]
+    const offset = resumeAt - (clip?.base ?? 0)
+    const seekTo =
+      clip && offset > 0 && offset < clip.timings.length ? clip.timings[offset].s : 0
+    void playIndex(start, seekTo)
 
     return () => {
       disposed = true

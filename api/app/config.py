@@ -5,8 +5,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from app.llm_actions import LLM_ACTION_DEFAULTS, LLM_GLOBAL_DEFAULT
+from app.llm_actions import LLM_ACTION_BY_KEY, LLM_GLOBAL_DEFAULT
 from app.llm_defaults import DEFAULT_OPENAI_MODEL
+from app.tts_defaults import (
+    DEFAULT_NARRATION_MODEL,
+    DEFAULT_NARRATION_VOICE_ID,
+    SPEECHIFY_STREAM_MAX_CHARS,
+    tts_provider_for_model,
+)
 
 API_DIR = Path(__file__).resolve().parents[1]
 _DOTENV_PATH = API_DIR / ".env"
@@ -69,17 +75,17 @@ def _bool_env(name: str, default: bool) -> bool:
 
 def _resolve_llm_action(action: str) -> "LLMActionSettings":
     _refresh_dotenv_if_changed()
-    provider_default, model_default = LLM_ACTION_DEFAULTS.get(action, LLM_GLOBAL_DEFAULT)
+    spec = LLM_ACTION_BY_KEY.get(action)
+    if spec is not None:
+        provider_default, model_default = spec.provider, spec.model
+        model_env = spec.model_env
+    else:
+        provider_default, model_default = LLM_GLOBAL_DEFAULT
+        model_env = f"LLM_{action.upper()}_MODEL"
+
     key = action.upper()
     provider = os.getenv(f"LLM_{key}_PROVIDER", provider_default).strip().lower()
-    model = os.getenv(f"LLM_{key}_MODEL", "").strip()
-
-    if not model:
-        # Fall back to the provider's global default model, then the registry default.
-        if provider == "openai":
-            model = os.getenv("OPENAI_MODEL", model_default).strip()
-        else:
-            model = model_default
+    model = os.getenv(model_env, "").strip() or model_default
 
     return LLMActionSettings(provider=provider, model=model)
 
@@ -112,8 +118,8 @@ class LLMActionSettings:
 @dataclass(frozen=True)
 class LLMSettings:
     openai_api_key: str | None
-    openai_model: str
     anthropic_api_key: str | None
+    google_api_key: str | None
     anthropic_max_tokens: int
     anthropic_json_prefill: str
 
@@ -162,16 +168,33 @@ class AssistantSettings:
 
 @dataclass(frozen=True)
 class NarrationSettings:
-    # ElevenLabs synthesized narration for the Reader (generate-narration stage).
-    api_key: str | None
-    voice_id: str
+    # Synthesized narration for the Reader (generate-narration stage).
+    # Provider is inferred from model_id (simba-* → Speechify, eleven* → ElevenLabs).
+    speechify_api_key: str | None
+    elevenlabs_api_key: str | None
     model_id: str
+    voice_id: str
     output_format: str
     request_timeout_seconds: int
     max_retries: int
-    # Per-segment character ceiling; paragraphs beyond this are skipped rather
-    # than split, so word-timing indexes always cover whole segments.
-    max_segment_chars: int
+    elevenlabs_max_segment_chars: int
+    speechify_max_segment_chars: int
+
+    @property
+    def provider(self) -> str:
+        return tts_provider_for_model(self.model_id)
+
+    @property
+    def api_key(self) -> str | None:
+        if self.provider == "elevenlabs":
+            return self.elevenlabs_api_key
+        return self.speechify_api_key
+
+    @property
+    def max_segment_chars(self) -> int:
+        if self.provider == "elevenlabs":
+            return self.elevenlabs_max_segment_chars
+        return self.speechify_max_segment_chars
 
 
 @dataclass(frozen=True)
@@ -264,13 +287,13 @@ def _get_settings_cached() -> Settings:
         ),
         llm=LLMSettings(
             openai_api_key=os.getenv("OPENAI_API_KEY"),
-            openai_model=os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+            google_api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
             anthropic_max_tokens=int(os.getenv("ANTHROPIC_MAX_TOKENS", "16384")),
             anthropic_json_prefill=os.getenv("ANTHROPIC_JSON_PREFILL", "auto").strip().lower(),
         ),
         intellex=IntellexSettings(
-            llama_cloud_api_key=os.getenv("LLAMA_CLOUD_API_KEY"),
+            llama_cloud_api_key=os.getenv("LLAMAPARSE_API_KEY"),
             llamaparse_tier=os.getenv("LLAMAPARSE_TIER", "agentic"),
             source_research_max_chars=int(os.getenv("SOURCE_RESEARCH_MAX_CHARS", "16000")),
             web_enrichment_max_searches=int(os.getenv("WEB_ENRICHMENT_MAX_SEARCHES", "5")),
@@ -310,16 +333,20 @@ def _get_settings_cached() -> Settings:
             wiki_count=int(os.getenv("ASSISTANT_WIKI_COUNT", "6")),
         ),
         narration=NarrationSettings(
-            api_key=os.getenv("ELEVENLABS_API_KEY"),
-            voice_id=os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM"),
-            model_id=os.getenv("ELEVENLABS_MODEL_ID", "eleven_multilingual_v2"),
+            speechify_api_key=os.getenv("SPEECHIFY_API_KEY"),
+            elevenlabs_api_key=os.getenv("ELEVENLABS_API_KEY"),
+            model_id=os.getenv("AUDIO_NARRATION_MODEL", DEFAULT_NARRATION_MODEL),
+            voice_id=os.getenv("AUDIO_NARRATION_VOICE_ID", DEFAULT_NARRATION_VOICE_ID),
             output_format=os.getenv("ELEVENLABS_OUTPUT_FORMAT", "mp3_44100_128"),
             request_timeout_seconds=int(os.getenv("ELEVENLABS_REQUEST_TIMEOUT_SECONDS", "600")),
             max_retries=int(os.getenv("ELEVENLABS_MAX_RETRIES", "3")),
-            max_segment_chars=int(os.getenv("ELEVENLABS_MAX_SEGMENT_CHARS", "9500")),
+            elevenlabs_max_segment_chars=int(os.getenv("ELEVENLABS_MAX_SEGMENT_CHARS", "9500")),
+            speechify_max_segment_chars=int(
+                os.getenv("SPEECHIFY_MAX_SEGMENT_CHARS", str(SPEECHIFY_STREAM_MAX_CHARS)),
+            ),
         ),
         qngen=QnGenSettings(
-            concept_batch_size=int(os.getenv("QNGEN_CONCEPT_BATCH_SIZE", "8")),
+            concept_batch_size=int(os.getenv("CONCEPT_BATCH_SIZE", "8")),
             critique_supporting=_bool_env("QNGEN_CRITIQUE_SUPPORTING", False),
             max_repair_turns=int(os.getenv("QNGEN_MAX_REPAIR_TURNS", "2")),
             flashcards_per_chapter_min=int(os.getenv("QNGEN_FLASHCARDS_PER_CHAPTER_MIN", "3")),

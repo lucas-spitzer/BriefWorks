@@ -13,7 +13,9 @@ class NarrationSegmentResponse(BaseModel):
     voice_id: str
     model_id: str
     duration_seconds: float
-    # Word timings [{i, w, s, e}] — word index, word, start/end seconds.
+    audio_path: str | None = None
+    # Word timings [{i, w, s, e}] — word index, word, start/end seconds
+    # on the shared chapter (or chapter-split) audio clip.
     words: list[dict[str, Any]]
     created_at: datetime
 

@@ -26,7 +26,7 @@ export function documentTypeLabel(type: string): string {
 
 const artifactKindLabels: Record<string, string> = {
   electronic_book: 'Electronic Book',
-  wiki_json: 'Wiki JSON Export',
+  wiki_json: 'Wiki Export',
   narration_audio: 'Audio Narration',
   lesson: 'Lesson Module',
   assessment: 'Assessment Bank',

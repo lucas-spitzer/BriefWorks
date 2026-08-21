@@ -100,7 +100,7 @@ class LlamaParseClient:
         resolved_key = api_key or settings.llama_cloud_api_key
 
         if not resolved_key:
-            raise RuntimeError("Missing required environment variable: LLAMA_CLOUD_API_KEY")
+            raise RuntimeError("Missing required environment variable: LLAMAPARSE_API_KEY")
 
         self.api_key = resolved_key
         self.tier = tier or settings.llamaparse_tier

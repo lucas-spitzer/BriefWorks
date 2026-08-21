@@ -18,6 +18,7 @@ from app.routers import (
     reader,
     stages,
     sources,
+    tts,
     wiki,
     workspaces,
 )
@@ -72,6 +73,7 @@ app.include_router(reader.router)
 app.include_router(artifacts.router)
 app.include_router(assessments.router)
 app.include_router(llm.router)
+app.include_router(tts.router)
 app.include_router(assistant.router)
 
 

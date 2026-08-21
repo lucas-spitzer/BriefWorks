@@ -62,10 +62,11 @@ create table public.workspace_stage_settings (
   model text not null,
   reasoning_effort text,
   reasoning_tokens integer,
+  voice_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint workspace_stage_settings_provider_check
-    check (provider in ('openai', 'anthropic')),
+    check (provider in ('openai', 'anthropic', 'speechify', 'elevenlabs')),
   constraint workspace_stage_settings_reasoning_tokens_check
     check (reasoning_tokens is null or reasoning_tokens > 0),
   constraint workspace_stage_settings_workspace_action_key

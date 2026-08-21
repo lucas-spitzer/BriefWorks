@@ -187,7 +187,7 @@ export function stageRunSummary(stageRun: StageRun): string {
     return stageRun.output.summary
   }
   const progress = narrationSegmentProgress(stageRun)
-  if (progress) return `${progress.done}/${progress.total} segments`
+  if (progress) return `${progress.done}/${progress.total} clips`
   if (stageRun.status === 'completed') return 'Completed successfully.'
   if (stageRun.status === 'running') return 'In progress…'
   if (stageRun.status === 'queued') return 'Queued.'
@@ -285,7 +285,7 @@ const API_REQUEST_STAGES: Record<string, { tool: string }> = {
   'validate-structure': { tool: 'Local' },
   'source-research': { tool: 'OpenAI' },
   'create-ebook': { tool: 'Local' },
-  'generate-narration': { tool: 'ElevenLabs' },
+  'generate-narration': { tool: 'Speechify' },
   'export-wiki-json': { tool: 'Local' },
   'generate-flashcards': { tool: 'Claude' },
   'generate-questions': { tool: 'Claude' },
@@ -298,6 +298,7 @@ const API_PROVIDER_LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Claude',
   elevenlabs: 'ElevenLabs',
+  speechify: 'Speechify',
 }
 
 function apiUsageRecord(stageRun: StageRun): Record<string, unknown> | null {
@@ -323,6 +324,18 @@ export function apiRequestStageLabel(stageId: string): string | null {
 }
 
 export function stageRunApiToolLabel(stageRun: StageRun): string {
+  if (stageRun.stage_id === 'generate-narration') {
+    for (const call of stageRunApiCalls(stageRun)) {
+      const label = providerToolLabel(call.provider)
+      if (label) return label
+    }
+    const model = String(
+      stageRun.output?.model_id ?? stageRun.model ?? '',
+    ).toLowerCase()
+    if (model.includes('eleven')) return 'ElevenLabs'
+    return 'Speechify'
+  }
+
   const configuredTool = API_REQUEST_STAGES[stageRun.stage_id]?.tool
   if (configuredTool) return configuredTool
 
@@ -373,7 +386,7 @@ export function isApiRequestStageRun(stageRun: StageRun): boolean {
   if (!API_REQUEST_STAGES[stageRun.stage_id]) return false
   if (stageRun.model === 'deterministic-passthrough') return false
 
-  // Narration is billed via ElevenLabs characters, not LLM tokens — surface
+  // Narration is billed via TTS characters, not LLM tokens — surface
   // in-flight runs so the API log can show live "N/M segments" progress.
   if (
     stageRun.stage_id === 'generate-narration' &&

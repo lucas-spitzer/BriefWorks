@@ -22,6 +22,11 @@ from app.services.llm import (
     reset_workspace_overrides,
     set_workspace_overrides,
 )
+from app.services.tts.factory import (
+    narration_override_from_rows,
+    reset_narration_override,
+    set_narration_override,
+)
 from app.worker.db import WorkerDatabase
 from app.worker.narration_executor import NarrationStageExecutor
 from app.worker.stage_executor import (
@@ -726,9 +731,9 @@ class PipelineRunner:
             },
         )
 
-        override_token = set_workspace_overrides(
-            overrides_from_rows(self.db.list_workspace_stage_settings(workspace_id)),
-        )
+        settings_rows = self.db.list_workspace_stage_settings(workspace_id)
+        override_token = set_workspace_overrides(overrides_from_rows(settings_rows))
+        narration_token = set_narration_override(narration_override_from_rows(settings_rows))
 
         try:
             pipeline = self.run_store_step(context, pipeline)
@@ -812,3 +817,4 @@ class PipelineRunner:
             raise
         finally:
             reset_workspace_overrides(override_token)
+            reset_narration_override(narration_token)

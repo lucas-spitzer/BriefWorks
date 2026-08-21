@@ -57,8 +57,9 @@ export async function listSourceChapters(
   )
 }
 
-// Synthesized narration: one row per narrated paragraph segment, with
-// word-level timings ({i, w, s, e} — word index, word, start/end seconds).
+// Synthesized narration: one row per paragraph, usually sharing a chapter MP3,
+// with word-level timings ({i, w, s, e} — word index, word, start/end seconds
+// on that shared clip).
 export interface NarrationWord {
   i: number
   w: string
@@ -75,6 +76,7 @@ export interface NarrationSegment {
   voice_id: string
   model_id: string
   duration_seconds: number
+  audio_path?: string | null
   words: NarrationWord[]
   created_at: string
 }

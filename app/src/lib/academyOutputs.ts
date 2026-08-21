@@ -81,7 +81,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
       })),
       ...artifacts.map<OutputItem>((a) => {
         const format = (a.format || '').toLowerCase()
-        // narration_audio is a JSON manifest; listen in the Reader (per-segment MP3s).
+        // narration_audio is a JSON manifest; listen in the Reader (chapter MP3s).
         // Raw audio file formats still use Download when present.
         const isNarrationManifest = a.artifact_type === 'narration_audio'
         const isAudio =

@@ -20,15 +20,54 @@ from app.models.workspace import WorkspaceCreate, WorkspaceResponse, WorkspaceUp
 from app.repositories.stage_settings import StageSettingsRepository
 from app.repositories.workspaces import WorkspaceRepository
 from app.services.llm.model_catalog import validate_selection
+from app.services.tts.catalog import validate_tts_selection
+from app.tts_defaults import (
+    AUDIO_NARRATION_ACTION,
+    AUDIO_NARRATION_LABEL,
+)
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
-_STAGE_ACTION_LABELS: dict[str, str] = {action.key: action.label for action in LLM_ACTIONS}
+_STAGE_ACTION_LABELS: dict[str, str] = {
+    **{action.key: action.label for action in LLM_ACTIONS},
+    AUDIO_NARRATION_ACTION: AUDIO_NARRATION_LABEL,
+}
 
 
 def _default_provider_model(stage_action: str) -> tuple[str, str]:
+    if stage_action == AUDIO_NARRATION_ACTION:
+        narration = get_settings().narration
+        return narration.provider, narration.model_id
     resolved = get_settings().llm.resolve_action(stage_action)
     return resolved.provider, resolved.model
+
+
+def _default_voice_id(stage_action: str) -> str | None:
+    if stage_action == AUDIO_NARRATION_ACTION:
+        return get_settings().narration.voice_id
+    return None
+
+
+def _setting_from_row(
+    *,
+    stage_action: str,
+    row: dict[str, object] | None,
+) -> StageSetting:
+    default_provider, default_model = _default_provider_model(stage_action)
+    default_voice = _default_voice_id(stage_action)
+    return StageSetting(
+        stage_action=stage_action,
+        label=_STAGE_ACTION_LABELS[stage_action],
+        provider=str(row["provider"]) if row else default_provider,
+        model=str(row["model"]) if row else default_model,
+        reasoning_effort=row.get("reasoning_effort") if row else None,
+        reasoning_tokens=row.get("reasoning_tokens") if row else None,
+        voice_id=(str(row["voice_id"]) if row and row.get("voice_id") else default_voice),
+        is_overridden=row is not None,
+        default_provider=default_provider,
+        default_model=default_model,
+        default_voice_id=default_voice,
+    )
 
 
 @router.get("", response_model=list[WorkspaceResponse])
@@ -108,22 +147,15 @@ async def get_stage_settings(
 
     settings: list[StageSetting] = []
     for action in LLM_ACTIONS:
-        default_provider, default_model = _default_provider_model(action.key)
-        row = stored.get(action.key)
-
         settings.append(
-            StageSetting(
-                stage_action=action.key,
-                label=action.label,
-                provider=str(row["provider"]) if row else default_provider,
-                model=str(row["model"]) if row else default_model,
-                reasoning_effort=row.get("reasoning_effort") if row else None,
-                reasoning_tokens=row.get("reasoning_tokens") if row else None,
-                is_overridden=row is not None,
-                default_provider=default_provider,
-                default_model=default_model,
-            ),
+            _setting_from_row(stage_action=action.key, row=stored.get(action.key)),
         )
+    settings.append(
+        _setting_from_row(
+            stage_action=AUDIO_NARRATION_ACTION,
+            row=stored.get(AUDIO_NARRATION_ACTION),
+        ),
+    )
 
     return StageSettingsResponse(settings=settings)
 
@@ -144,7 +176,10 @@ async def put_stage_setting(
             detail=f"Unknown stage action '{stage_action}'.",
         )
 
-    error = validate_selection(payload.provider, payload.model)
+    if stage_action == AUDIO_NARRATION_ACTION:
+        error = validate_tts_selection(payload.provider, payload.model)
+    else:
+        error = validate_selection(payload.provider, payload.model)
     if error is not None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -152,6 +187,18 @@ async def put_stage_setting(
         )
 
     reasoning_effort = payload.reasoning_effort.strip().lower() if payload.reasoning_effort else None
+    voice_id = payload.voice_id.strip() if payload.voice_id else None
+    if stage_action == AUDIO_NARRATION_ACTION:
+        if not voice_id:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Voice ID is required for audio narration.",
+            )
+        reasoning_effort = None
+        reasoning_tokens = None
+    else:
+        reasoning_tokens = payload.reasoning_tokens
+        voice_id = None
 
     row = await stage_settings.upsert(
         workspace_id=workspace.id,
@@ -159,22 +206,11 @@ async def put_stage_setting(
         provider=payload.provider.strip().lower(),
         model=payload.model.strip(),
         reasoning_effort=reasoning_effort or None,
-        reasoning_tokens=payload.reasoning_tokens,
+        reasoning_tokens=reasoning_tokens,
+        voice_id=voice_id,
     )
 
-    default_provider, default_model = _default_provider_model(stage_action)
-
-    return StageSetting(
-        stage_action=stage_action,
-        label=_STAGE_ACTION_LABELS[stage_action],
-        provider=str(row["provider"]),
-        model=str(row["model"]),
-        reasoning_effort=row.get("reasoning_effort"),
-        reasoning_tokens=row.get("reasoning_tokens"),
-        is_overridden=True,
-        default_provider=default_provider,
-        default_model=default_model,
-    )
+    return _setting_from_row(stage_action=stage_action, row=row)
 
 
 @router.delete(

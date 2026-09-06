@@ -12,7 +12,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.llm_defaults import GPT_56_LUNA_MODEL, GPT_56_TERRA_MODEL, SONNET_5_MODEL
+from app.llm_defaults import (
+    GEMINI_37_FLASH_MODEL,
+    GPT_56_LUNA_MODEL,
+    GPT_56_TERRA_MODEL,
+    SONNET_5_MODEL,
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,13 @@ LLM_ACTIONS: tuple[LLMAction, ...] = (
         "openai",
         GPT_56_LUNA_MODEL,
         "READER_DEFINE_MODEL",
+    ),
+    LLMAction(
+        "study_sheet",
+        "Study Sheet",
+        "google",
+        GEMINI_37_FLASH_MODEL,
+        "STUDY_SHEET_MODEL",
     ),
 )
 

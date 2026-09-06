@@ -8,15 +8,18 @@ create table public.workspaces (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users (id) on delete cascade,
   name text not null,
+  slug text not null,
   description text,
   status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint workspaces_status_check
-    check (status in ('active', 'archived'))
+    check (status in ('active', 'archived')),
+  constraint workspaces_slug_key unique (slug)
 );
 
 create index workspaces_owner_id_idx on public.workspaces (owner_id);
+create unique index workspaces_name_lower_key on public.workspaces (lower(name));
 
 create trigger workspaces_set_updated_at
 before update on public.workspaces
@@ -90,6 +93,7 @@ create table public.sources (
   workspace_id uuid not null references public.workspaces (id) on delete cascade,
   owner_id uuid not null references auth.users (id) on delete cascade,
   filename text not null,
+  slug text not null,
   mime_type text not null,
   storage_path text not null,
   file_hash text not null,
@@ -101,7 +105,9 @@ create table public.sources (
   constraint sources_status_check
     check (status in ('stored', 'processing', 'ready', 'failed')),
   constraint sources_workspace_file_hash_key
-    unique (workspace_id, file_hash)
+    unique (workspace_id, file_hash),
+  constraint sources_workspace_slug_key
+    unique (workspace_id, slug)
 );
 
 create index sources_workspace_id_idx on public.sources (workspace_id);
@@ -368,7 +374,8 @@ create table public.artifacts (
       artifact_type in (
         'electronic_book',
         'narration_audio',
-        'wiki_json'
+        'wiki_json',
+        'study_sheet'
       )
     )
 );
@@ -376,6 +383,44 @@ create table public.artifacts (
 create index artifacts_workspace_id_idx on public.artifacts (workspace_id);
 create index artifacts_source_id_idx on public.artifacts (source_id);
 create index artifacts_production_run_id_idx on public.artifacts (production_run_id);
+
+-- ---------------------------------------------------------------------------
+-- Study sheet jobs (optional scripted upload; production runs use generate-study-sheet)
+-- ---------------------------------------------------------------------------
+
+create table public.study_sheet_jobs (
+  id uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references public.workspaces (id) on delete cascade,
+  source_id uuid references public.sources (id) on delete set null,
+  status text not null default 'queued',
+  input_filename text not null,
+  input_mime_type text not null,
+  input_storage_path text not null,
+  input_file_size_bytes bigint not null default 0,
+  artifact_id uuid references public.artifacts (id) on delete set null,
+  attempt_count integer not null default 0,
+  page_count integer,
+  error text,
+  model text,
+  cost_usd numeric(12, 6),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  completed_at timestamptz,
+  constraint study_sheet_jobs_status_check
+    check (status in ('queued', 'running', 'completed', 'failed'))
+);
+
+create index study_sheet_jobs_workspace_id_idx
+on public.study_sheet_jobs (workspace_id);
+create index study_sheet_jobs_source_id_idx
+on public.study_sheet_jobs (source_id);
+create index study_sheet_jobs_status_idx
+on public.study_sheet_jobs (workspace_id, status);
+
+create trigger study_sheet_jobs_set_updated_at
+before update on public.study_sheet_jobs
+for each row
+execute function public.set_updated_at();
 
 -- ---------------------------------------------------------------------------
 -- Narration segments (per-paragraph audio + word timings for the Reader)

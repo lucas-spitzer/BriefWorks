@@ -284,13 +284,15 @@ def test_publish_artifact_writes_json_manifest() -> None:
         "seg-b": {"sequence_index": 2},
     }
 
-    source_storage = "workspaces/ws-1/sources/src-1/warfighting.pdf"
+    source_storage = "ocs-prep/src-1/warfighting.pdf"
     file_info = executor._publish_artifact(
         workspace_id="ws-1",
         production_run_id="run-1",
         stage_run_id="sr-1",
         source={
             "id": "src-1",
+            "slug": "src-1",
+            "workspace_slug": "ocs-prep",
             "filename": "warfighting.pdf",
             "storage_path": source_storage,
             "source_metadata": {},
@@ -301,11 +303,8 @@ def test_publish_artifact_writes_json_manifest() -> None:
 
     assert file_info is not None
     assert file_info["artifact_id"] == "art-1"
-    assert file_info["filename"].endswith("-narration.json")
-    assert file_info["storage_path"] == (
-        "workspaces/ws-1/sources/src-1/artifacts/narration/art-1/"
-        + file_info["filename"]
-    )
+    assert file_info["filename"] == "narration.json"
+    assert file_info["storage_path"] == "ocs-prep/src-1/narration.json"
     assert storage.upload_buckets[file_info["storage_path"]] == "sources"
 
     created = db.created_artifacts[0]
@@ -390,8 +389,10 @@ def test_failed_run_still_publishes_artifact() -> None:
             workspace_id="ws-1",
             source={
                 "id": "src-1",
+                "slug": "src-1",
+                "workspace_slug": "ocs-prep",
                 "filename": "warfighting.pdf",
-                "storage_path": "workspaces/ws-1/sources/src-1/warfighting.pdf",
+                "storage_path": "ocs-prep/src-1/warfighting.pdf",
                 "source_metadata": {},
             },
         )
@@ -513,7 +514,9 @@ def test_narrate_source_writes_one_clip_per_chapter() -> None:
         workspace_id="ws-1",
         source={
             "id": "src-1",
-            "storage_path": "workspaces/ws-1/sources/src-1/file.pdf",
+            "slug": "src-1",
+            "workspace_slug": "ocs-prep",
+            "storage_path": "ocs-prep/src-1/file.pdf",
         },
         stage_run_id="sr-1",
     )
@@ -559,7 +562,9 @@ def test_narrate_source_splits_chapter_over_cap() -> None:
         workspace_id="ws-1",
         source={
             "id": "src-1",
-            "storage_path": "workspaces/ws-1/sources/src-1/file.pdf",
+            "slug": "src-1",
+            "workspace_slug": "ocs-prep",
+            "storage_path": "ocs-prep/src-1/file.pdf",
         },
         stage_run_id="sr-1",
     )
@@ -574,7 +579,7 @@ def test_narrate_source_splits_chapter_over_cap() -> None:
 def test_narrate_source_reuses_matching_chapter_clip() -> None:
     from app.worker.narration_executor import NarrationStageExecutor
 
-    audio_path = "workspaces/ws-1/sources/src-1/narration/voice-1/ch-1-00.mp3"
+    audio_path = "ocs-prep/src-1/audio/voice-1/ch-1-00.mp3"
     db = _FakeWorkerDb(
         [
             {"segment_id": "p1", "audio_path": audio_path},
@@ -604,7 +609,9 @@ def test_narrate_source_reuses_matching_chapter_clip() -> None:
         workspace_id="ws-1",
         source={
             "id": "src-1",
-            "storage_path": "workspaces/ws-1/sources/src-1/file.pdf",
+            "slug": "src-1",
+            "workspace_slug": "ocs-prep",
+            "storage_path": "ocs-prep/src-1/file.pdf",
         },
         stage_run_id="sr-1",
     )

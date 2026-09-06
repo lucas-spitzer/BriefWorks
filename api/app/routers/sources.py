@@ -5,6 +5,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
+from app.artifact_paths import next_available_slug, original_path, slug_from_filename
 from app.config import Settings, get_settings
 from app.dependencies.auth import require_approved_user
 from app.dependencies.services import (
@@ -17,6 +18,7 @@ from app.dependencies.services import (
 )
 from app.dependencies.workspace import require_workspace
 from app.errors import is_duplicate_key_error
+from app.intellex.ingest import is_pdf_source
 from app.models.auth import CurrentUser
 from app.models.document_chapter import DocumentChapterResponse
 from app.models.narration import NarrationAudioResponse, NarrationSegmentResponse
@@ -75,7 +77,9 @@ async def upload_source(
 
     file_hash = hashlib.sha256(content).hexdigest()
     source_id = str(uuid.uuid4())
-    storage_path = f"workspaces/{workspace.id}/sources/{source_id}/{safe_filename}"
+    taken = await sources.list_slugs_for_workspace(workspace.id)
+    slug = next_available_slug(slug_from_filename(safe_filename), taken)
+    storage_path = original_path(workspace.slug, slug, safe_filename)
 
     await storage.upload(
         bucket=settings.sources_bucket,
@@ -92,6 +96,7 @@ async def upload_source(
                 "workspace_id": workspace.id,
                 "owner_id": user.id,
                 "filename": safe_filename,
+                "slug": slug,
                 "mime_type": mime_type,
                 "storage_path": storage_path,
                 "file_hash": file_hash,
@@ -119,20 +124,21 @@ async def upload_source(
 
         raise
 
-    try:
-        await create_and_enqueue_production_run(
-            workspace_id=workspace.id,
-            owner_id=user.id,
-            source_ids=[source_id],
-            target_artifacts=[],
-            settings=settings,
-            production_runs=production_runs,
-        )
-    except ProductionRunEnqueueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Source uploaded but ingest could not be queued. Is Redis running?",
-        ) from exc
+    if is_pdf_source(mime_type, safe_filename):
+        try:
+            await create_and_enqueue_production_run(
+                workspace_id=workspace.id,
+                owner_id=user.id,
+                source_ids=[source_id],
+                target_artifacts=[],
+                settings=settings,
+                production_runs=production_runs,
+            )
+        except ProductionRunEnqueueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Source uploaded but ingest could not be queued. Is Redis running?",
+            ) from exc
 
     return SourceResponse.model_validate(row)
 

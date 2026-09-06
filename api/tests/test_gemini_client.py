@@ -55,3 +55,48 @@ def test_gemini_complete_json(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.token_usage["input_tokens"] == 11
     assert result.token_usage["output_tokens"] == 10
     assert result.token_usage["total_tokens"] == 21
+
+
+def test_gemini_complete_json_with_document(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    captured: dict[str, Any] = {}
+
+    class FakePart:
+        @staticmethod
+        def from_bytes(**kwargs: Any) -> dict[str, Any]:
+            return {"part": kwargs}
+
+    class FakeModels:
+        def generate_content(self, **kwargs: Any) -> Any:
+            captured.update(kwargs)
+
+            class Usage:
+                prompt_token_count = 4
+                candidates_token_count = 2
+                thoughts_token_count = 0
+                total_token_count = 6
+
+            class Response:
+                text = '{"title": "Sheet", "body_html": "<p>ok</p>"}'
+                usage_metadata = Usage()
+
+            return Response()
+
+    class FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self.models = FakeModels()
+
+    monkeypatch.setattr("app.services.llm.gemini_client.genai.Client", FakeClient)
+    monkeypatch.setattr("app.services.llm.gemini_client.types.Part", FakePart)
+
+    client = GeminiClient(model="gemini-3.7-flash")
+    result = client.complete_json_with_document(
+        system_prompt="sys",
+        user_prompt="user",
+        document_bytes=b"%PDF-1.4",
+        document_mime="application/pdf",
+    )
+
+    assert captured["model"] == "gemini-3.7-flash"
+    assert captured["contents"][0]["part"]["mime_type"] == "application/pdf"
+    assert result.content["title"] == "Sheet"

@@ -12,6 +12,7 @@ class WorkspaceRepository:
         *,
         owner_id: str,
         name: str,
+        slug: str,
         description: str | None,
     ) -> dict[str, Any]:
         rows = await self.db.insert(
@@ -19,10 +20,15 @@ class WorkspaceRepository:
             {
                 "owner_id": owner_id,
                 "name": name,
+                "slug": slug,
                 "description": description,
             },
         )
         return rows[0]
+
+    async def list_slugs(self) -> set[str]:
+        rows = await self.db.select_many("workspaces", columns="slug")
+        return {str(row["slug"]) for row in rows if row.get("slug")}
 
     async def list_for_owner(self, owner_id: str) -> list[dict[str, Any]]:
         return await self.db.select_many(

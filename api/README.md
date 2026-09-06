@@ -45,7 +45,7 @@ Infrastructure variables have defaults (see `.env.example`).
 | `create-ebook` | — | Deterministic EPUB build |
 | `generate-narration` | `SPEECHIFY_API_KEY` or `ELEVENLABS_API_KEY`, `AUDIO_NARRATION_MODEL`, `AUDIO_NARRATION_VOICE_ID` | Default TTS is Speechify (`simba-3.2` / `hugh_32`). Set the model to `eleven*` to use ElevenLabs. |
 
-Each LLM action has a dedicated model env var (`SOURCE_RESEARCH_MODEL`, `SOURCE_WEB_ENRICHMENT_MODEL`, `WIKI_STRUCTURING_MODEL`, `DRAFT_MODEL`, `CRITIQUE_MODEL`, `READER_DEFINE_MODEL`). Optional `LLM_<ACTION>_PROVIDER` overrides the registry provider. Defaults and supported actions live in [`app/llm_actions.py`](app/llm_actions.py).
+Each LLM action has a dedicated model env var (`SOURCE_RESEARCH_MODEL`, `SOURCE_WEB_ENRICHMENT_MODEL`, `WIKI_STRUCTURING_MODEL`, `DRAFT_MODEL`, `CRITIQUE_MODEL`, `READER_DEFINE_MODEL`, `STUDY_SHEET_MODEL`). Optional `LLM_<ACTION>_PROVIDER` overrides the registry provider. Defaults and supported actions live in [`app/llm_actions.py`](app/llm_actions.py).
 
 `SUPABASE_ANON_KEY` may be used instead of `SUPABASE_PUBLISHABLE_KEY` for older Supabase projects.
 
@@ -209,14 +209,18 @@ Example production run body:
 Supported `target_artifacts` values:
 
 - `electronic_book` — Mathesys create-ebook (chapter-based EPUB per source)
+- `narration_audio` — Mathesys generate-narration (timed clips + manifest per source)
 - `wiki_json` — Mathesys export-wiki-json (curated wiki snapshot per source)
+- `study_sheet` — Mathesys generate-study-sheet (one- or two-page PDF from the source file)
 - `flashcards` — QnGen generate-flashcards
 - `quizzes` — QnGen generate-questions
 - `scenarios` — QnGen generate-scenarios
 
+The PDF lands at `{workspace_slug}/{source_slug}/sheet.pdf`. Markdown sources skip Intellex ingest and still generate a sheet from the original file. `POST /workspaces/{id}/study-sheets` remains for scripted uploads.
+
 Full pipeline worker behavior:
 
-- always completes Intellex ingest (`store`, `parse`, `normalize-document`, `trim-document-boundaries`, `structure-document`, `validate-structure`, `chunk`, `source-research`); reuses prior ingest/Intellex results when a source was already processed
+- always completes Intellex ingest (`store`, `parse`, `normalize-document`, `trim-document-boundaries`, `structure-document`, `validate-structure`, `chunk`, `source-research`); reuses prior ingest/Intellex results when a source was already processed; skips Intellex for markdown sources (study sheets still generate from the original file)
 - optionally runs Mathesys stages and QnGen stages based on `target_artifacts`
 - promotes artifacts and assessment entities; wiki entries are curated manually via the wiki authoring flow, not by the pipeline
 - marks production run `completed` when finished

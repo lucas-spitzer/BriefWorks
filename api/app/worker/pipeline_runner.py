@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from app.artifact_paths import pages_work_path
 from app.intellex.models import ParsedDocument, ParsedLine
-from app.intellex.ingest import structured_pages_artifact_path
+from app.intellex.ingest import is_pdf_source
 from app.intellex.source_readiness import (
     source_intellex_complete,
     source_parse_complete,
@@ -38,6 +39,7 @@ from app.worker.stage_executor import (
     SourceResearchStageExecutor,
     WebEnrichmentStageExecutor,
 )
+from app.worker.study_sheet_executor import CreateStudySheetStageExecutor
 from app.worker.storage import WorkerStorage
 from app.worker.structuring_executors import (
     CreateEbookStageExecutor,
@@ -52,6 +54,10 @@ logger = logging.getLogger(__name__)
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def source_uses_intellex(source: dict[str, Any]) -> bool:
+    return is_pdf_source(str(source.get("mime_type") or ""), str(source.get("filename") or ""))
 
 
 def mark_step(
@@ -110,6 +116,7 @@ class PipelineContext:
     books: dict[str, Book] = field(default_factory=dict)
     target_artifacts: list[str] = field(default_factory=list)
     intellex_complete_source_ids: set[str] = field(default_factory=set)
+    intellex_skip_source_ids: set[str] = field(default_factory=set)
 
 
 class PipelineRunner:
@@ -127,6 +134,7 @@ class PipelineRunner:
         create_ebook: CreateEbookStageExecutor | None = None,
         generate_narration: NarrationStageExecutor | None = None,
         export_wiki_json: ExportWikiJsonStageExecutor | None = None,
+        generate_study_sheet: CreateStudySheetStageExecutor | None = None,
         flashcard_gen: FlashcardGenStageExecutor | None = None,
         quiz_gen: QuizGenStageExecutor | None = None,
         scenario_gen: ScenarioGenStageExecutor | None = None,
@@ -146,6 +154,10 @@ class PipelineRunner:
             self.storage,
         )
         self.export_wiki_json = export_wiki_json or ExportWikiJsonStageExecutor(
+            self.db,
+            self.storage,
+        )
+        self.generate_study_sheet = generate_study_sheet or CreateStudySheetStageExecutor(
             self.db,
             self.storage,
         )
@@ -180,6 +192,10 @@ class PipelineRunner:
 
         for source in context.sources:
             source_id = source["id"]
+
+            if source_id in context.intellex_skip_source_ids:
+                reused += 1
+                continue
 
             # Skip parse when layout already exists — even if structure is stale
             # and must rebuild from stored structured.json.
@@ -224,9 +240,7 @@ class PipelineRunner:
         parse_meta = (source.get("source_metadata") or {}).get("parse") or {}
         if not isinstance(parse_meta, dict):
             parse_meta = {}
-        path = parse_meta.get("structured_pages_path") or structured_pages_artifact_path(
-            source["storage_path"]
-        )
+        path = parse_meta.get("structured_pages_path") or pages_work_path(source)
         blob = self.storage.download(path, bucket=self.storage.sources_bucket)
         payload = json.loads(blob)
         if isinstance(payload, dict):
@@ -285,7 +299,10 @@ class PipelineRunner:
 
         for source in context.sources:
             source_id = source["id"]
-            if source_id in context.intellex_complete_source_ids:
+            if (
+                source_id in context.intellex_complete_source_ids
+                or source_id in context.intellex_skip_source_ids
+            ):
                 reused += 1
                 continue
             stage_run_ids.append(run_source(source))
@@ -396,7 +413,10 @@ class PipelineRunner:
         for source in context.sources:
             source_id = source["id"]
 
-            if source_id in context.intellex_complete_source_ids:
+            if (
+                source_id in context.intellex_complete_source_ids
+                or source_id in context.intellex_skip_source_ids
+            ):
                 total_segments += len(self.db.list_ndr_segments_for_source(source_id))
                 reused += 1
                 continue
@@ -464,8 +484,7 @@ class PipelineRunner:
         for source in context.sources:
             source_id = source["id"]
 
-            # Preserve title/author: reuse research even when structure is stale.
-            if source_research_complete(source):
+            if source_id in context.intellex_skip_source_ids or source_research_complete(source):
                 reused += 1
                 continue
 
@@ -511,7 +530,8 @@ class PipelineRunner:
         # Runs even for intellex-complete sources: enrichment only needs the
         # research block, so older sources get backfilled on their next run.
         for source in context.sources:
-            if source_web_enrichment_complete(source):
+            source_id = source["id"]
+            if source_id in context.intellex_skip_source_ids or source_web_enrichment_complete(source):
                 reused += 1
                 continue
 
@@ -548,6 +568,19 @@ class PipelineRunner:
             target_artifact="wiki_json",
             step_name="export-wiki-json",
             executor=self.export_wiki_json,
+        )
+
+    def run_generate_study_sheet_step(
+        self,
+        context: PipelineContext,
+        pipeline: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        return self._run_mathesys_narration_step(
+            context,
+            pipeline,
+            target_artifact="study_sheet",
+            step_name="generate-study-sheet",
+            executor=self.generate_study_sheet,
         )
 
     def run_generate_narration_step(
@@ -719,6 +752,9 @@ class PipelineRunner:
 
         for source in sources:
             source_id = source["id"]
+            if not source_uses_intellex(source):
+                context.intellex_skip_source_ids.add(source_id)
+                continue
             has_segments = bool(self.db.list_ndr_segments_for_source(source_id))
             if source_intellex_complete(source, has_segments=has_segments):
                 context.intellex_complete_source_ids.add(source_id)
@@ -770,6 +806,9 @@ class PipelineRunner:
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
             pipeline = self.run_export_wiki_json_step(context, pipeline)
+            self.db.update_production_run(production_run_id, {"pipeline": pipeline})
+
+            pipeline = self.run_generate_study_sheet_step(context, pipeline)
             self.db.update_production_run(production_run_id, {"pipeline": pipeline})
 
             pipeline = self.run_generate_flashcards_step(context, pipeline)

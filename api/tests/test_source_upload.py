@@ -31,6 +31,17 @@ def test_validate_source_upload_accepts_pdf() -> None:
     assert mime_type == "application/pdf"
 
 
+def test_validate_source_upload_accepts_markdown() -> None:
+    filename, mime_type = validate_source_upload(
+        filename="notes.md",
+        content_type="text/markdown",
+        content=b"# Orders\n",
+        max_bytes=1024,
+    )
+    assert filename == "notes.md"
+    assert mime_type == "text/markdown"
+
+
 def test_validate_source_upload_rejects_non_pdf_content() -> None:
     with pytest.raises(SourceUploadValidationError, match="not a valid PDF"):
         validate_source_upload(

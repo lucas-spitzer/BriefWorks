@@ -43,6 +43,8 @@ Run these only on databases that already have a Foundry schema and need a target
 
 | File | When to run |
 |------|-------------|
+| `alter-study-sheet.sql` | DB was created before study-sheet jobs. Adds `study_sheet` to `artifacts_type_check` and creates `study_sheet_jobs`. |
+| `alter-library-slugs.sql` | DB was created before frozen workspace/source slugs. Adds `workspaces.slug`, unique workspace names, `sources.slug`, and `study_sheet_jobs.source_id`. |
 | `alter-wiki-ingest-file-ingest.sql` | DB was created before wiki file-ingest support. Adds `attachments`, `transcription_error`, expands the status check (`transcribing`, `transcribed`, …), and sets `raw_notes` default to `''`. |
 | `alter-stage-settings-tts.sql` | DB was created before Speechify narration settings. Widens `workspace_stage_settings.provider` to include `speechify` / `elevenlabs` and adds nullable `voice_id`. |
 | `alter-drop-artifacts-bucket.sql` | Operator note only (SQL no-op). Supabase blocks dropping `storage.buckets` / `storage.objects` from SQL. After migrating objects into the `sources` bucket, purge the legacy `artifacts` bucket via the Storage API or Dashboard. |
@@ -53,6 +55,12 @@ Run these only on databases that already have a Foundry schema and need a target
 
 ```bash
 supabase db execute --file supabase/setup/alter-wiki-ingest-file-ingest.sql
+```
+
+### Study sheet jobs
+
+```bash
+supabase db execute --file supabase/setup/alter-study-sheet.sql
 ```
 
 ### Stage settings TTS providers and voice_id
@@ -115,13 +123,14 @@ cd api && python -m scripts.publish_narration_artifacts
 
 ### Mathesys outputs
 
-- `artifacts` — `electronic_book`, `narration_audio`, `wiki_json` (table rows; files live under `sources`)
+- `artifacts` — `electronic_book`, `narration_audio`, `wiki_json`, `study_sheet` (table rows; files live under `sources`)
 - `narration_segments` — per-paragraph rows pointing at chapter (or chapter-split) audio paths and word timings
-- Storage bucket: `sources` — per-source tree under
-  `workspaces/{workspace_id}/sources/{source_id}/` with the original upload
-  plus sibling folders `parse/`, `structure/`, `narration/`, and
-  `artifacts/{type}/{artifact_id}/` (`ebook`, `narration`, `wiki`)
-  (no standalone `artifacts` bucket on fresh installs)
+- Storage bucket: `sources` — `{workspace_slug}/{source_slug}/` holds the
+  original upload, downloadable outputs (`book.epub`, `narration.json`,
+  `wiki.json`, `sheet.pdf`), Reader audio under `audio/{voice_id}/`, and
+  pipeline scratch under `work/`. Wiki note drafts: `{workspace_slug}/drafts/`.
+  Frozen unique slugs; API ids stay UUIDs.
+- `study_sheet_jobs` — optional scripted upload path; production runs generate `study_sheet` via `generate-study-sheet`
 
 ### QnGen assessments
 

@@ -9,6 +9,7 @@ class SourceResponse(BaseModel):
     workspace_id: str
     owner_id: str
     filename: str
+    slug: str
     mime_type: str
     storage_path: str
     file_hash: str

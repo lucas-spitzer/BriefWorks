@@ -26,14 +26,69 @@ function isRawAudioArtifact(artifact: Artifact): boolean {
   )
 }
 
+function isStudySheetArtifact(artifact: Artifact): boolean {
+  return artifact.artifact_type === 'study_sheet'
+}
+
+function artifactOpenLabel(artifact: Artifact): string {
+  if (isRawAudioArtifact(artifact) || isStudySheetArtifact(artifact)) return 'Download'
+  return 'Open'
+}
+
+function canOpenArtifact(artifact: Artifact): boolean {
+  return (
+    isRawAudioArtifact(artifact) ||
+    isStudySheetArtifact(artifact) ||
+    Boolean(artifact.source_id)
+  )
+}
+
 export function FoundryArtifacts() {
-  const { sources, artifacts, isLoading, error, downloadArtifact } = useWorkspaceData()
+  const {
+    sources,
+    artifacts,
+    studySheetJobs,
+    isLoading,
+    error,
+    downloadArtifact,
+  } = useWorkspaceData()
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const [view, setView] = useState<FoundryView>('grid')
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [dismissedJobIds, setDismissedJobIds] = useState<string[]>([])
+  const [workspaceErrorHidden, setWorkspaceErrorHidden] = useState(false)
 
   const sourceById = useMemo(() => new Map(sources.map((s) => [s.id, s])), [sources])
+  const pendingJobs = useMemo(
+    () => studySheetJobs.filter((job) => job.status === 'queued' || job.status === 'running'),
+    [studySheetJobs],
+  )
+  const latestFailedJob = useMemo(() => {
+    const open = studySheetJobs.filter(
+      (job) => job.status === 'failed' && !dismissedJobIds.includes(job.id),
+    )
+    open.sort((left, right) => {
+      const leftAt = left.completed_at || left.updated_at || left.created_at
+      const rightAt = right.completed_at || right.updated_at || right.created_at
+      return rightAt.localeCompare(leftAt)
+    })
+    return open[0] ?? null
+  }, [studySheetJobs, dismissedJobIds])
+
+  const logMessage = downloadError
+    ?? (workspaceErrorHidden ? null : error)
+    ?? (latestFailedJob
+      ? `Study sheet failed for ${latestFailedJob.input_filename}: ${latestFailedJob.error || 'generation failed.'}`
+      : null)
+
+  const dismissLogs = () => {
+    setDownloadError(null)
+    setWorkspaceErrorHidden(true)
+    setDismissedJobIds(
+      studySheetJobs.filter((job) => job.status === 'failed').map((job) => job.id),
+    )
+  }
 
   const filtered = useMemo(() => {
     const q = query.toLowerCase()
@@ -62,7 +117,7 @@ export function FoundryArtifacts() {
   }
 
   const handleOpen = (artifact: Artifact) => {
-    if (isRawAudioArtifact(artifact)) {
+    if (isRawAudioArtifact(artifact) || isStudySheetArtifact(artifact)) {
       void handleDownload(artifact.id)
       return
     }
@@ -81,8 +136,13 @@ export function FoundryArtifacts() {
         <FoundryViewToggle view={view} onChange={setView} />
       </header>
       <div className="as-console__scroll">
-        {error ? <ErrorBanner message={error} /> : null}
-        {downloadError ? <ErrorBanner message={downloadError} /> : null}
+        {logMessage ? <ErrorBanner message={logMessage} onDismiss={dismissLogs} /> : null}
+        {pendingJobs.length > 0 ? (
+          <div className="as-console__empty">
+            Generating {pendingJobs.length === 1 ? 'a study sheet' : `${pendingJobs.length} study sheets`}
+            {pendingJobs[0] ? ` from ${pendingJobs[0].input_filename}` : ''}…
+          </div>
+        ) : null}
         <div className="as-console__searchbar">
           <span style={{ color: '#6f828b' }}>⌕</span>
           <input
@@ -95,7 +155,9 @@ export function FoundryArtifacts() {
         {isLoading && filtered.length === 0 ? (
           <div className="as-console__empty">Loading artifacts…</div>
         ) : filtered.length === 0 ? (
-          <div className="as-console__empty">No artifacts yet. Complete a production run to generate outputs.</div>
+          <div className="as-console__empty">
+            No artifacts yet. Complete a production run.
+          </div>
         ) : view === 'list' ? (
           <section className="as-console__panel">
             <table className="as-console__table">
@@ -174,9 +236,9 @@ export function FoundryArtifacts() {
                         type="button"
                         className="as-console__statepill as-state--download"
                         onClick={() => handleOpen(artifact)}
-                        disabled={!isRawAudioArtifact(artifact) && !artifact.source_id}
+                        disabled={!canOpenArtifact(artifact)}
                       >
-                        {isRawAudioArtifact(artifact) ? 'Download' : 'Open'}
+                        {artifactOpenLabel(artifact)}
                       </button>
                     </span>
                   </div>

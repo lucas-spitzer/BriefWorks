@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from app.artifact_paths import drafts_path
 from app.services.llamaparse_client import LlamaParseClient, LlamaParseError
 
 _INVALID_FILENAME_CHARS = re.compile(r"[^\w.\- ()]")
@@ -179,12 +180,12 @@ def validate_note_attachment(
 
 def attachment_storage_path(
     *,
-    workspace_id: str,
-    batch_id: str,
+    workspace_slug: str,
+    batch_slug: str,
     order: int,
     filename: str,
 ) -> str:
-    return f"workspaces/{workspace_id}/wiki-ingest/{batch_id}/{order:02d}_{filename}"
+    return drafts_path(workspace_slug, batch_slug, f"{order:02d}_{filename}")
 
 
 def decode_text_attachment(content: bytes, *, filename: str) -> str:

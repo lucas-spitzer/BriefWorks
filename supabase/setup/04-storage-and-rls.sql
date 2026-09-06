@@ -2,7 +2,19 @@
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
-  ('sources', 'sources', false, null, null)
+  (
+    'sources',
+    'sources',
+    false,
+    null,
+    array[
+      'application/pdf',
+      'text/markdown',
+      'application/epub+zip',
+      'application/json',
+      'audio/mpeg'
+    ]
+  )
 on conflict (id) do nothing;
 
 alter table public.workspaces enable row level security;
@@ -17,6 +29,7 @@ alter table public.wiki_entries enable row level security;
 alter table public.wiki_disputes enable row level security;
 alter table public.wiki_ingest_batches enable row level security;
 alter table public.artifacts enable row level security;
+alter table public.study_sheet_jobs enable row level security;
 alter table public.narration_segments enable row level security;
 alter table public.assessment_sets enable row level security;
 alter table public.flashcards enable row level security;
@@ -37,6 +50,7 @@ revoke all on table public.wiki_entries from anon, authenticated;
 revoke all on table public.wiki_disputes from anon, authenticated;
 revoke all on table public.wiki_ingest_batches from anon, authenticated;
 revoke all on table public.artifacts from anon, authenticated;
+revoke all on table public.study_sheet_jobs from anon, authenticated;
 revoke all on table public.narration_segments from anon, authenticated;
 revoke all on table public.assessment_sets from anon, authenticated;
 revoke all on table public.flashcards from anon, authenticated;

@@ -33,3 +33,13 @@ def enqueue_wiki_ingest_transcription(settings: Settings, batch_id: str) -> str:
         job_timeout=settings.wiki_authoring.transcription_job_timeout,
     )
     return job.id
+
+
+def enqueue_study_sheet_job(settings: Settings, job_id: str) -> str:
+    queue = get_task_queue(settings)
+    job = queue.enqueue(
+        "app.worker.jobs.generate_study_sheet",
+        job_id,
+        job_timeout=settings.study_sheet.job_timeout,
+    )
+    return job.id

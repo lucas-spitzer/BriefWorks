@@ -20,7 +20,13 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from app.artifact_paths import downloadable_artifact_path
+from app.artifact_paths import (
+    OUTPUT_FILENAMES,
+    book_work_path,
+    downloadable_artifact_path,
+    normalized_work_path,
+    trimmed_work_path,
+)
 from app.intellex.source_readiness import CURRENT_STRUCTURE_VERSION
 from app.intellex.structuring.boundaries import auto_boundaries, trim
 from app.intellex.structuring.classify import classify
@@ -31,7 +37,6 @@ from app.intellex.structuring.models import (
 )
 from app.intellex.structuring.normalize import normalize_structured_pages
 from app.intellex.structuring.validate import validate_against_pdf
-from app.intellex.wiki_slug import normalize_slug
 from app.mathesys.epub_builder import build_epub
 from app.mathesys.structured_epub import book_to_epub_chapters
 from app.services.stage_run_billing import stage_run_completion_fields
@@ -45,11 +50,6 @@ _PASSTHROUGH = {"model": "deterministic-passthrough", "token_usage": {}}
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _artifact_path(storage_path: str, *parts: str) -> str:
-    parent = storage_path.rsplit("/", 1)[0]
-    return "/".join([parent, *parts])
 
 
 def _elements_to_json(elements: list[Element]) -> bytes:
@@ -129,7 +129,7 @@ class NormalizeStageExecutor(_ExecutorBase):
         )
         try:
             elements, dropped = normalize_structured_pages(structured_pages)
-            path = _artifact_path(source["storage_path"], "structure", "normalized.json")
+            path = normalized_work_path(source)
             self.storage.upload(
                 path, _elements_to_json(elements),
                 bucket=self.storage.sources_bucket, content_type="application/json",
@@ -177,7 +177,7 @@ class TrimBoundariesStageExecutor(_ExecutorBase):
             if end_i is None:
                 end_i = elements[-1].index + 1
             trimmed = trim(elements, start_index=start_i, end_index=end_i)
-            path = _artifact_path(source["storage_path"], "structure", "trimmed.json")
+            path = trimmed_work_path(source)
             self.storage.upload(
                 path, _elements_to_json(trimmed),
                 bucket=self.storage.sources_bucket, content_type="application/json",
@@ -223,7 +223,7 @@ class StructureStageExecutor(_ExecutorBase):
         )
         try:
             book = classify(trimmed_elements)
-            path = _artifact_path(source["storage_path"], "structure", "book.json")
+            path = book_work_path(source)
             self.storage.upload(
                 path, json.dumps(book.to_dict(), ensure_ascii=False).encode("utf-8"),
                 bucket=self.storage.sources_bucket, content_type="application/json",
@@ -354,7 +354,7 @@ class CreateEbookStageExecutor(_ExecutorBase):
     def _load_book(self, source: dict[str, Any]) -> Book:
         """Load the structured Book that the structure stage persisted to storage."""
         structure_meta = (source.get("source_metadata") or {}).get("structure") or {}
-        book_path = structure_meta.get("book_path")
+        book_path = structure_meta.get("book_path") or book_work_path(source)
         if not book_path:
             raise RuntimeError(
                 f"No structured book for source {source['id']}; run the structure stage first."
@@ -386,7 +386,8 @@ class CreateEbookStageExecutor(_ExecutorBase):
                 chapters=book_to_epub_chapters(book),
             )
 
-            filename = f"{normalize_slug(meta['title'])}.epub"
+            filename = OUTPUT_FILENAMES["electronic_book"]
+            storage_path = downloadable_artifact_path(source, "electronic_book")
             artifact = self.db.create_artifact(
                 {
                     "workspace_id": workspace_id,
@@ -395,8 +396,8 @@ class CreateEbookStageExecutor(_ExecutorBase):
                     "artifact_type": "electronic_book",
                     "format": "epub3",
                     "filename": filename,
-                    "storage_path": "pending",
-                    "file_size_bytes": 0,
+                    "storage_path": storage_path,
+                    "file_size_bytes": len(epub_bytes),
                     "manifest": {
                         "title": meta["title"],
                         "author": meta["author"],
@@ -415,17 +416,11 @@ class CreateEbookStageExecutor(_ExecutorBase):
                 }
             )
             artifact_id = artifact["id"]
-            storage_path = downloadable_artifact_path(
-                source["storage_path"], "electronic_book", artifact_id, filename
-            )
             self.storage.upload(
                 storage_path,
                 epub_bytes,
                 bucket=self.storage.sources_bucket,
                 content_type="application/epub+zip",
-            )
-            self.db.update_artifact(
-                artifact_id, {"storage_path": storage_path, "file_size_bytes": len(epub_bytes)}
             )
 
             self._complete(

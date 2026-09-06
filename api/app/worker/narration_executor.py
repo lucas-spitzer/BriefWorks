@@ -6,7 +6,7 @@ joined paragraph text exceeds the provider character cap, it is packed into
 the fewest clips that fit, always splitting on paragraph boundaries. A single
 paragraph over the cap is skipped.
 
-Audio is stored at `<source dir>/narration/<voice_id>/<chapter_id>-<clip>.mp3`.
+Audio is stored at `{workspace}/{source}/audio/{voice_id}/{chapter}-{clip}.mp3`.
 Each paragraph keeps a `narration_segments` row pointing at that shared file,
 with word timings on the clip timeline so the Reader can highlight and seek.
 
@@ -21,8 +21,12 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from app.artifact_paths import downloadable_artifact_path
-from app.intellex.wiki_slug import normalize_slug
+from app.artifact_paths import (
+    OUTPUT_FILENAMES,
+    downloadable_artifact_path,
+    location_from_source,
+    narration_clip_path,
+)
 from app.services.api_pricing import cost_tts_usage
 from app.services.elevenlabs_client import ElevenLabsError, WordTiming
 from app.services.speechify_client import SpeechifyError
@@ -36,13 +40,6 @@ logger = logging.getLogger(__name__)
 
 def utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
-
-
-def _narration_path(
-    storage_path: str, voice_id: str, chapter_id: str, clip_index: int
-) -> str:
-    parent = storage_path.rsplit("/", 1)[0]
-    return f"{parent}/narration/{voice_id}/{chapter_id}-{clip_index:02d}.mp3"
 
 
 _CLIP_JOIN = "\n\n"
@@ -330,9 +327,7 @@ class NarrationStageExecutor:
             )
 
         source_id = source["id"]
-        storage_path = source.get("storage_path")
-        if not storage_path:
-            raise RuntimeError(f"Source {source_id} has no storage path.")
+        location_from_source(source)
 
         segments = {
             row["id"]: row for row in self.db.list_ndr_segments_for_source(source_id)
@@ -397,8 +392,8 @@ class NarrationStageExecutor:
                 previous_request_ids = []
             last_chapter_id = chapter_id
 
-            audio_path = _narration_path(
-                storage_path, self.client.voice_id, chapter_id, clip_index
+            audio_path = narration_clip_path(
+                source, self.client.voice_id, chapter_id, clip_index
             )
             clip_ids = [str(row["id"]) for row in clip_rows]
             if clip_ids and all(
@@ -497,7 +492,7 @@ class NarrationStageExecutor:
             return None
 
         title = self._artifact_title(source)
-        filename = f"{normalize_slug(title)}-narration.json"
+        filename = OUTPUT_FILENAMES["narration_audio"]
 
         manifest_chapters: list[dict[str, Any]] = []
         total_duration = 0.0
@@ -551,6 +546,7 @@ class NarrationStageExecutor:
         manifest_bytes = json.dumps(manifest, ensure_ascii=False, indent=2).encode(
             "utf-8"
         )
+        storage_path = downloadable_artifact_path(source, "narration_audio")
 
         artifact = self.db.create_artifact(
             {
@@ -560,8 +556,8 @@ class NarrationStageExecutor:
                 "artifact_type": "narration_audio",
                 "format": "json",
                 "filename": filename,
-                "storage_path": "pending",
-                "file_size_bytes": 0,
+                "storage_path": storage_path,
+                "file_size_bytes": len(manifest_bytes),
                 "manifest": {
                     "voice_id": self.client.voice_id,
                     "model_id": self.client.model_id,
@@ -579,18 +575,11 @@ class NarrationStageExecutor:
             }
         )
         artifact_id = artifact["id"]
-        storage_path = downloadable_artifact_path(
-            source["storage_path"], "narration_audio", artifact_id, filename
-        )
         self.storage.upload(
             storage_path,
             manifest_bytes,
             bucket=self.storage.sources_bucket,
             content_type="application/json",
-        )
-        self.db.update_artifact(
-            artifact_id,
-            {"storage_path": storage_path, "file_size_bytes": len(manifest_bytes)},
         )
 
         return {

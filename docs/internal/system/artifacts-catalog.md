@@ -16,7 +16,7 @@ Identifiers use `snake_case` to match `artifact_type` in the API and database.
 | Audio Narration | `narration_audio` | Sequential audio clips + manifest | Simba 3.2 | Listen, and voice over other artifacts |
 | Wiki Export | `wiki_json` | Single JSON document | None (deterministic snapshot) | Portable curated knowledge for a source |
 | Web Explainer | `web_explainer` | HTML + CSS + JS | Claude Opus 5 | Answer one question with interactive visuals |
-| Study Sheet | `study_sheet` | Printable PDF or DOCX (two pages) | Gemini 3.7 Flash | Memorize a subject from a double-sided sheet |
+| Study Sheet | `study_sheet` | Printable PDF (one or two pages) | Gemini 3.7 Flash | Memorize a subject from a double-sided sheet |
 
 ---
 
@@ -94,24 +94,19 @@ The three-file split (HTML / CSS / JS) is the generation contract. Packaging for
 
 - **Identifier:** `study_sheet`
 - **Definition:** A printable double-sided document (two pages) that contains key study material for a specified subject to be memorized.
-- **Format:** PDF or DOCX.
+- **Format:** PDF (US Letter, duplex on the long edge).
 - **Model:** Gemini 3.7 Flash
-- **Academy use:** Print or export a two-page cram sheet. Screen preview is secondary to print fidelity.
+- **Academy use:** Download and print. Do not open the Reader.
 
 ### Design intent
 
 A study sheet is a physical memory object. The hard constraint is the point: two sides, one sheet, dense but readable, meant to be studied until the page is unnecessary. It complements flashcards (prompt/response drill) rather than replacing them. Flashcards test retrieval; the sheet is the map of what is worth retrieving.
 
-Canonical print size should be US Letter (or a stated alternative), duplex on the long edge, with margins that survive home printers.
+This artifact is a **Mathesys production-run stage** (`generate-study-sheet`). Select Study Sheet on a new production run. Gemini reads the library source file (PDF or markdown) and writes body HTML; Foundry wraps it in owned print chrome (letter page, margins, scarlet headings, gold rules) and prints to PDF. If the print is more than two pages, the model is asked to cut material (up to three attempts) and the stage fails if it still overflows. One page is allowed. Facts must come from the file; the model may recreate a source diagram as simple SVG but must not invent mnemonics or examples.
 
-### Open questions
+The operator curates the input by choosing the source. A field-manual PDF that cannot compress onto two pages fails on purpose. Do not treat a list-heavy notes file as the only valid shape: prose, tables, and mixed sources must use the same block types.
 
-- **Canonical format.** Prefer PDF as the print artifact. Offer DOCX only if post-generation editing is a real workflow; supporting both doubles layout QA.
-- **Subject grain.** Is “specified subject” a source, a wiki entry, a chapter, or a user-supplied topic spanning several sources?
-- **Page split.** What belongs on page 1 vs page 2 (overview / detail, concepts / procedures, cues / answers)?
-- **Allowed content.** Definitions, lists, small diagrams, mnemonics, formulas — and what is forbidden (long prose, full worked solutions, decorative chrome).
-- **Provider.** Gemini is not a wired Foundry provider yet. Confirm Gemini 3.7 Flash specifically for document layout, versus generating structured content with an existing client and rendering PDF deterministically.
-- **Brand.** How much Foundry visual system belongs on a printed study aid vs a quiet academic sheet.
+Canonical print size is US Letter, duplex on the long edge, with margins that survive home printers. DOCX is out of scope.
 
 ---
 

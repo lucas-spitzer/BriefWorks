@@ -11,6 +11,27 @@ class SourceRepository:
         rows = await self.db.insert("sources", payload)
         return rows[0]
 
+    async def list_slugs_for_workspace(self, workspace_id: str) -> set[str]:
+        rows = await self.db.select_many(
+            "sources",
+            filters={"workspace_id": f"eq.{workspace_id}"},
+            columns="slug",
+        )
+        return {str(row["slug"]) for row in rows if row.get("slug")}
+
+    async def get_by_hash(
+        self,
+        workspace_id: str,
+        file_hash: str,
+    ) -> dict[str, Any] | None:
+        return await self.db.select_one(
+            "sources",
+            filters={
+                "workspace_id": f"eq.{workspace_id}",
+                "file_hash": f"eq.{file_hash}",
+            },
+        )
+
     async def list_for_workspace(
         self,
         workspace_id: str,

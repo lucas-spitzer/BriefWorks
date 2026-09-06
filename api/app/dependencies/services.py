@@ -15,11 +15,13 @@ from app.repositories.sources import SourceRepository
 from app.repositories.stage_runs import StageRunRepository
 from app.repositories.stage_settings import StageSettingsRepository
 from app.repositories.stages import StageRepository
+from app.repositories.study_sheet_jobs import StudySheetJobRepository
 from app.repositories.wiki_entries import WikiEntryRepository
 from app.repositories.wiki_ingest_batches import WikiIngestBatchRepository
 from app.repositories.workspaces import WorkspaceRepository
 from app.services.assistant import AssistantService
 from app.services.retrieval import RetrievalService
+from app.services.study_sheet import StudySheetService
 from app.services.supabase_rest import SupabaseRestClient
 from app.services.supabase_storage import SupabaseStorageClient
 from app.services.wiki_authoring import WikiAuthoringService
@@ -143,6 +145,26 @@ def get_wiki_authoring_service(
         wiki_entries=wiki_entries,
         batches=batches,
         retrieval=retrieval,
+        settings=settings,
+    )
+
+
+def get_study_sheet_job_repository(
+    db: Annotated[SupabaseRestClient, Depends(get_supabase_rest_client)],
+) -> StudySheetJobRepository:
+    return StudySheetJobRepository(db)
+
+
+def get_study_sheet_service(
+    jobs: Annotated[StudySheetJobRepository, Depends(get_study_sheet_job_repository)],
+    sources: Annotated[SourceRepository, Depends(get_source_repository)],
+    storage: Annotated[SupabaseStorageClient, Depends(get_supabase_storage_client)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> StudySheetService:
+    return StudySheetService(
+        jobs=jobs,
+        sources=sources,
+        storage=storage,
         settings=settings,
     )
 

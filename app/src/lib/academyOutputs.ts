@@ -19,6 +19,7 @@ export interface OutputItem {
   runnerPage: AcademyPage | null // where "Open" routes; null = artifact (reader/download)
   isAudio: boolean
   isEbook: boolean
+  isStudySheet: boolean
 }
 
 const UNASSIGNED = 'Unassigned'
@@ -54,6 +55,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
         runnerPage: 'flashcards',
         isAudio: false,
         isEbook: false,
+        isStudySheet: false,
       })),
       ...quizzes.map<OutputItem>((q) => ({
         kind: 'question',
@@ -66,6 +68,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
         runnerPage: 'quiz',
         isAudio: false,
         isEbook: false,
+        isStudySheet: false,
       })),
       ...scenarios.map<OutputItem>((s) => ({
         kind: 'scenario',
@@ -78,6 +81,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
         runnerPage: 'scenarios',
         isAudio: false,
         isEbook: false,
+        isStudySheet: false,
       })),
       ...artifacts.map<OutputItem>((a) => {
         const format = (a.format || '').toLowerCase()
@@ -88,10 +92,13 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
           !isNarrationManifest &&
           (a.artifact_type.includes('audio') || AUDIO_FORMATS.has(format))
         const isEbook = a.artifact_type === 'electronic_book' || format.startsWith('epub')
+        const isStudySheet = a.artifact_type === 'study_sheet'
         return {
           kind: 'artifact',
           id: a.id,
-          title: a.filename,
+          title: String(
+            (typeof a.manifest.title === 'string' && a.manifest.title) || a.filename,
+          ),
           sourceId: a.source_id ?? null,
           sourceName: nameOf(a.source_id),
           badge: (a.format || 'file').toUpperCase(),
@@ -99,6 +106,7 @@ export function useOutputs(): { items: OutputItem[]; sources: { id: string; name
           runnerPage: null,
           isAudio,
           isEbook,
+          isStudySheet,
         }
       }),
     ]

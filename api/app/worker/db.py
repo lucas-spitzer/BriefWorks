@@ -128,7 +128,7 @@ class WorkerDatabase:
                 "id": f"in.({formatted_ids})",
             },
         )
-        return rows or []
+        return self._stamp_workspace_slugs(rows or [])
 
     def list_sources_for_workspace(self, workspace_id: str) -> list[dict[str, Any]]:
         rows = self._request(
@@ -139,7 +139,39 @@ class WorkerDatabase:
                 "workspace_id": f"eq.{workspace_id}",
             },
         )
-        return rows or []
+        return self._stamp_workspace_slugs(rows or [])
+
+    def get_workspace(self, workspace_id: str) -> dict[str, Any] | None:
+        rows = self._request(
+            "GET",
+            "workspaces",
+            params={
+                "select": "*",
+                "id": f"eq.{workspace_id}",
+                "limit": "1",
+            },
+        )
+        return rows[0] if rows else None
+
+    def _stamp_workspace_slugs(self, sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        workspace_ids = sorted(
+            {str(row.get("workspace_id") or "") for row in sources if row.get("workspace_id")}
+        )
+        if not workspace_ids:
+            return sources
+        formatted_ids = ",".join(workspace_ids)
+        workspaces = self._request(
+            "GET",
+            "workspaces",
+            params={
+                "select": "id,slug",
+                "id": f"in.({formatted_ids})",
+            },
+        ) or []
+        slugs = {str(row["id"]): str(row.get("slug") or "") for row in workspaces}
+        for source in sources:
+            source["workspace_slug"] = slugs.get(str(source.get("workspace_id") or ""), "")
+        return sources
 
     def update_source(self, source_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         rows = self._request(
@@ -171,6 +203,31 @@ class WorkerDatabase:
             "PATCH",
             "wiki_ingest_batches",
             params={"id": f"eq.{batch_id}"},
+            json_body=payload,
+        )
+        return rows[0]
+
+    def get_study_sheet_job(self, job_id: str) -> dict[str, Any] | None:
+        rows = self._request(
+            "GET",
+            "study_sheet_jobs",
+            params={
+                "select": "*",
+                "id": f"eq.{job_id}",
+                "limit": "1",
+            },
+        )
+        return rows[0] if rows else None
+
+    def update_study_sheet_job(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        rows = self._request(
+            "PATCH",
+            "study_sheet_jobs",
+            params={"id": f"eq.{job_id}"},
             json_body=payload,
         )
         return rows[0]

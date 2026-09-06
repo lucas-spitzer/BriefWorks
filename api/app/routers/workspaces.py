@@ -2,6 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.artifact_paths import next_available_slug, storage_slug
 from app.config import get_settings
 from app.dependencies.auth import require_approved_user
 from app.dependencies.services import (
@@ -9,6 +10,7 @@ from app.dependencies.services import (
     get_workspace_repository,
 )
 from app.dependencies.workspace import require_workspace
+from app.errors import is_duplicate_key_error
 from app.llm_actions import LLM_ACTIONS
 from app.models.auth import CurrentUser
 from app.models.stage_settings import (
@@ -20,6 +22,7 @@ from app.models.workspace import WorkspaceCreate, WorkspaceResponse, WorkspaceUp
 from app.repositories.stage_settings import StageSettingsRepository
 from app.repositories.workspaces import WorkspaceRepository
 from app.services.llm.model_catalog import validate_selection
+from app.services.supabase_rest import SupabaseRestError
 from app.services.tts.catalog import validate_tts_selection
 from app.tts_defaults import (
     AUDIO_NARRATION_ACTION,
@@ -85,11 +88,22 @@ async def create_workspace(
     user: Annotated[CurrentUser, Depends(require_approved_user)],
     workspaces: Annotated[WorkspaceRepository, Depends(get_workspace_repository)],
 ) -> WorkspaceResponse:
-    row = await workspaces.create(
-        owner_id=user.id,
-        name=payload.name,
-        description=payload.description,
-    )
+    taken = await workspaces.list_slugs()
+    slug = next_available_slug(storage_slug(payload.name, fallback="workspace"), taken)
+    try:
+        row = await workspaces.create(
+            owner_id=user.id,
+            name=payload.name,
+            slug=slug,
+            description=payload.description,
+        )
+    except SupabaseRestError as exc:
+        if is_duplicate_key_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A workspace with this name already exists.",
+            ) from exc
+        raise
     return WorkspaceResponse.model_validate(row)
 
 
@@ -109,10 +123,20 @@ async def update_workspace(
 ) -> WorkspaceResponse:
     updates = payload.model_dump(exclude_unset=True)
 
+    updates.pop("slug", None)
+
     if not updates:
         return workspace
 
-    row = await workspaces.update(workspace.id, user.id, updates)
+    try:
+        row = await workspaces.update(workspace.id, user.id, updates)
+    except SupabaseRestError as exc:
+        if is_duplicate_key_error(exc):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="A workspace with this name already exists.",
+            ) from exc
+        raise
 
     if not row:
         raise HTTPException(

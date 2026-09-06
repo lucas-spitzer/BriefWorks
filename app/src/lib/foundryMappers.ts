@@ -265,6 +265,7 @@ const PIPELINE_STEP_LABELS: Record<string, string> = {
   'create-ebook': 'Create EBook',
   'generate-narration': 'Generate Narration',
   'export-wiki-json': 'Export Wiki JSON',
+  'generate-study-sheet': 'Generate Study Sheet',
   'generate-flashcards': 'Generate Flashcards',
   'generate-questions': 'Generate Questions',
   'generate-scenarios': 'Generate Scenarios',
@@ -287,6 +288,7 @@ const API_REQUEST_STAGES: Record<string, { tool: string }> = {
   'create-ebook': { tool: 'Local' },
   'generate-narration': { tool: 'Speechify' },
   'export-wiki-json': { tool: 'Local' },
+  'generate-study-sheet': { tool: 'Gemini' },
   'generate-flashcards': { tool: 'Claude' },
   'generate-questions': { tool: 'Claude' },
   'generate-scenarios': { tool: 'Claude' },
@@ -297,6 +299,7 @@ const API_PROVIDER_LABELS: Record<string, string> = {
   llamaparse: 'LlamaParse',
   openai: 'OpenAI',
   anthropic: 'Claude',
+  google: 'Gemini',
   elevenlabs: 'ElevenLabs',
   speechify: 'Speechify',
 }
@@ -493,6 +496,7 @@ export function artifactModule(artifact: Artifact): string {
     artifact.artifact_type === 'electronic_book' ||
     artifact.artifact_type === 'narration_audio' ||
     artifact.artifact_type === 'wiki_json' ||
+    artifact.artifact_type === 'study_sheet' ||
     artifact.artifact_type === 'uploaded'
   ) {
     return 'mathesys'

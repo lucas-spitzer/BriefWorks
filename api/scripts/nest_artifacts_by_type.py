@@ -1,4 +1,7 @@
-"""Nest colocated downloadable artifacts under type folders.
+"""Retired. Downloadable files no longer nest under `artifacts/{type}/{id}/`.
+
+Use `python -m scripts.migrate_library_slugs` for the slug layout.
+"""
 
 From:
 

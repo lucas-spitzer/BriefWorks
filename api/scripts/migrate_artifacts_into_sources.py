@@ -1,4 +1,7 @@
-"""Copy downloadable artifacts from the legacy `artifacts` bucket into `sources`.
+"""Retired. Artifacts now live at `{workspace_slug}/{source_slug}/book.epub`.
+
+Use `python -m scripts.migrate_library_slugs` for the slug layout.
+"""
 
 New layout (sibling of parse/structure/narration under each source):
 

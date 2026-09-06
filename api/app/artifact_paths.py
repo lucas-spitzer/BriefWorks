@@ -1,77 +1,141 @@
-"""Storage paths for downloadable Mathesys artifacts in the sources bucket.
+"""Library object keys in the sources bucket.
 
-Working pipeline files stay in sibling folders (`parse/`, `structure/`,
-`narration/{voice_id}/`). Exports live under `artifacts/{type}/{artifact_id}/`.
+Layout (no UUIDs in keys):
+
+    {workspace_slug}/{source_slug}/{original filename}
+    {workspace_slug}/{source_slug}/book.epub
+    {workspace_slug}/{source_slug}/narration.json
+    {workspace_slug}/{source_slug}/wiki.json
+    {workspace_slug}/{source_slug}/sheet.pdf
+    {workspace_slug}/{source_slug}/audio/{voice_id}/{clip}
+    {workspace_slug}/{source_slug}/work/{parse.md|pages.json|normalized.json|trimmed.json|book.json}
+    {workspace_slug}/drafts/{batch_slug}/{file}
 """
 
 from __future__ import annotations
 
-import uuid
+import os
+import re
+import unicodedata
+from typing import Any
 
-ARTIFACT_TYPE_FOLDERS = {
-    "electronic_book": "ebook",
-    "narration_audio": "narration",
-    "wiki_json": "wiki",
+OUTPUT_FILENAMES = {
+    "electronic_book": "book.epub",
+    "narration_audio": "narration.json",
+    "wiki_json": "wiki.json",
+    "study_sheet": "sheet.pdf",
 }
 
-_TYPE_FOLDER_SET = frozenset(ARTIFACT_TYPE_FOLDERS.values())
+WORK_PARSE = "parse.md"
+WORK_PAGES = "pages.json"
+WORK_NORMALIZED = "normalized.json"
+WORK_TRIMMED = "trimmed.json"
+WORK_BOOK = "book.json"
+
+_SLUG_STRIP = re.compile(r"[^a-z0-9]+")
 
 
-def artifact_type_folder(artifact_type: str) -> str:
+def storage_slug(label: str, *, fallback: str = "untitled") -> str:
+    normalized = unicodedata.normalize("NFKD", label)
+    ascii_label = normalized.encode("ascii", "ignore").decode("ascii")
+    slug = _SLUG_STRIP.sub("-", ascii_label.lower()).strip("-")
+    return slug or fallback
+
+
+def slug_from_filename(filename: str) -> str:
+    basename = os.path.basename(filename.strip())
+    stem, _dot, _ext = basename.partition(".")
+    return storage_slug(stem or basename, fallback="source")
+
+
+def next_available_slug(base: str, taken: set[str]) -> str:
+    if base not in taken:
+        return base
+    index = 2
+    candidate = f"{base}-{index}"
+    while candidate in taken:
+        index += 1
+        candidate = f"{base}-{index}"
+    return candidate
+
+
+def source_folder(workspace_slug: str, source_slug: str) -> str:
+    return f"{workspace_slug}/{source_slug}"
+
+
+def original_path(workspace_slug: str, source_slug: str, filename: str) -> str:
+    return f"{source_folder(workspace_slug, source_slug)}/{filename}"
+
+
+def work_path(workspace_slug: str, source_slug: str, filename: str) -> str:
+    return f"{source_folder(workspace_slug, source_slug)}/work/{filename}"
+
+
+def output_path(workspace_slug: str, source_slug: str, artifact_type: str) -> str:
     try:
-        return ARTIFACT_TYPE_FOLDERS[artifact_type]
+        filename = OUTPUT_FILENAMES[artifact_type]
     except KeyError as exc:
         raise ValueError(f"Unknown artifact type: {artifact_type}") from exc
+    return f"{source_folder(workspace_slug, source_slug)}/{filename}"
 
 
-def downloadable_artifact_path(
-    source_storage_path: str,
-    artifact_type: str,
-    artifact_id: str,
+def audio_clip_path(
+    workspace_slug: str,
+    source_slug: str,
+    voice_id: str,
     filename: str,
 ) -> str:
-    parent = source_storage_path.rsplit("/", 1)[0]
-    folder = artifact_type_folder(artifact_type)
-    return f"{parent}/artifacts/{folder}/{artifact_id}/{filename}"
+    return f"{source_folder(workspace_slug, source_slug)}/audio/{voice_id}/{filename}"
 
 
-def is_type_nested_artifact_path(storage_path: str) -> bool:
-    """True when path is .../sources/{id}/artifacts/{type}/{artifact_id}/{file}."""
-    parts = _source_artifact_parts(storage_path)
-    if parts is None or len(parts) < 3:
-        return False
-    return parts[0] in _TYPE_FOLDER_SET
+def drafts_path(workspace_slug: str, batch_slug: str, filename: str) -> str:
+    return f"{workspace_slug}/drafts/{batch_slug}/{filename}"
 
 
-def needs_type_nesting(storage_path: str) -> bool:
-    """True for .../sources/{id}/artifacts/{uuid}/{file} without a type folder.
-
-    Voice-id dumps (non-UUID folders under artifacts/) are left alone.
-    """
-    if is_type_nested_artifact_path(storage_path):
-        return False
-    parts = _source_artifact_parts(storage_path)
-    if parts is None or len(parts) < 2:
-        return False
-    return _looks_like_uuid(parts[0])
+def location_from_source(source: dict[str, Any]) -> tuple[str, str]:
+    workspace_slug = str(source.get("workspace_slug") or "").strip()
+    source_slug = str(source.get("slug") or "").strip()
+    if not workspace_slug or not source_slug:
+        raise ValueError("Source is missing workspace_slug or slug.")
+    return workspace_slug, source_slug
 
 
-def _source_artifact_parts(storage_path: str) -> list[str] | None:
-    """Segments after .../sources/{source_id}/artifacts/, or None."""
-    parts = storage_path.split("/")
-    try:
-        sources_idx = parts.index("sources")
-    except ValueError:
-        return None
-    artifacts_idx = sources_idx + 2
-    if artifacts_idx >= len(parts) or parts[artifacts_idx] != "artifacts":
-        return None
-    return parts[artifacts_idx + 1 :]
+def parse_work_path(source: dict[str, Any]) -> str:
+    workspace_slug, source_slug = location_from_source(source)
+    return work_path(workspace_slug, source_slug, WORK_PARSE)
 
 
-def _looks_like_uuid(value: str) -> bool:
-    try:
-        uuid.UUID(value)
-    except ValueError:
-        return False
-    return True
+def pages_work_path(source: dict[str, Any]) -> str:
+    workspace_slug, source_slug = location_from_source(source)
+    return work_path(workspace_slug, source_slug, WORK_PAGES)
+
+
+def normalized_work_path(source: dict[str, Any]) -> str:
+    workspace_slug, source_slug = location_from_source(source)
+    return work_path(workspace_slug, source_slug, WORK_NORMALIZED)
+
+
+def trimmed_work_path(source: dict[str, Any]) -> str:
+    workspace_slug, source_slug = location_from_source(source)
+    return work_path(workspace_slug, source_slug, WORK_TRIMMED)
+
+
+def book_work_path(source: dict[str, Any]) -> str:
+    workspace_slug, source_slug = location_from_source(source)
+    return work_path(workspace_slug, source_slug, WORK_BOOK)
+
+
+def downloadable_artifact_path(source: dict[str, Any], artifact_type: str) -> str:
+    workspace_slug, source_slug = location_from_source(source)
+    return output_path(workspace_slug, source_slug, artifact_type)
+
+
+def narration_clip_path(
+    source: dict[str, Any],
+    voice_id: str,
+    chapter_id: str,
+    clip_index: int,
+) -> str:
+    workspace_slug, source_slug = location_from_source(source)
+    filename = f"{chapter_id}-{clip_index:02d}.mp3"
+    return audio_clip_path(workspace_slug, source_slug, voice_id, filename)

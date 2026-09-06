@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.worker.pipeline_runner import PipelineRunner
+from app.worker.study_sheet_job import run_study_sheet_job
 from app.worker.wiki_ingest_transcription import run_wiki_ingest_transcription
 
 
@@ -15,3 +16,8 @@ def orchestrate_production_run(production_run_id: str) -> dict[str, Any]:
 def transcribe_wiki_ingest_batch(batch_id: str) -> dict[str, Any]:
     """Transcribe wiki note attachments into raw_notes for author review."""
     return run_wiki_ingest_transcription(batch_id)
+
+
+def generate_study_sheet(job_id: str) -> dict[str, Any]:
+    """Generate a printable study_sheet PDF from an uploaded markdown or PDF file."""
+    return run_study_sheet_job(job_id)

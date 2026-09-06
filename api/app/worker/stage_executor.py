@@ -5,9 +5,13 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from app.artifact_paths import downloadable_artifact_path
+from app.artifact_paths import (
+    OUTPUT_FILENAMES,
+    downloadable_artifact_path,
+    pages_work_path,
+    parse_work_path,
+)
 from app.config import get_settings
-from app.intellex.ingest import parse_artifact_path, structured_pages_artifact_path
 from app.intellex.models import ParsedDocument
 from app.intellex.stages.parse_document import ParseStage
 from app.intellex.stages.promotion import (
@@ -18,7 +22,6 @@ from app.intellex.stages.source_research import SourceResearchStage
 from app.intellex.stages.web_enrichment import WebEnrichmentStage
 from app.intellex.source_readiness import source_intellex_complete
 from app.services.api_pricing import cost_web_search_usage
-from app.intellex.wiki_slug import normalize_slug
 from app.mathesys.stages.wiki_export import build_wiki_export
 from app.qngen.assessment_promotion import (
     promote_flashcards,
@@ -297,7 +300,7 @@ class ParseStageExecutor:
                 filename=source.get("filename", ""),
                 content=content,
             )
-            raw_markdown_path = parse_artifact_path(source["storage_path"])
+            raw_markdown_path = parse_work_path(source)
             self.storage.upload(
                 raw_markdown_path,
                 output.raw_markdown.encode("utf-8"),
@@ -305,7 +308,7 @@ class ParseStageExecutor:
                 content_type="text/markdown",
             )
 
-            structured_path = structured_pages_artifact_path(source["storage_path"])
+            structured_path = pages_work_path(source)
             self.storage.upload(
                 structured_path,
                 json.dumps({"pages": output.structured_pages}, ensure_ascii=False).encode("utf-8"),
@@ -427,10 +430,7 @@ class ExportWikiJsonStageExecutor:
             )
             file_bytes = json.dumps(export, indent=2, ensure_ascii=False).encode("utf-8")
 
-            source_slug = normalize_slug(
-                str(source.get("filename") or "source").rsplit(".", 1)[0],
-            )
-            filename = f"{source_slug}-wiki.json"
+            filename = OUTPUT_FILENAMES["wiki_json"]
             manifest = {
                 "export_version": export["arsenal_wiki_export"],
                 "entry_count": export["entry_count"],
@@ -457,12 +457,7 @@ class ExportWikiJsonStageExecutor:
                 },
             )
             artifact_id = artifact_row["id"]
-            storage_path = downloadable_artifact_path(
-                str(source["storage_path"]),
-                "wiki_json",
-                artifact_id,
-                filename,
-            )
+            storage_path = downloadable_artifact_path(source, "wiki_json")
 
             self.storage.upload(
                 storage_path,

@@ -7,6 +7,7 @@ import type {
   Scenario,
   StageRun,
   Source,
+  StudySheetJob,
   WikiEntry,
 } from '../../lib/workspaceApi'
 
@@ -19,6 +20,7 @@ export interface WorkspaceDataContextValue {
   flashcards: Flashcard[]
   quizzes: Quiz[]
   scenarios: Scenario[]
+  studySheetJobs: StudySheetJob[]
   isLoading: boolean
   error: string | null
   activeRunCount: number

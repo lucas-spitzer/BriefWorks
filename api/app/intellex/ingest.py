@@ -20,17 +20,6 @@ def is_pdf_source(mime_type: str, filename: str) -> bool:
     return filename.lower().endswith(".pdf")
 
 
-def parse_artifact_path(storage_path: str) -> str:
-    parent = storage_path.rsplit("/", 1)[0]
-    return f"{parent}/parse/raw.md"
-
-
-def structured_pages_artifact_path(storage_path: str) -> str:
-    """Where the parse step persists the structured layout the structuring stages consume."""
-    parent = storage_path.rsplit("/", 1)[0]
-    return f"{parent}/parse/structured.json"
-
-
 def parse_source_content(
     *,
     mime_type: str,

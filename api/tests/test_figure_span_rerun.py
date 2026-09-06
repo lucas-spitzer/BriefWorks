@@ -37,10 +37,12 @@ def test_create_ebook_prefers_prior_manifest_publication_metadata() -> None:
 
     source = {
         "id": "src-1",
+        "slug": "src-1",
+        "workspace_slug": "ocs-prep",
         "filename": "other.pdf",
-        "storage_path": "workspaces/ws/sources/src-1/file.pdf",
+        "storage_path": "ocs-prep/src-1/file.pdf",
         "source_metadata": {
-            "structure": {"book_path": "workspaces/ws/sources/src-1/structure/book.json"},
+            "structure": {"book_path": "ocs-prep/src-1/work/book.json"},
             "research": {
                 "title": "Should Not Win",
                 "authors": ["Someone Else"],
@@ -61,10 +63,8 @@ def test_create_ebook_prefers_prior_manifest_publication_metadata() -> None:
     assert created["manifest"]["title"] == "Warfighting"
     assert created["manifest"]["author"] == "United States Marine Corps"
     assert created["manifest"]["identifier"] == "MCDP 1"
-    assert created["filename"] == "warfighting.epub"
-    assert storage.upload.call_args.args[0] == (
-        "workspaces/ws/sources/src-1/artifacts/ebook/art-new/warfighting.epub"
-    )
+    assert created["filename"] == "book.epub"
+    assert storage.upload.call_args.args[0] == "ocs-prep/src-1/book.epub"
 
 
 def test_create_ebook_falls_back_to_research_when_no_prior_snapshot() -> None:
@@ -77,10 +77,12 @@ def test_create_ebook_falls_back_to_research_when_no_prior_snapshot() -> None:
 
     source = {
         "id": "src-1",
+        "slug": "src-1",
+        "workspace_slug": "ocs-prep",
         "filename": "file.pdf",
-        "storage_path": "workspaces/ws/sources/src-1/file.pdf",
+        "storage_path": "ocs-prep/src-1/file.pdf",
         "source_metadata": {
-            "structure": {"book_path": "workspaces/ws/sources/src-1/structure/book.json"},
+            "structure": {"book_path": "ocs-prep/src-1/work/book.json"},
             "research": {
                 "title": "Warfighting",
                 "issuing_authority": "US Marine Corps",

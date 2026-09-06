@@ -149,6 +149,36 @@ class GeminiClient:
             token_usage=_usage_tokens(response),
         )
 
+    def complete_json_with_document(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        document_bytes: bytes,
+        document_mime: str,
+        model: str | None = None,
+    ) -> LLMCompletionResult:
+        resolved_model = model or self.model
+        contents = [
+            types.Part.from_bytes(data=document_bytes, mime_type=document_mime),
+            user_prompt,
+        ]
+        response = self.client.models.generate_content(
+            model=resolved_model,
+            contents=contents,
+            config=self._generate_config(system_prompt=system_prompt, json_mime=True),
+        )
+        raw_text = (getattr(response, "text", None) or "").strip()
+        if not raw_text:
+            raise RuntimeError("Gemini returned an empty response.")
+
+        return LLMCompletionResult(
+            content=_parse_json_object_lenient(raw_text),
+            model=resolved_model,
+            provider=self.provider,
+            token_usage=_usage_tokens(response),
+        )
+
     def complete_json_with_web_search(
         self,
         *,

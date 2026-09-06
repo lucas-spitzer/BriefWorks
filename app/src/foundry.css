@@ -303,6 +303,41 @@
   background: rgba(148,0,0,0.28); border-color: var(--color-scarlet); color: #fff;
 }
 
+.as-console__log {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  padding: 10px 8px 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--color-scarlet);
+  color: #ff8b8b;
+  background: rgba(148,0,0,0.16);
+  margin-bottom: var(--space-5);
+}
+.as-console__log-body {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+.as-console__log-dismiss {
+  appearance: none;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #ff8b8b;
+  cursor: pointer;
+  padding: 0;
+}
+.as-console__log-dismiss:hover { color: #fff; }
+
 /* new production run — field structure */
 .as-console__field-label {
   font-size: 0.84rem; color: #9fb2bb; margin-bottom: 4px; margin-top: 0;

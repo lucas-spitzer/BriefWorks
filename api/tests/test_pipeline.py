@@ -72,6 +72,14 @@ def test_wiki_json_target_maps_to_export_stage() -> None:
     assert export_step["stage_id"] == "export-wiki-json"
 
 
+def test_study_sheet_target_maps_to_generate_stage() -> None:
+    pipeline = build_pipeline(["study_sheet"])
+    sheet_step = next(step for step in pipeline if step["step"] == "generate-study-sheet")
+
+    assert sheet_step["module"] == "mathesys"
+    assert sheet_step["stage_id"] == "generate-study-sheet"
+
+
 def test_derive_qngen_assessment_types() -> None:
     assert derive_qngen_assessment_types(["flashcards", "electronic_book"]) == [
         "flashcards",

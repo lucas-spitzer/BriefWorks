@@ -23,6 +23,7 @@ def _workspace() -> WorkspaceResponse:
         id="ws-1",
         owner_id="owner-1",
         name="Test",
+        slug="test",
         description=None,
         status="active",
         created_at=now,

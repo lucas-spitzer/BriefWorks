@@ -43,21 +43,23 @@ def resolve_source_mime_type(
     content_type: str | None,
     content: bytes,
 ) -> str:
-    """Resolve and validate MIME type for an uploaded PDF source."""
-    if not content.startswith(PDF_MAGIC):
-        raise SourceUploadValidationError(
-            "Uploaded file is not a valid PDF.",
-        )
-
+    """Resolve MIME type for an uploaded PDF or markdown source."""
     declared_type = (content_type or "").split(";", 1)[0].strip().lower()
     filename_lower = filename.lower()
 
-    if declared_type in PDF_MIME_TYPES or filename_lower.endswith(".pdf"):
+    if filename_lower.endswith(".pdf") or declared_type in PDF_MIME_TYPES:
+        if not content.startswith(PDF_MAGIC):
+            raise SourceUploadValidationError("Uploaded file is not a valid PDF.")
         return declared_type if declared_type in PDF_MIME_TYPES else "application/pdf"
 
-    raise SourceUploadValidationError(
-        "Only PDF sources are supported.",
-    )
+    if filename_lower.endswith((".md", ".markdown")):
+        try:
+            content.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise SourceUploadValidationError("Markdown must be valid UTF-8.") from exc
+        return "text/markdown"
+
+    raise SourceUploadValidationError("Only PDF and markdown sources are supported.")
 
 
 def validate_source_upload(

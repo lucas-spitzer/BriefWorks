@@ -21,6 +21,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from app.artifact_paths import storage_slug
 from app.config import Settings, get_settings
 from app.intellex.wiki_candidates import (
     WikiCandidate,
@@ -267,15 +268,23 @@ class WikiAuthoringService:
             raise WikiAuthoringError(str(exc)) from exc
 
         chapter = await self._resolve_chapter(chapter_hint, source_id)
+        workspace = await self.batches.db.select_one(
+            "workspaces",
+            filters={"id": f"eq.{workspace_id}"},
+        )
+        if not workspace or not workspace.get("slug"):
+            raise WikiAuthoringError("Workspace is missing a storage slug.")
         batch_id = str(uuid.uuid4())
+        display_title = (title or "").strip() or f"Notes — {_utc_now_iso()[:10]}"
+        batch_slug = storage_slug(display_title, fallback="notes")
         attachments: list[dict[str, Any]] = []
         bucket = self.settings.sources_bucket
 
         try:
             for item in validated:
                 path = attachment_storage_path(
-                    workspace_id=workspace_id,
-                    batch_id=batch_id,
+                    workspace_slug=str(workspace["slug"]),
+                    batch_slug=batch_slug,
                     order=item.order,
                     filename=item.filename,
                 )
@@ -297,7 +306,6 @@ class WikiAuthoringService:
         except SupabaseStorageError as exc:
             raise WikiAuthoringError(f"Could not store note files: {exc}") from exc
 
-        display_title = (title or "").strip() or f"Notes — {_utc_now_iso()[:10]}"
         row = await self.batches.insert(
             {
                 "id": batch_id,

@@ -110,6 +110,14 @@ OPTIONAL_PIPELINE_STEPS: dict[str, dict[str, Any]] = {
         "stage_version": "1.0",
         "status": "pending",
     },
+    "study_sheet": {
+        "step": "generate-study-sheet",
+        "type": "stage",
+        "module": "mathesys",
+        "stage_id": "generate-study-sheet",
+        "stage_version": "1.0",
+        "status": "pending",
+    },
     "flashcards": {
         "step": "generate-flashcards",
         "type": "stage",

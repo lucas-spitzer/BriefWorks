@@ -27,7 +27,10 @@ const KIND_META: Record<
 }
 
 function openLabel(item: OutputItem): string {
-  if (item.kind === 'artifact') return item.isAudio ? 'Download' : 'Open'
+  if (item.kind === 'artifact') {
+    if (item.isAudio || item.isStudySheet) return 'Download'
+    return 'Open'
+  }
   if (item.kind === 'flashcard') return 'Study'
   return 'Open'
 }
@@ -70,7 +73,7 @@ export function LibraryView({
 
   const handleOpen = (item: OutputItem) => {
     if (item.kind === 'artifact') {
-      if (item.isAudio) void downloadArtifact(item.id)
+      if (item.isAudio || item.isStudySheet) void downloadArtifact(item.id)
       else if (item.sourceId) navigate(`/app/reader/${item.sourceId}`)
       return
     }

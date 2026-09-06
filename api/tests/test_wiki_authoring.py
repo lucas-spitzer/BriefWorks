@@ -49,6 +49,12 @@ class FakeWikiEntryRepository:
         return self.rows[wiki_entry_id]
 
 
+class _FakeBatchDb:
+    async def select_one(self, table: str, *, filters: dict[str, str], columns: str = "*"):
+        del table, filters, columns
+        return {"id": "ws-1", "slug": "ocs-prep"}
+
+
 class FakeBatchRepository:
     def __init__(
         self,
@@ -60,6 +66,7 @@ class FakeBatchRepository:
         self.chapters = chapters or []
         self.has_segments = has_segments
         self._next_id = 1
+        self.db = _FakeBatchDb()
 
     async def list_for_workspace(self, workspace_id: str, **_kwargs) -> list[dict[str, Any]]:
         return [row for row in self.rows.values() if row["workspace_id"] == workspace_id]
